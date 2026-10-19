@@ -2617,7 +2617,8 @@ tao_luc
 | Facebook | Meta Graph API (Messenger Platform, Pages API) |
 | Zalo | Zalo OA OpenAPI + Webhook + ZNS |
 | TikTok | Content Posting API, Lead Generation API, Business Messaging API (khi đủ quyền) |
-| Tùy chọn rủi ro cao | Facebook Groups adapter (port từ facebook-go), Zalo cá nhân: tắt mặc định (mục 54.6) |
+| Repo / MCP bên thứ ba | Chỉ để tham khảo; production viết lại bằng Java + Spring Boot (mục 46.1) |
+| Tùy chọn rủi ro cao | Facebook Groups adapter Java (port từ facebook-go); Zalo cá nhân: chờ quyết định, có thể là ngoại lệ worker Node.js (mục 46.1). Cả hai tắt mặc định (mục 54.6) |
 | Dữ liệu nguồn | `slm_v2` qua view `ai_v_*` (mục 4.2); Solar API và API hãng inverter (Phase 4) |
 | Monitoring | Micrometer + Prometheus + Grafana; log tập trung bằng Loki |
 | Bảo mật | Spring Security + JWT (Keycloak nếu cần SSO); secret manager cho token, cookie, API key |
@@ -2929,6 +2930,7 @@ Lộ trình cho một người phát triển, Facebook làm trước.
 
 ## Phase 3: Zalo OA
 
+- Chờ doanh nghiệp quyết định có dùng Zalo OA hay không (mục 46.1).
 - Tin tư vấn trong cửa sổ, lead, template ZNS (mục 54.4).
 
 ## Phase 4: Năng lượng
@@ -3257,7 +3259,7 @@ Trước khi port hoặc copy bất kỳ phần code nào, kiểm tra `LICENSE` 
 
 ### MCP có còn cần không?
 
-Không bắt buộc. MCP có thể giữ ở môi trường development/admin hoặc làm integration tùy nhu cầu, nhưng production backend chính có thể chạy hoàn toàn bằng Java adapters:
+Không. Theo quy tắc ở mục 46.1, production chạy hoàn toàn bằng Java adapters; MCP bên thứ ba chỉ dùng trên máy dev để tham khảo và thử API:
 
 ```text
 Claude
@@ -3461,6 +3463,35 @@ Lợi ích:
 - Dễ chuyển từ repository sang official API.
 - Tách Page và Group rõ ràng.
 - Token/cookie không nằm trong prompt hoặc AI context.
+
+## 46.1 Quy tắc chung: toàn bộ tích hợp viết bằng Java + Spring Boot
+
+Áp dụng cho mọi kênh (Facebook, Zalo, TikTok) và mọi repo / MCP được nhắc trong kế hoạch.
+
+1. **Mọi code tích hợp chạy production đều viết bằng Java 21 + Spring Boot**, nằm trong cùng ứng dụng (mục 30, 31). Không chạy MCP server, binary Go hay Node.js của bên thứ ba ở production.
+2. **Repo và MCP bên thứ ba chỉ là tài liệu tham khảo:** đọc để biết endpoint, luồng xác thực, request/response, pagination, retry, rate limit và các lỗi hay gặp; sau đó viết adapter Java gọi **API chính thức**.
+3. **Quy trình port** (chi tiết ở mục 43):
+   1. Đọc source và `LICENSE` của repo.
+   2. Liệt kê các chức năng thực sự cần dùng.
+   3. Viết interface nghiệp vụ Java (ví dụ `FacebookService`, `VideoPublishingAdapter`) và adapter dùng Spring WebClient.
+   4. Test với API thật hoặc môi trường sandbox / dev mode của nền tảng.
+   5. Ghi bảng đối chiếu "hàm trong repo → method Java" ngay trong mã nguồn (ví dụ `docs/porting/<ten-repo>.md`).
+4. **License:** không copy nguyên code khi license không cho phép; ưu tiên viết lại theo hành vi của API. Ghi nguồn tham khảo và license vào file `NOTICE`.
+5. **MCP chính thức do nền tảng host** (ví dụ TikTok for Business MCP Server): không đi qua MCP, mà gọi REST API tương ứng từ Java.
+6. **Khi cần MCP** (cho công cụ phát triển, hoặc để AI bên ngoài gọi tool): expose chính các hàm Java thành MCP tool bằng MCP Java SDK / Spring AI, trong cùng ứng dụng. Bot chăm sóc khách dùng tool use của Claude API trực tiếp (mục 32), nên production không cần MCP.
+7. Repo và MCP vẫn được dùng **trên máy dev** để thử API, khám phá dữ liệu, đối chiếu kết quả; không deploy chúng lên server. Bản clone để đọc nằm ở thư mục `references/` của repo, chia theo kênh (`facebook/`, `zalo/`, `tiktok/`, `rui-ro-cao/`). Tạo lại bằng `bash references/clone.sh`; các thư mục clone không commit vào git; danh sách, commit, license và "nên đọc gì" ở `references/README.md`.
+
+**Ngoại lệ đang chờ quyết định: Zalo cá nhân (`zca-js`)**
+
+- Doanh nghiệp quyết định có dùng **Zalo OA (Zalo doanh nghiệp)** hay không:
+  - **Dùng Zalo OA:** kênh Zalo đi theo mục 54.4 bằng adapter Java; không cần `zca-js`.
+  - **Không dùng Zalo OA:** xem xét cho phép **ngoại lệ duy nhất** của quy tắc này: chạy `zca-js` thành worker Node.js riêng. Lý do: port sang Java tốn công và phải bảo trì liên tục, vì thư viện giả lập giao thức Zalo Web (đăng nhập bằng QR, mã hóa, websocket) và thay đổi theo Zalo.
+- Nếu cho phép ngoại lệ, worker Node.js phải:
+  - chạy tiến trình / container riêng, không chung với ứng dụng Java;
+  - không chứa nghiệp vụ: chỉ nhận và gửi tin; mọi quyết định (AI, policy, duyệt) vẫn ở backend Java;
+  - nói chuyện với backend qua API nội bộ có xác thực hoặc qua queue;
+  - tuân thủ đủ 8 quy tắc của tùy chọn rủi ro cao (mục 54.6).
+- Cho tới khi có quyết định, Zalo cá nhân không nằm trong lộ trình (mục 38).
 
 ---
 
@@ -3742,7 +3773,7 @@ Repo này phục vụ tạo/lên lịch/đăng video và slideshow thông qua d�
 
 Repo này đọc dữ liệu TikTok công khai (profile, video, comments, search); README ghi rõ là read-only, không đăng bài, không đăng nhập tài khoản và không gửi DM. Không dùng cho customer-care inbox.
 
-**Kết luận lựa chọn:** Hiện chưa xác minh được một repo GitHub mã nguồn mở có sẵn MCP chuyên biệt, đầy đủ để đọc và trả lời TikTok DM. Nên dùng TikTok Business Messaging API/MCP được tài liệu chính thức công bố nếu tài khoản đủ điều kiện; nếu cần backend Java kiểm soát hoàn toàn, viết `TikTokMessagingAdapter` bằng Spring Boot dựa trên API chính thức và có thể tự expose các hàm nội bộ dưới dạng MCP tool sau này.
+**Kết luận lựa chọn:** Hiện chưa xác minh được một repo GitHub mã nguồn mở có sẵn MCP chuyên biệt, đầy đủ để đọc và trả lời TikTok DM. Dùng TikTok Business Messaging API chính thức qua `TikTokMessagingAdapter` viết bằng Spring Boot, khi tài khoản đủ điều kiện (mục 46.1). MCP do TikTok công bố chỉ dùng để tham khảo; nếu cần MCP thì tự expose các hàm Java thành MCP tool.
 
 ## Kiến trúc TikTok
 
@@ -3947,7 +3978,7 @@ Mọi adapter cài đặt `getCapabilities(accountId)` và trả về capability
 
 ### Tham chiếu repo / MCP / tài liệu theo chức năng
 
-Nguyên tắc: adapter Java gọi **API chính thức**; repo và MCP bên thứ ba chỉ dùng làm tham khảo (mục 43, 46). Trước khi dùng repo nào phải kiểm tra license, lịch sử commit và tình trạng bảo trì.
+Nguyên tắc: adapter Java gọi **API chính thức**; repo và MCP bên thứ ba chỉ dùng làm tham khảo (mục 46.1). Trước khi dùng repo nào phải kiểm tra license, lịch sử commit và tình trạng bảo trì.
 
 | Kênh | Chức năng | API / tài liệu chính thức | Repo / MCP tham khảo |
 |---|---|---|---|
@@ -3956,11 +3987,11 @@ Nguyên tắc: adapter Java gọi **API chính thức**; repo và MCP bên thứ
 | Facebook Groups | Đọc / bình luận / đăng trong group (**rủi ro cao**) | Không có (Meta đã ngừng Groups API) | [`teslashibe/facebook-go`](https://github.com/teslashibe/facebook-go) (mục 43, 54.6) |
 | Zalo OA | Tin tư vấn, quản lý người quan tâm, bài viết OA | [Zalo for Developers](https://developers.zalo.me/docs): mục Official Account API | [`zaloplatform/zalo-java-sdk`](https://github.com/zaloplatform/zalo-java-sdk) (chính thức nhưng cũ); [`@warriorteam/redai-zalo-sdk`](https://unpkg.com/@warriorteam/redai-zalo-sdk@1.39.2/README.md) (cộng đồng, OA API v3) |
 | Zalo OA | ZNS (báo cáo, nhắc lịch) | [Zalo for Developers](https://developers.zalo.me/docs): mục Zalo Notification Service | Repo demo E2EE ZNS (C#) trong [tổ chức zaloplatform](https://github.com/zaloplatform) |
-| Zalo cá nhân | Nhắn tin bằng tài khoản cá nhân (**rủi ro cao**) | Không có API chính thức | [`RFS-ADRENO/zca-js`](https://github.com/RFS-ADRENO/zca-js) (mục 54.6) |
+| Zalo cá nhân | Nhắn tin bằng tài khoản cá nhân (**rủi ro cao**) | Không có API chính thức | [`RFS-ADRENO/zca-js`](https://github.com/RFS-ADRENO/zca-js) (mục 54.6; chờ quyết định, mục 46.1) |
 | TikTok | Tin nhắn trực tiếp (DM) | [Business Messaging API](https://business-api.tiktok.com/portal/docs/business-messaging-api-get-started/v1.3) | [`justomat/tiktok-business-api-docs`](https://github.com/justomat/tiktok-business-api-docs) (OpenAPI để sinh client Java, mục 53) |
-| TikTok | Đăng video | [Content Posting API](https://developers.tiktok.com/docs/en/content-posting-api-get-started) | [`postoncehq/tiktok-mcp`](https://github.com/postoncehq/tiktok-mcp) (đăng qua dịch vụ PostOnce, mục 55.5) |
+| TikTok | Đăng video | [Content Posting API](https://developers.tiktok.com/docs/en/content-posting-api-get-started) | [`postoncehq/tiktok-mcp`](https://github.com/postoncehq/tiktok-mcp) (chỉ tham khảo luồng đăng, mục 55.5) |
 | TikTok | Tài khoản, bình luận, insights | [Accounts API](https://business-api.tiktok.com/portal/docs/accounts-api-overview/v1.3) | — |
-| TikTok | Quảng cáo, lead | [TikTok for Business MCP Server](https://ads-useast2a.tiktok.com/resources/help/article/about-tiktok-for-business-mcp-server?lang=en), Lead Generation API | — |
+| TikTok | Quảng cáo, lead | TikTok API for Business, Lead Generation API (gọi từ Java) | [TikTok for Business MCP Server](https://ads-useast2a.tiktok.com/resources/help/article/about-tiktok-for-business-mcp-server?lang=en) (tham khảo phạm vi tool) |
 | TikTok | Nghiên cứu nội dung công khai | — | [`HasData/tiktok-mcp`](https://github.com/HasData/tiktok-mcp) (chỉ đọc, không gửi DM, mục 57.7) |
 
 Không tìm thấy MCP chính thức cho Zalo OA (kiểm tra ngày 2026-10-20). Nếu cần, tự expose các hàm của Zalo adapter thành MCP tool như cách mục 53 đề xuất cho TikTok.
@@ -4077,10 +4108,10 @@ Hai kênh này **được giữ trong kế hoạch dưới dạng tùy chọn**,
 
 | Tùy chọn | Repo | Cách chạy |
 |---|---|---|
-| Facebook Groups | [`teslashibe/facebook-go`](https://github.com/teslashibe/facebook-go) (Go) | Port phần cần dùng sang `FacebookGroupsAdapter` Java (mục 43), hoặc chạy thành worker Go riêng |
-| Zalo cá nhân | [`RFS-ADRENO/zca-js`](https://github.com/RFS-ADRENO/zca-js) (Node.js, MIT, không chính thức, giả lập Zalo Web) | Backend là Java nên chạy thành **worker Node.js riêng**, nói chuyện với backend qua API nội bộ hoặc queue; README của chính dự án cảnh báo có thể bị khóa tài khoản |
+| Facebook Groups | [`teslashibe/facebook-go`](https://github.com/teslashibe/facebook-go) (Go) | Port phần cần dùng sang `FacebookGroupsAdapter` Java (mục 43, 46.1) |
+| Zalo cá nhân | [`RFS-ADRENO/zca-js`](https://github.com/RFS-ADRENO/zca-js) (Node.js, MIT, không chính thức, giả lập Zalo Web) | **Chờ quyết định** (mục 46.1): dùng Zalo OA thì không cần; không dùng Zalo OA thì xem xét ngoại lệ chạy worker Node.js riêng, không chứa nghiệp vụ. README của chính dự án cảnh báo có thể bị khóa tài khoản |
 
-Cả hai đều tuân theo 8 quy tắc ở trên; lỗi hay bị chặn ở worker không được ảnh hưởng tới kênh chính thức.
+Cả hai đều tuân theo 8 quy tắc ở trên; lỗi hay bị chặn ở adapter / worker của các tùy chọn này không được ảnh hưởng tới kênh chính thức.
 
 
 # 55. Mở rộng: đăng video trực tiếp từ Media Library lên các kênh
@@ -4210,13 +4241,13 @@ Mỗi adapter phải khai báo capability thực tế: upload video, đăng ngay
 
 ## 55.5 Repo và API nên dùng
 
-- **TikTok:** xem `postoncehq/tiktok-mcp` như một lựa chọn tham khảo cho luồng đăng/lên lịch qua dịch vụ PostOnce; đây không phải bằng chứng rằng mọi tính năng đều miễn phí hay chạy self-host. Nếu muốn tự triển khai native, dùng TikTok Content Posting API chính thức và kiểm tra app review, OAuth, quyền đăng video, loại tài khoản và giới hạn hiện hành. Không nhầm với Business Messaging API dành cho DM.
+- **TikTok:** đăng bằng `TikTokPublishingAdapter` (Java) gọi Content Posting API chính thức (mục 46.1); kiểm tra app review, OAuth, quyền đăng video, loại tài khoản và giới hạn hiện hành. `postoncehq/tiktok-mcp` chỉ để tham khảo luồng đăng / lên lịch, không đăng qua dịch vụ PostOnce. Không nhầm với Business Messaging API dành cho DM.
 - **Facebook:** ưu tiên Meta Graph API/Pages API chính thức cho đăng video lên Page; quyền ứng dụng và loại đích đăng quyết định khả năng thực hiện.
 - **Zalo OA:** adapter chỉ triển khai chức năng video/article mà API OA và tài khoản thực tế được cấp quyền hỗ trợ. Không khẳng định đây là API đăng Zalo Short; đăng video OA và đăng video ngắn trên bề mặt Zalo Short là hai khả năng khác nhau.
-- **MCP:** có thể bọc các hàm nội bộ như `video_library_search`, `video_publish_draft`, `video_schedule_publish`, `video_get_publish_status` thành MCP tools nếu cần. Nhưng phần xử lý file, phân quyền, duyệt, retry và audit vẫn nên do Java backend quản lý.
+- **MCP:** nếu cần, expose các hàm nội bộ như `video_library_search`, `video_publish_draft`, `video_schedule_publish`, `video_get_publish_status` thành MCP tool ngay trong ứng dụng Java (MCP Java SDK, mục 46.1). Phần xử lý file, phân quyền, duyệt, retry và audit vẫn do backend Java quản lý.
 
 Repo tham khảo đã có trong tài liệu:
-- TikTok posting qua dịch vụ bên thứ ba: https://github.com/postoncehq/tiktok-mcp
+- TikTok posting (chỉ tham khảo luồng): https://github.com/postoncehq/tiktok-mcp
 - TikTok Business API OpenAPI reference: https://github.com/justomat/tiktok-business-api-docs
 - Meta Business MCP reference: https://github.com/oliverames/meta-mcp-server
 - Facebook Groups reference (không phải adapter đăng Page chính thức): https://github.com/teslashibe/facebook-go
@@ -4535,38 +4566,35 @@ Giữ `TikTokMessagingAdapter`, `TikTokPublishingAdapter` và `TikTokLeadSyncSer
 Trước khi viết adapter production, lập checklist xác minh trực tiếp trong TikTok for Business/Developer Portal: thị trường Việt Nam, loại tài khoản, quyền app đã duyệt, OAuth scopes, webhook event, rate limit, cửa sổ nhắn tin, quy tắc lưu dữ liệu và điều khoản sử dụng. Nếu một API không hỗ trợ use case, chuyển sang quy trình thủ công hoặc kênh được cho phép; không dùng cách lách quyền truy cập.
 
 
-## 57.7 Chiến lược MCP cho TikTok
+## 57.7 Repo / MCP cho TikTok và cách dùng
 
-Không phụ thuộc vào một MCP duy nhất để làm tất cả nghiệp vụ. MCP là lớp công cụ cho AI gọi; quyền truy cập và thao tác thực tế vẫn do API, OAuth scope, quyền tài khoản và Policy Engine quyết định.
+Theo quy tắc ở mục 46.1: mọi chức năng TikTok chạy production đều là adapter Java gọi API chính thức; repo và MCP chỉ dùng làm tài liệu tham khảo.
 
-| Nhu cầu | Lựa chọn đề xuất | Dùng cho | Không nên giả định |
+| Nhu cầu | Chạy production bằng | Tham khảo (không chạy ở production) | Không nên giả định |
 |---|---|---|---|
-| Tìm video công khai, hồ sơ creator, bình luận và nghiên cứu xu hướng | HasData TikTok MCP: https://github.com/HasData/tiktok-mcp | Research Agent tìm ví dụ nội dung, chủ đề, hashtag và phản hồi công khai | MCP này là read-only; không đăng video, không gửi DM và không truy cập dữ liệu riêng tư |
-| Quản lý quảng cáo TikTok | TikTok for Business MCP Server nếu tài khoản/ứng dụng được cấp quyền và endpoint phù hợp; tài liệu: https://ads-useast2a.tiktok.com/resources/help/article/about-tiktok-for-business-mcp-server?lang=en | Agent phân tích/điều hành chiến dịch quảng cáo và báo cáo trong phạm vi được cấp | Không mặc định mọi tài khoản, thị trường hoặc chiến dịch đều đủ điều kiện |
-| Đăng video lên tài khoản TikTok của công ty | Ưu tiên TikTok Content Posting API chính thức, được gọi từ `TikTokPublishingAdapter` trong Java; tài liệu: https://developers.tiktok.com/docs/en/content-posting-api-get-started | Upload/draft/direct post và truy vấn trạng thái xuất bản theo scope đã được duyệt | Không mặc định MCP cộng đồng có quyền đăng; ứng dụng chưa qua audit có thể bị giới hạn bài đăng ở chế độ riêng tư |
-| Nhận lead từ quảng cáo/form | TikTok for Business/Lead Generation API và webhook chính thức, qua `TikTokLeadSyncService` | Đồng bộ lead có kiểm soát, chống trùng, phân công sales và attribution | Không coi public-data MCP là công cụ lấy lead riêng tư |
-| Tin nhắn trực tiếp và phản hồi bình luận | API chính thức phù hợp nếu TikTok cấp quyền; nếu chưa có quyền thì dùng tác vụ nhân viên hoặc AI draft | Chăm sóc khách hàng trong phạm vi nền tảng cho phép | Không coi HasData TikTok MCP hoặc public scraper là inbox/DM API |
+| Đăng video lên tài khoản công ty | `TikTokPublishingAdapter` (Java) → [Content Posting API](https://developers.tiktok.com/docs/en/content-posting-api-get-started) | [`postoncehq/tiktok-mcp`](https://github.com/postoncehq/tiktok-mcp): luồng đăng / lên lịch | Ứng dụng chưa qua audit có thể bị giới hạn bài đăng ở chế độ riêng tư |
+| Nhận lead từ quảng cáo / form | `TikTokLeadSyncService` (Java) → Lead Generation API + webhook | [`justomat/tiktok-business-api-docs`](https://github.com/justomat/tiktok-business-api-docs) (OpenAPI) | Không coi dữ liệu công khai là lead |
+| Tin nhắn trực tiếp, bình luận | `TikTokMessagingAdapter` (Java) → Business Messaging API / Accounts API nếu được cấp quyền; chưa có quyền thì nhân viên xử lý trong app, AI soạn nháp | `justomat/tiktok-business-api-docs` | Không coi scraper dữ liệu công khai là inbox |
+| Quản lý quảng cáo, báo cáo (sau MVP) | `TikTokAdsService` (Java) → REST API của TikTok API for Business | [TikTok for Business MCP Server](https://ads-useast2a.tiktok.com/resources/help/article/about-tiktok-for-business-mcp-server?lang=en): tham khảo phạm vi tool | Không mặc định mọi tài khoản, thị trường hoặc chiến dịch đều đủ điều kiện |
+| Nghiên cứu nội dung công khai (tùy chọn) | Nếu cần: Java gọi REST API của nhà cung cấp dữ liệu đã được duyệt về điều khoản, chi phí, chính sách dữ liệu | [`HasData/tiktok-mcp`](https://github.com/HasData/tiktok-mcp) | Chỉ đọc dữ liệu công khai; không đăng, không gửi DM |
 
-### Cách nối MCP với hệ thống Java
+### Cách nối với hệ thống Java
 
 ```text
 Vben Admin / AI Orchestrator
           |
-          +--> TikTok Research MCP (đọc dữ liệu công khai)
+          +--> Java TikTokPublishingAdapter --> Content Posting API
           |
-          +--> TikTok Business MCP (quảng cáo, nếu đủ quyền)
+          +--> Java TikTokLeadSyncService   --> Lead Generation API / Webhook
           |
-          +--> Java TikTokPublishingAdapter --> Official Content Posting API
+          +--> Java TikTokMessagingAdapter  --> Business Messaging API (nếu được cấp quyền)
           |
-          +--> Java TikTokLeadSyncService --> Lead API / Webhook
-          |
-          +--> Java TikTokMessagingAdapter --> API tin nhắn được cấp quyền (nếu có)
+          +--> Java TikTokAdsService        --> TikTok API for Business (quảng cáo, sau MVP)
 ```
 
-- MCP research có thể phục vụ AI tìm chủ đề, phân tích nội dung đối thủ và lấy tín hiệu công khai; lưu URL nguồn, thời điểm thu thập và giới hạn sử dụng dữ liệu.
-- Không cho model tự gọi công cụ có tác động bên ngoài mà không qua kiểm tra quyền. Đăng video, thay đổi ngân sách quảng cáo, gửi tin hoặc thay đổi chiến dịch phải qua `Policy Engine`, phân quyền và audit log; MVP nên có bước duyệt của nhân viên.
-- Giữ secret/API key ở backend hoặc secret manager, không đặt trong Vben Admin/browser. MCP từ bên thứ ba cần đánh giá giấy phép, chi phí, chính sách dữ liệu, độ ổn định và quyền truy cập trước khi dùng production.
-- TikTok không có một MCP chính thức duy nhất bao trùm mọi chức năng tài khoản; hãy xem MCP cộng đồng là công cụ bổ trợ, không phải thay thế API chính thức hay cơ chế cấp quyền của TikTok.
+- Không cho model tự gọi công cụ có tác động bên ngoài mà không qua kiểm tra quyền. Đăng video, thay đổi ngân sách quảng cáo, gửi tin hoặc thay đổi chiến dịch phải qua `Policy Engine`, phân quyền và audit log; MVP có bước duyệt của nhân viên.
+- Giữ secret / API key ở backend hoặc secret manager, không đặt trong Vben Admin hay trình duyệt.
+- Nếu muốn dùng MCP cho công cụ phát triển, tự expose các hàm Java ở trên bằng MCP Java SDK (mục 46.1).
 
 ## 57.8 Phương án triển khai dành riêng cho tài khoản TikTok của công ty
 

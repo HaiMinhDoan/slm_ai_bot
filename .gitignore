@@ -1,0 +1,5 @@
+# Bản clone repo / MCP tham khảo (kế hoạch mục 46.1): không commit.
+# Tạo lại bằng: bash references/clone.sh. Chỉ references/README.md và references/clone.sh được commit.
+/references/*/
+
+.DS_Store
