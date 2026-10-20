@@ -69,6 +69,24 @@ app:
     secret-key: ${MINIO_SECRET_KEY:}
     bucket: ${MINIO_BUCKET:slm-ai-media}
 
+  # Meta App + Page cho Messenger (mục 54.3). Webhook: https://<tên-miền>/api/v1/webhooks/facebook
+  facebook:
+    app-id: ${FB_APP_ID:}
+    app-secret: ${FB_APP_SECRET:}
+    verify-token: ${FB_VERIFY_TOKEN:}
+    page-id: ${FB_PAGE_ID:}
+    page-access-token: ${FB_PAGE_ACCESS_TOKEN:}
+    graph-api-version: ${FB_GRAPH_API_VERSION:v26.0}
+    graph-api-base-url: ${FB_GRAPH_API_BASE_URL:https://graph.facebook.com}
+
+  # Hội thoại (mục 19)
+  conversation:
+    debounce: ${CONVERSATION_DEBOUNCE:6s}
+    auto-handback: ${CONVERSATION_AUTO_HANDBACK:24h}
+    messaging-window: 24h
+    worker-enabled: ${CONVERSATION_WORKER_ENABLED:true}
+    worker-batch-size: 50
+
 springdoc:
   api-docs:
     path: /v3/api-docs

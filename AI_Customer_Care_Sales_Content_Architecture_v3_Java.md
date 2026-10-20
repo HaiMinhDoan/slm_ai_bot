@@ -2614,7 +2614,7 @@ CREATE TABLE kt_ung_vien_vi_du (                      -- duyệt xong mới đư
 
 | Thành phần | Công nghệ |
 |---|---|
-| Backend | Java 21 LTS + Spring Boot 3; một ứng dụng chia module (modular monolith) + một worker |
+| Backend | Java 17 + Spring Boot 3.5 (cùng phiên bản với `slm_v2`, chốt 2026-10-20); một ứng dụng chia module (modular monolith) + một worker |
 | API | REST; stream (SSE) cho chat của Trợ lý nội dung |
 | AI | Claude API qua Anthropic Java SDK; model chọn bằng bộ test (mục 20) |
 | Database | PostgreSQL 16 + Flyway |
@@ -2779,7 +2779,7 @@ Admin Dashboard sử dụng **Vben Admin (Vue 3 + TypeScript)**, không dùng Ne
 - Vue 3 + TypeScript + Vite.
 - Dùng UI component library theo template Vben đã chọn; nếu dùng bản Vben Ant Design Vue thì thống nhất component của Ant Design Vue, không trộn nhiều UI framework tùy tiện.
 - Vue Router cho điều hướng; Pinia cho state dùng chung; Axios hoặc HTTP client hiện có cho REST API.
-- Backend vẫn là Java 21 + Spring Boot; frontend gọi REST API qua `/api` hoặc base URL cấu hình theo môi trường.
+- Backend vẫn là Java 17 + Spring Boot 3.5; frontend gọi REST API qua `/api` hoặc base URL cấu hình theo môi trường.
 - JWT/OAuth2 được kiểm tra tại backend; menu/route permission ở frontend chỉ phục vụ UX, không thay thế authorization phía backend.
 
 ## Các module chính
@@ -3179,7 +3179,7 @@ Hệ thống **không bỏ các repo Facebook đã chọn**. Thay vào đó:
 
 1. Dùng repo có sẵn làm **reference implementation / source of logic**.
 2. Giữ nguyên các flow, API operation, authentication flow, request/response mapping, pagination, retry, error handling và business capabilities cần thiết.
-3. Viết lại phần backend/adapter cần tích hợp bằng **Java 21 + Spring Boot** (mục 30).
+3. Viết lại phần backend/adapter cần tích hợp bằng **Java 17 + Spring Boot 3.5** (mục 30).
 4. Không để Claude hoặc business logic phụ thuộc trực tiếp vào MCP repo.
 
 ### Kiến trúc sau khi chuyển sang Java
@@ -3496,7 +3496,7 @@ Lợi ích:
 
 Áp dụng cho mọi kênh (Facebook, Zalo, TikTok) và mọi repo / MCP được nhắc trong kế hoạch.
 
-1. **Mọi code tích hợp chạy production đều viết bằng Java 21 + Spring Boot**, nằm trong cùng ứng dụng (mục 30, 31). Không chạy MCP server, binary Go hay Node.js của bên thứ ba ở production.
+1. **Mọi code tích hợp chạy production đều viết bằng Java 17 + Spring Boot 3.5**, nằm trong cùng ứng dụng (mục 30, 31). Không chạy MCP server, binary Go hay Node.js của bên thứ ba ở production.
 2. **Repo và MCP bên thứ ba chỉ là tài liệu tham khảo:** đọc để biết endpoint, luồng xác thực, request/response, pagination, retry, rate limit và các lỗi hay gặp; sau đó viết adapter Java gọi **API chính thức**.
 3. **Quy trình port** (chi tiết ở mục 43):
    1. Đọc source và `LICENSE` của repo.
@@ -3743,7 +3743,7 @@ Application chỉ nhận secret khi cần.
 
 ## 52.1 Quyết định công nghệ cuối cùng
 
-**Backend chính: Java 21 LTS + Spring Boot** (mục 30).
+**Backend chính: Java 17 + Spring Boot 3.5** (mục 30).
 
 **Repo Facebook:** vẫn sử dụng các repo đã đề xuất làm nguồn tham khảo logic; không loại bỏ repo chỉ vì backend Java. Phần cần thiết được port thành Java adapters trong hệ thống (mục 46.1).
 
@@ -3954,7 +3954,7 @@ Nguồn tham khảo:
 - TikTok posting MCP: https://github.com/postoncehq/tiktok-mcp
 - Public-data TikTok MCP: https://github.com/HasData/tiktok-mcp
 
-**Quyết định:** Backend lõi tiếp tục là Java 21 LTS + Spring Boot. TikTok được thêm thành channel adapter độc lập, chia sẻ Customer 360, Conversation Service, AI Orchestrator, Knowledge Base, Policy Engine và Sales API với Facebook/Zalo. Trước khi cam kết tự động hóa DM, cần xác minh quyền truy cập thật của tài khoản/app TikTok tại thị trường Việt Nam.
+**Quyết định:** Backend lõi tiếp tục là Java 17 + Spring Boot 3.5. TikTok được thêm thành channel adapter độc lập, chia sẻ Customer 360, Conversation Service, AI Orchestrator, Knowledge Base, Policy Engine và Sales API với Facebook/Zalo. Trước khi cam kết tự động hóa DM, cần xác minh quyền truy cập thật của tài khoản/app TikTok tại thị trường Việt Nam.
 
 ## 54.1 Mã kênh dùng chung
 
@@ -4868,7 +4868,7 @@ Kết quả rà soát kiến trúc ngày 2026-10-20, không xét rủi ro của 
 | 8 | Chuyển nhân viên không có đường trả lại AI; echo của chính app | Trung bình | Đã áp dụng | 19, 29, 54.3 |
 | 9 | Hủy lượt nhưng tool ghi đã chạy | Trung bình | Đã áp dụng | 19 |
 | 10 | Gộp khách trùng số điện thoại chưa có quy trình | Trung bình | Đã áp dụng | 29 |
-| 11 | Nhân viên phải dùng hai inbox | Trung bình | Chờ doanh nghiệp | 34 |
+| 11 | Nhân viên phải dùng hai inbox | Trung bình | Đã chốt: inbox admin là nơi làm việc chính (2026-10-20) | 34 |
 | 12 | Bộ test câu đơn lẻ không đo được hội thoại nhiều lượt | Trung bình | Đã áp dụng | 35 |
 | 13 | Chọn model bắt đầu từ model rẻ nhất là ngược | Thấp | Đã áp dụng | 20.1, 36 |
 | 14 | Thiếu công tắc dừng toàn cục và KPI mục tiêu | Trung bình | Công tắc đã áp dụng; KPI chờ doanh nghiệp | 33.2, 38 |
@@ -4903,7 +4903,7 @@ Cho tới khi chốt, các chức năng cho khách đã lắp đặt (CSKH sau b
 | 9 | Tác dụng phụ của tool | Tool ghi chỉ áp dụng khi lượt được chốt, cùng transaction (mục 19) |
 | 10 | Gộp khách trùng | Quy trình gộp, cột `gop_vao_id`, bảng `khach_hang_lich_su_gop`; một số điện thoại = một khách / hộ (mục 29) |
 
-**11. Hai inbox (chờ doanh nghiệp).** Nhân viên quen trả lời trong Meta Business Suite; bản nháp AI lại nằm ở inbox admin. Nếu nhân viên bỏ qua inbox admin thì không có dữ liệu `kt_sua_ban_nhap` để bật `AUTO`. Cần chọn một trong hai:
+**11. Hai inbox (đã chốt 2026-10-20: inbox admin là nơi làm việc chính).** Nhân viên quen trả lời trong Meta Business Suite; bản nháp AI lại nằm ở inbox admin. Nếu nhân viên bỏ qua inbox admin thì không có dữ liệu `kt_sua_ban_nhap` để bật `AUTO`. Cần chọn một trong hai:
 
 - **Inbox admin là nơi làm việc chính:** nhân viên trả lời mọi tin Messenger từ admin; Meta Business Suite chỉ dùng khi admin lỗi. Inbox admin cần đủ tiện (thông báo, lọc, phím tắt) để thay được.
 - **Giữ Meta Business Suite:** AI trả lời `AUTO` cho 5 loại câu hỏi đã chốt (mục 35); phần còn lại AI ghi nháp thành ghi chú nội bộ / việc cho nhân viên, nhân viên trả lời trong Meta Business Suite và hệ thống thu tin trả lời qua echo để so với nháp.
@@ -4963,6 +4963,6 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 | Điều kiện báo giá: VAT, phụ phí, chiết khấu, hiệu lực (4.2.8) | Doanh nghiệp | Mọi câu trả lời có giá |
 | Danh sách tỉnh theo miền và vùng phục vụ (4.2.9) | Doanh nghiệp | Quy đổi giá |
 | Pháp lý dữ liệu cá nhân (59.5) | Doanh nghiệp + pháp chế | Chạy với khách thật |
-| Inbox làm việc của nhân viên (59.3 mục 11) | Doanh nghiệp | Inbox admin, dữ liệu sửa nháp |
+| ~~Inbox làm việc của nhân viên (59.3 mục 11)~~ Đã chốt: inbox admin | Doanh nghiệp | Inbox admin, dữ liệu sửa nháp |
 | KPI mục tiêu và tiêu chí qua phase (38) | Doanh nghiệp | Quyết định mở rộng |
 | MVP rút gọn và các phần hoãn (59.6, 59.7) | Người phụ trách dự án | Lộ trình |

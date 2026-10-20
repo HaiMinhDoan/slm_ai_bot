@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---------- Giai đoạn build ----------
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /src
 
 COPY pom.xml ./
@@ -13,7 +13,7 @@ RUN --mount=type=cache,target=/root/.m2,sharing=locked \
     mvn -B -q clean package -DskipTests
 
 # ---------- Giai đoạn chạy ----------
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:17-jre
 WORKDIR /app
 
 # curl cho HEALTHCHECK, tzdata cho TZ

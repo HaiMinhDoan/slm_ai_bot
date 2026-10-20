@@ -15,13 +15,16 @@ public class MinioConfig {
     @Bean
     public MinioClient minioClient(AppProperties appProperties) {
         AppProperties.Minio minio = appProperties.minio();
-        return MinioClient.builder()
-                .endpoint(minio.endpoint())
-                .credentials(nullToEmpty(minio.accessKey()), nullToEmpty(minio.secretKey()))
-                .build();
+        MinioClient.Builder builder = MinioClient.builder().endpoint(minio.endpoint());
+        // MinioClient từ chối key rỗng ngay lúc dựng; chưa cấu hình key thì dựng client không đăng nhập
+        // để ứng dụng vẫn khởi động, lỗi chỉ xảy ra ở thao tác media.
+        if (!isBlank(minio.accessKey()) && !isBlank(minio.secretKey())) {
+            builder.credentials(minio.accessKey(), minio.secretKey());
+        }
+        return builder.build();
     }
 
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }
