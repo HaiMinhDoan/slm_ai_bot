@@ -3,8 +3,12 @@
 # Quy tắc (kế hoạch mục 46.1): chỉ đọc để port sang Java. KHÔNG cài đặt, build, chạy
 # hay import code trong các thư mục này vào ứng dụng.
 #
+# Bản clone được commit vào repo dưới dạng file thường: thư mục .git của từng repo bị xóa,
+# commit gốc ghi ở <thư mục>/.ref-commit. File build sẵn (bin/, obj/, *.jar) không commit
+# (xem references/.gitignore).
+#
 # Dùng:  bash references/clone.sh            # clone những repo còn thiếu
-#        bash references/clone.sh --update   # cập nhật repo đã có lên commit mới nhất
+#        bash references/clone.sh --update   # tải lại toàn bộ lên commit mới nhất
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -31,19 +35,14 @@ NPM_PACKAGES=(
 
 for entry in "${REPOS[@]}"; do
   dir="${entry%%|*}"; url="${entry#*|}"
-  if [[ -d "$dir/.git" ]]; then
-    if [[ "$UPDATE" == "--update" ]]; then
-      echo "update  $dir"
-      git -C "$dir" fetch --depth 1 --quiet origin
-      git -C "$dir" reset --hard --quiet FETCH_HEAD
-    else
-      echo "skip    $dir (đã có)"
-    fi
-  else
-    echo "clone   $dir"
-    mkdir -p "$(dirname "$dir")"
-    git clone --depth 1 --quiet --no-recurse-submodules "$url" "$dir"
+  if [[ -d "$dir" && "$UPDATE" != "--update" ]]; then
+    echo "skip    $dir (đã có)"; continue
   fi
+  echo "clone   $dir"
+  rm -rf "$dir"; mkdir -p "$(dirname "$dir")"
+  git clone --depth 1 --quiet --no-recurse-submodules "$url" "$dir"
+  git -C "$dir" log -1 --format='%h  %cs' > "$dir/.ref-commit"
+  rm -rf "$dir/.git"
 done
 
 for entry in "${NPM_PACKAGES[@]}"; do
@@ -54,15 +53,12 @@ for entry in "${NPM_PACKAGES[@]}"; do
   echo "download $dir"
   rm -rf "$dir"; mkdir -p "$dir"
   curl -fsSL "$url" | tar -xz -C "$dir" --strip-components=1   # chỉ giải nén, không chạy npm install
+  ver="${url##*-}"; echo "npm ${ver%.tgz}" > "$dir/.ref-commit"
 done
 
 echo
 echo "Commit / phiên bản đang có:"
-for entry in "${REPOS[@]}"; do
+for entry in "${REPOS[@]}" "${NPM_PACKAGES[@]}"; do
   dir="${entry%%|*}"
-  printf '  %-34s %s\n' "$dir" "$(git -C "$dir" log -1 --format='%h  %cs')"
-done
-for entry in "${NPM_PACKAGES[@]}"; do
-  dir="${entry%%|*}"
-  ver="${entry##*-}"; printf '  %-34s npm %s\n' "$dir" "${ver%.tgz}"
+  printf '  %-34s %s\n' "$dir" "$(cat "$dir/.ref-commit" 2>/dev/null || echo '?')"
 done

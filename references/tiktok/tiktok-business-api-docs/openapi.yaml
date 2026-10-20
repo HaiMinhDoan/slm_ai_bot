@@ -1,0 +1,3463 @@
+openapi: 3.1.0
+info:
+  title: TikTok Business API
+  version: "1.3"
+  description: |
+    TikTok Business API reference — messaging, comments, content publishing, and webhooks.
+
+    **Base URL:** `https://business-api.tiktok.com/open_api/v1.3`
+
+    **Rate limit:** 10 QPS on Business Messaging endpoints. Back off on error `40100`.
+
+    **Authentication:** Most endpoints require an `Access-Token` header (short-term token, valid 1 day).
+    Auth endpoints use `client_id` + `client_secret` in the request body — no header needed.
+
+    ### Access token lifecycle
+    - `access_token`: valid **1 day**
+    - `refresh_token`: valid **1 year**. When it expires, re-run the user authorization flow.
+    - Refresh via `POST /tt_user/oauth2/refresh_token/` before the 1-day window closes.
+
+    ### Common error codes
+
+    | Code | Meaning | Action |
+    |------|---------|--------|
+    | 40001 | No permission | Check app scopes; re-authorize user |
+    | 40002 | Parameter error | Read `message` for the field |
+    | 40007 | Object doesn't exist | Verify ID/URL |
+    | 40064 | DM blocked by rules | Likely outside 48 h window or cold-start |
+    | 40100 | Rate limited | Back off; respect 10 QPS |
+    | 40105 | Bad/expired access token | Refresh token |
+    | 40908 | Unsupported file type | JPG/PNG only, ≤ 3 MB |
+    | 51065 | System error | Retry with backoff |
+
+    ### 48-hour messaging windows (non-mutual follow)
+    - After user's **first** message → up to **10** replies in 48 h
+    - After **each** user reply → **unlimited** for 48 h
+    - After **48 h silence** → only **3** more messages until user replies again
+
+  contact:
+    name: TikTok For Developers
+    url: https://business-api.tiktok.com
+
+servers:
+  - url: https://business-api.tiktok.com/open_api/v1.3
+    description: Production
+
+security:
+  - AccessToken: []
+
+tags:
+  - name: Authentication
+    description: |
+      OAuth 2.0 token exchange and refresh.
+      These endpoints do **not** use the `Access-Token` header.
+  - name: Messages
+    description: Send direct messages (text, image, post, templates, sender actions, quoted replies, comment replies).
+  - name: Conversations
+    description: List conversations and read message history.
+  - name: Media
+    description: Upload and download media attachments; check send capability.
+  - name: Direct Reply
+    description: |
+      Comment-to-Message configuration.
+      Only available for Business Accounts registered in Vietnam, Indonesia, and Thailand.
+  - name: Comments
+    description: Read and reply to comments on owned videos.
+  - name: Publish
+    description: Check publishing status of video/photo posts submitted via API.
+  - name: Videos
+    description: |
+      Read post data and engagement insights for an owned TikTok Business Account.
+      Covers videos, photo posts, and text posts (both organic and "Only show in ads" content).
+  - name: Webhooks
+    description: |
+      Subscribe to push events. One subscription per `event_type` per developer app.
+
+      | `event_type` | Events | Permission |
+      |---|---|---|
+      | `DIRECT_MESSAGE` | All `im_*` DM events | Business Messaging |
+      | `BRAND_MENTION` | `brand.mention.event` (2–3 h latency) | Mentions |
+      | `VIDEO` | `post.publish.*` lifecycle events | TikTok Accounts > Business Content |
+      | `COMMENT` | `comment.update` | TikTok Accounts > Business Comment + `comment.list` scope |
+
+paths:
+
+  # ── Authentication ─────────────────────────────────────────────────────────
+
+  /tt_user/oauth2/token/:
+    post:
+      tags: [Authentication]
+      summary: Exchange authorization code for access token
+      description: |
+        Exchange the `auth_code` received from the OAuth redirect for a short-term
+        `access_token` and a long-term `refresh_token`.
+
+        The `auth_code` is valid for **10 minutes** and can only be used **once**.
+
+        The returned `open_id` is the `business_id` for all Business Messaging API calls.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id, client_secret, grant_type, auth_code, redirect_uri]
+              properties:
+                client_id:
+                  type: string
+                  description: Your developer app ID (My Apps > App Detail > Basic Information).
+                client_secret:
+                  type: string
+                  description: Your developer app secret.
+                grant_type:
+                  type: string
+                  enum: [authorization_code]
+                auth_code:
+                  type: string
+                  description: Authorization code from the OAuth redirect. Valid 10 min, single-use.
+                redirect_uri:
+                  type: string
+                  description: Must exactly match the registered TikTok account holder redirect URL.
+            example:
+              client_id: "{{client_id}}"
+              client_secret: "{{client_secret}}"
+              grant_type: authorization_code
+              auth_code: "{{auth_code}}"
+              redirect_uri: "https://yourapp.example.com/callback"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TokenData'
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data:
+                  access_token: "{{access_token}}"
+                  token_type: Bearer
+                  scope: "message.list.manage,message.list.send,message.list.read,user.account.type"
+                  expires_in: 86400
+                  refresh_token: "{{refresh_token}}"
+                  refresh_token_expires_in: 31536000
+                  open_id: "{{open_id}}"
+
+  /tt_user/oauth2/refresh_token/:
+    post:
+      tags: [Authentication]
+      summary: Refresh access token
+      description: |
+        Renew a short-term access token using the `refresh_token`.
+        The refresh token is valid for **1 year**. If it expires, re-run the user authorization flow.
+
+        Always persist the new `refresh_token` returned in the response — it may rotate.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id, client_secret, grant_type, refresh_token]
+              properties:
+                client_id:
+                  type: string
+                client_secret:
+                  type: string
+                grant_type:
+                  type: string
+                  enum: [refresh_token]
+                refresh_token:
+                  type: string
+                  description: Refresh token from a previous token response.
+            example:
+              client_id: "{{client_id}}"
+              client_secret: "{{client_secret}}"
+              grant_type: refresh_token
+              refresh_token: "{{refresh_token}}"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TokenData'
+
+  # ── Conversations ──────────────────────────────────────────────────────────
+
+  /business/message/conversation/list/:
+    get:
+      tags: [Conversations]
+      summary: List conversations
+      description: |
+        Returns conversations from the past **90 days**, up to **100** per request.
+
+        **`conversation_id` encoding:** When using `conversation_id` in subsequent API calls,
+        URL-encode `+` as `%2B` in query strings to avoid a "Param conversation_id is invalid" error.
+      parameters:
+        - name: business_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: "`open_id` from the token response."
+        - name: conversation_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [STRANGER, SINGLE]
+          description: |
+            `STRANGER`: user messaged the business but business has not yet replied.
+            `SINGLE`: one-on-one conversations where the business has replied at least once.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+          description: Max conversations to return per page.
+        - name: cursor
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Pagination cursor. Pass the `cursor` from previous response when `has_more=true`.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          conversations:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                conversation_id:
+                                  type: string
+                                  example: "a1AbcBdeCfghDijkEF2b3+lmGn=="
+                                update_time:
+                                  type: integer
+                                  description: Unix ms of the last message.
+                                referral:
+                                  type: object
+                                  description: Attribution info (ad or tiktok.me link).
+                                  properties:
+                                    ad:
+                                      type: array
+                                      description: Historical referral ads for this conversation.
+                                      items:
+                                        type: object
+                                        properties:
+                                          advertiser_id:
+                                            type: string
+                                          ad_id:
+                                            type: string
+                                          ad_name:
+                                            type: string
+                                          timestamp:
+                                            type: integer
+                                            description: Unix seconds of the click.
+                                          embed_url:
+                                            type: string
+                                          message_material_id:
+                                            type: string
+                                            description: Upgraded Smart+ creative ID.
+                                    short_link:
+                                      type: array
+                                      description: tiktok.me link referral info.
+                                      items:
+                                        type: object
+                                        properties:
+                                          ref:
+                                            type: string
+                                            description: URL-encoded referral param (max 2,083 chars; alphanumeric + `-_=`).
+                                          prefilled_message:
+                                            type: string
+                                          prefilled_message_audit_status:
+                                            type: string
+                                            enum: [PASS, REJECT]
+                          has_more:
+                            type: boolean
+                          cursor:
+                            type: integer
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data:
+                  conversations:
+                    - conversation_id: "{{conversation_id}}"
+                      update_time: 1719447205701
+                      referral: {}
+                    - conversation_id: "{{conversation_id}}"
+                      update_time: 1719389022512
+                      referral:
+                        ad:
+                          - advertiser_id: "{{advertiser_id}}"
+                            ad_id: "{{ad_id}}"
+                            ad_name: "Summer Sale"
+                            timestamp: 1714430514
+                            embed_url: "https://www.tiktok.com/player/v1/..."
+                  has_more: false
+                  cursor: 2
+
+  /business/message/content/list/:
+    get:
+      tags: [Conversations]
+      summary: List messages in a conversation
+      description: |
+        Returns the **20 most recent messages** in a conversation.
+
+        **`conversation_id` encoding:** URL-encode `+` as `%2B` in query strings.
+      parameters:
+        - name: business_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: conversation_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: |
+            From `GET /business/message/conversation/list/`.
+            If you see "Param conversation_id is invalid", URL-encode `+` as `%2B`.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          participants:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Participant'
+                          messages:
+                            type: array
+                            description: Max 20 most recent messages.
+                            items:
+                              type: object
+                              properties:
+                                message_id:
+                                  type: string
+                                conversation_id:
+                                  type: string
+                                sender:
+                                  type: string
+                                recipient:
+                                  type: string
+                                timestamp:
+                                  type: integer
+                                  description: Unix ms.
+                                message_type:
+                                  type: string
+                                  enum: [TEXT, IMAGE, SHARE_POST, VIDEO, EMOJI, STICKER, TEMPLATE, OTHER]
+                                from_user:
+                                  $ref: '#/components/schemas/FromUser'
+                                to_user:
+                                  $ref: '#/components/schemas/FromUser'
+                                text:
+                                  type: object
+                                  description: Present when `message_type=TEXT`.
+                                  properties:
+                                    body:
+                                      type: string
+                                image:
+                                  type: object
+                                  description: Present when `message_type=IMAGE`.
+                                  properties:
+                                    media_id:
+                                      type: string
+                                share_post:
+                                  type: object
+                                  description: Present when `message_type=SHARE_POST`.
+                                  properties:
+                                    embed_url:
+                                      type: string
+                                video:
+                                  type: object
+                                  description: Present when `message_type=VIDEO`.
+                                  properties:
+                                    media_id:
+                                      type: string
+                                sticker:
+                                  type: object
+                                  description: Present when `message_type=STICKER`. URL expires in 30 days (`x-expires`).
+                                  properties:
+                                    url:
+                                      type: string
+                                emoji:
+                                  type: object
+                                  description: Present when `message_type=EMOJI`. URL never expires.
+                                  properties:
+                                    url:
+                                      type: string
+                                template:
+                                  type: object
+                                  description: Present when `message_type=TEMPLATE`.
+                                  properties:
+                                    type:
+                                      type: string
+                                      enum: [QA_BUTTON_CARD, QA_LINK_CARD]
+                                    title:
+                                      type: string
+                                    buttons:
+                                      type: array
+                                      items:
+                                        type: object
+                                        properties:
+                                          type:
+                                            type: string
+                                            enum: [REPLY]
+                                          title:
+                                            type: string
+                                          id:
+                                            type: string
+                                reactions:
+                                  type: array
+                                  items:
+                                    $ref: '#/components/schemas/Reaction'
+                                message_tag:
+                                  type: object
+                                  properties:
+                                    source:
+                                      type: string
+                                      enum: [APP, WEB, API, OTHERS, UNKNOWN_SOURCE]
+                                auto_message_type:
+                                  type: string
+                                  enum: [WELCOME_MESSAGE, SUGGESTED_QUESTION, AUTO_REPLY]
+                                  description: Only present for automatic messages.
+                                referenced_message_info:
+                                  type: object
+                                  description: Present for quoted replies.
+                                  properties:
+                                    referenced_message_id:
+                                      type: string
+
+  # ── Messages ───────────────────────────────────────────────────────────────
+
+  /business/message/send/:
+    post:
+      tags: [Messages]
+      summary: Send a message to a conversation
+      description: |
+        Send a message to a conversation on behalf of a Business Account.
+
+        **Message type rules:**
+        - `TEXT` and `IMAGE` are mutually exclusive — a message cannot contain both.
+        - `SENDER_ACTION` does not send an actual message; `message_id` in the response will be `""`.
+        - Text body limit: **6,000 characters** (including spaces and emojis).
+        - Only your own posts can be shared (`SHARE_POST`).
+
+        **48-hour reply windows (non-mutual follow):**
+        - After user's first message → up to 10 replies in 48 h.
+        - After each user reply → unlimited for 48 h.
+        - After 48 h silence → only 3 more until user replies again.
+
+        **Cannot initiate** — you may only message users who have first messaged the business,
+        except when using `direct_reply` (Comment-to-Message).
+
+        **`conversation_id` encoding:** URL-encode `+` as `%2B` in query strings.
+        When used in the `recipient` field here (JSON body), no encoding needed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [business_id, message_type]
+              properties:
+                business_id:
+                  type: string
+                  description: "`open_id` from the token response."
+                recipient_type:
+                  type: string
+                  enum: [CONVERSATION]
+                  description: Required when `direct_reply` is not specified. Currently only `CONVERSATION`.
+                recipient:
+                  type: string
+                  description: |
+                    Required when `direct_reply` is not specified.
+                    When `recipient_type=CONVERSATION`, pass the `conversation_id`.
+                message_type:
+                  type: string
+                  enum: [TEXT, IMAGE, SHARE_POST, TEMPLATE, SENDER_ACTION]
+                  description: Determines which additional fields are required.
+                text:
+                  type: object
+                  description: Required when `message_type=TEXT`.
+                  properties:
+                    body:
+                      type: string
+                      description: Text content. Max 6,000 characters.
+                image:
+                  type: object
+                  description: Required when `message_type=IMAGE`. Cannot combine with `text`.
+                  properties:
+                    media_id:
+                      type: string
+                      description: |
+                        Obtain from `POST /business/message/media/upload/`. Valid 30 days.
+                        Check send capability first with `GET /business/message/capabilities/get/`.
+                share_post:
+                  type: object
+                  description: Required when `message_type=SHARE_POST`.
+                  properties:
+                    item_id:
+                      type: string
+                      description: TikTok post ID from `/business/video/list/`. Only your own posts.
+                template:
+                  type: object
+                  description: Required when `message_type=TEMPLATE`.
+                  properties:
+                    type:
+                      type: string
+                      enum: [QA_BUTTON_CARD, QA_LINK_CARD]
+                      description: |
+                        `QA_BUTTON_CARD`: card with clickable buttons.
+                        `QA_LINK_CARD`: card with clickable text links.
+                        Clicking sends the button/link text as a reply on the user's behalf.
+                    title:
+                      type: string
+                      description: Pre-set question on the card. Max 40 characters.
+                    buttons:
+                      type: array
+                      minItems: 1
+                      maxItems: 3
+                      items:
+                        type: object
+                        properties:
+                          type:
+                            type: string
+                            enum: [REPLY]
+                          title:
+                            type: string
+                            description: |
+                              Button/link text. Max 20 chars for `QA_BUTTON_CARD`,
+                              max 40 chars for `QA_LINK_CARD`.
+                          id:
+                            type: string
+                            description: Self-defined ID (max 40 chars) to identify which button was clicked.
+                sender_action:
+                  type: string
+                  enum: [TYPING, MARK_READ]
+                  description: |
+                    Required when `message_type=SENDER_ACTION`.
+                    `TYPING`: shows typing indicator for 5 seconds.
+                    `MARK_READ`: marks all messages as seen.
+                    No actual message is sent; response `message_id` will be `""`.
+                referenced_message_info:
+                  type: object
+                  description: |
+                    Include to send a quoted reply to a specific message.
+                    Only works with `message_type=TEXT`.
+                  properties:
+                    referenced_message_id:
+                      type: string
+                      description: ID of the message to quote. Must be TEXT, IMAGE, or SHARE_POST type.
+                direct_reply:
+                  type: object
+                  description: |
+                    Use instead of `recipient_type`/`recipient` to reply to a high-intent comment.
+                    Requires Comment-to-Message to be enabled for the Business Account.
+                    Only available for accounts in VN/ID/TH replying to APAC/LATAM/METAP users.
+
+                    **All five conditions must hold:**
+                    1. Comment is first-level on the Business Account's own video.
+                    2. Reply within 48 h of the comment.
+                    3. Comment has no prior reply (via app or API).
+                    4. No DM activity between commenter and Business in the past 24 h.
+                    5. Commenter is 18+.
+
+                    Get `comment_id` from the `im_receive_high_intent_comment` webhook event.
+                  properties:
+                    reply_type:
+                      type: string
+                      enum: [COMMENT_REPLY]
+                    comment_reply:
+                      type: object
+                      properties:
+                        comment_id:
+                          type: string
+                          description: ID of the high-intent comment. From `im_receive_high_intent_comment` webhook.
+            examples:
+              text:
+                summary: Text message
+                value:
+                  business_id: "{{business_id}}"
+                  recipient_type: CONVERSATION
+                  recipient: "{{conversation_id}}"
+                  message_type: TEXT
+                  text:
+                    body: "Hello! How can I help you?"
+              image:
+                summary: Image message
+                value:
+                  business_id: "{{business_id}}"
+                  recipient_type: CONVERSATION
+                  recipient: "{{conversation_id}}"
+                  message_type: IMAGE
+                  image:
+                    media_id: "{{media_id}}"
+              share_post:
+                summary: Share a TikTok post
+                value:
+                  business_id: "{{business_id}}"
+                  recipient_type: CONVERSATION
+                  recipient: "{{conversation_id}}"
+                  message_type: SHARE_POST
+                  share_post:
+                    item_id: "{{item_id}}"
+              qa_button_card:
+                summary: Q&A button card template
+                value:
+                  business_id: "{{business_id}}"
+                  recipient_type: CONVERSATION
+                  recipient: "{{conversation_id}}"
+                  message_type: TEMPLATE
+                  template:
+                    type: QA_BUTTON_CARD
+                    title: "Which product are you interested in?"
+                    buttons:
+                      - type: REPLY
+                        title: "Product A"
+                        id: "opt_a"
+                      - type: REPLY
+                        title: "Product B"
+                        id: "opt_b"
+                      - type: REPLY
+                        title: "Just browsing"
+                        id: "opt_c"
+              typing:
+                summary: Typing indicator
+                value:
+                  business_id: "{{business_id}}"
+                  recipient_type: CONVERSATION
+                  recipient: "{{conversation_id}}"
+                  message_type: SENDER_ACTION
+                  sender_action: TYPING
+              quoted_reply:
+                summary: Quoted text reply
+                value:
+                  business_id: "{{business_id}}"
+                  recipient_type: CONVERSATION
+                  recipient: "{{conversation_id}}"
+                  message_type: TEXT
+                  text:
+                    body: "Great question!"
+                  referenced_message_info:
+                    referenced_message_id: "{{message_id}}"
+              comment_reply:
+                summary: Reply to a high-intent comment
+                value:
+                  business_id: "{{business_id}}"
+                  message_type: TEXT
+                  text:
+                    body: "Thanks for your interest! DM us for details."
+                  direct_reply:
+                    reply_type: COMMENT_REPLY
+                    comment_reply:
+                      comment_id: "{{comment_id}}"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: object
+                            properties:
+                              message_id:
+                                type: string
+                                description: Empty string `""` when `message_type=SENDER_ACTION`.
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data:
+                  message:
+                    message_id: "{{message_id}}"
+
+  # ── Publish ────────────────────────────────────────────────────────────────
+
+  /business/publish/status/:
+    get:
+      tags: [Publish]
+      summary: Get post publishing status
+      description: |
+        Poll the outcome of a post submitted via `POST /business/video/publish/` or
+        `POST /business/photo/publish/`.
+
+        Pass the `share_id` from the publish response as `publish_id`.
+
+        **Status flow:**
+
+        | Status | Meaning |
+        |--------|---------|
+        | `PROCESSING_DOWNLOAD` | Fetching content from your URL (file-URL flow only) |
+        | `PUBLISH_COMPLETE` | Upload + format checks passed |
+        | `FAILED` | Terminal failure — check `reason` field |
+        | `SEND_TO_USER_INBOX` | Draft uploaded; creator notified in-app |
+
+        After `PUBLISH_COMPLETE`, `post_ids` may take **up to 3 minutes** to populate.
+        Retry if absent. The `VIDEO` webhook event `post.publish.publicly_available` fires
+        when the post is moderation-approved and live (webhook-only, not available via this endpoint).
+      parameters:
+        - name: business_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: publish_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The `share_id` returned by `/business/video/publish/` or `/business/photo/publish/`.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            enum: [PROCESSING_DOWNLOAD, PUBLISH_COMPLETE, FAILED, SEND_TO_USER_INBOX]
+                          post_ids:
+                            type: array
+                            description: |
+                              Present only when `status=PUBLISH_COMPLETE` and posts are publicly viewable.
+                              May take up to 3 minutes after status changes — retry if not present.
+                              Use as `video_ids` filter in `/business/video/list/`.
+                            items:
+                              type: string
+                          reason:
+                            type: string
+                            description: |
+                              Present only when `status=FAILED`. Failure reasons:
+
+                              | Reason | Retry? | Notes |
+                              |--------|--------|-------|
+                              | `file_format_check_failed` | ❌ | Format spec violation |
+                              | `duration_check_failed` | ❌ | Video must be 3–60 s |
+                              | `frame_rate_check_failed` | ❌ | Must be 23–60 FPS |
+                              | `picture_size_check_failed` | ❌ | Min 360×360 px |
+                              | `internal` | ✅ | Transient server issue |
+                              | `video_pull_failed` | ✅ | URL fetch failed / 1 h timeout |
+                              | `photo_pull_failed` | ✅ | URL fetch failed / 1 h timeout |
+                              | `auth_removed` | ❌ | Creator revoked access mid-publish |
+                              | `spam_risk_too_many_posts` | ❌ | 24 h API post limit hit |
+                              | `spam_risk_user_banned_from_posting` | ❌ | Creator banned |
+                              | `spam_risk_text` | ❌ | Description text flagged |
+                              | `spam_risk` | ❌ | Generic spam rejection |
+                              | `publish_cancelled` | n/a | Upload cancelled |
+              examples:
+                success:
+                  summary: Successfully published
+                  value:
+                    code: 0
+                    message: OK
+                    request_id: "{{request_id}}"
+                    data:
+                      status: PUBLISH_COMPLETE
+                      post_ids: ["{{post_id}}"]
+                failed:
+                  summary: Failed publish
+                  value:
+                    code: 0
+                    message: OK
+                    request_id: "{{request_id}}"
+                    data:
+                      status: FAILED
+                      reason: frame_rate_check_failed
+
+  # ── Webhooks ───────────────────────────────────────────────────────────────
+
+  /business/webhook/update/:
+    post:
+      tags: [Webhooks]
+      summary: Create or update a webhook subscription
+      description: |
+        Subscribe your developer app to a category of webhook events. One subscription per
+        `event_type` per app. Applies to **all businesses** that have authorized the app —
+        no per-business resubscription needed.
+
+        For `event_type=COMMENT`, optionally scope to specific posts via `item_list`.
+
+        Webhook payloads are POSTed to `callback_url` as JSON. The `content` field in every
+        payload is a **stringified JSON** — parse it with `JSON.parse()`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [app_id, secret, event_type, callback_url]
+              properties:
+                app_id:
+                  type: string
+                  description: Your developer app ID.
+                secret:
+                  type: string
+                  description: Your developer app secret.
+                event_type:
+                  type: string
+                  enum: [DIRECT_MESSAGE, BRAND_MENTION, VIDEO, COMMENT]
+                callback_url:
+                  type: string
+                  description: HTTPS URL that receives POST webhook payloads.
+                item_list:
+                  type: array
+                  items:
+                    type: string
+                  description: |
+                    Specific video IDs to receive comment events for.
+                    Only applicable when `event_type=COMMENT`. Omit for all posts.
+            examples:
+              direct_message:
+                summary: Subscribe to DM events
+                value:
+                  app_id: "{{app_id}}"
+                  secret: "{{secret}}"
+                  event_type: DIRECT_MESSAGE
+                  callback_url: "https://yourapp.example.com/webhooks/tiktok"
+              comment_scoped:
+                summary: Subscribe to comment events for specific posts
+                value:
+                  app_id: "{{app_id}}"
+                  secret: "{{secret}}"
+                  event_type: COMMENT
+                  callback_url: "https://yourapp.example.com/webhooks/tiktok"
+                  item_list: ["{{video_id_1}}", "{{video_id_2}}"]
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          app_id:
+                            type: string
+                          event_type:
+                            type: string
+                          callback_url:
+                            type: string
+
+  /business/webhook/list/:
+    get:
+      tags: [Webhooks]
+      summary: Get webhook subscription configuration
+      description: |
+        Retrieve the current webhook configuration for a given `event_type`.
+        If `callback_url` is absent from the response `data`, no subscription exists.
+
+        For `COMMENT` subscriptions scoped to specific posts, `item_list` is returned.
+      security: []
+      parameters:
+        - name: app_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: secret
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: event_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [DIRECT_MESSAGE, BRAND_MENTION, VIDEO, COMMENT]
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          app_id:
+                            type: string
+                          event_type:
+                            type: string
+                          callback_url:
+                            type: string
+                            description: Absent if no subscription exists for this event_type.
+                          item_list:
+                            type: array
+                            items:
+                              type: string
+                            description: Present only for COMMENT subscriptions scoped to specific posts.
+              examples:
+                exists:
+                  summary: Subscription exists
+                  value:
+                    code: 0
+                    message: OK
+                    request_id: "{{request_id}}"
+                    data:
+                      app_id: "{{app_id}}"
+                      event_type: DIRECT_MESSAGE
+                      callback_url: "https://yourapp.example.com/webhooks/tiktok"
+                empty:
+                  summary: No subscription configured
+                  value:
+                    code: 0
+                    message: OK
+                    request_id: "{{request_id}}"
+                    data:
+                      app_id: "{{app_id}}"
+                      event_type: DIRECT_MESSAGE
+
+  /business/webhook/delete/:
+    post:
+      tags: [Webhooks]
+      summary: Delete a webhook subscription
+      description: Delete the webhook configuration for a specific `event_type`. Per-event-type operation.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [app_id, secret, event_type]
+              properties:
+                app_id:
+                  type: string
+                secret:
+                  type: string
+                event_type:
+                  type: string
+                  enum: [DIRECT_MESSAGE, BRAND_MENTION, VIDEO, COMMENT]
+            example:
+              app_id: "{{app_id}}"
+              secret: "{{secret}}"
+              event_type: DIRECT_MESSAGE
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          app_id:
+                            type: string
+                          event_type:
+                            type: string
+
+  # ── Comments ───────────────────────────────────────────────────────────────
+
+  /business/comment/list/:
+    get:
+      tags: [Comments]
+      summary: List comments on an owned video
+      description: |
+        Returns comments and optionally replies for a specific owned video.
+        Includes both public and hidden comments (owner-hidden + system-moderated).
+
+        **Sorting caveat:** If the video has more than 500 comments, only the first 500 are sorted
+        as requested. Comments beyond 500 are returned in reverse-like order and **may contain
+        duplicates** with comments from the first 500.
+
+        **v1.2 → v1.3 changes:** Endpoint moved from `POST /business/comments/list/` to
+        `GET /business/comment/list/`. New params: `comment_ids`, `include_replies`.
+        New response fields: `parent_comment_id`, `reply_list`, `unique_identifier`,
+        `display_name`, `image_url`.
+      parameters:
+        - name: business_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: video_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: From `/business/video/list/` as `item_id`.
+        - name: comment_ids
+          in: query
+          schema:
+            type: string
+          description: |
+            JSON array string of comment or reply IDs to filter by. Max 30.
+            Example: `["7247303576418566913","7247303576418566914"]`
+        - name: include_replies
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: |
+            When `true`, each top-level comment includes up to 3 replies (smart-sorted).
+            For all replies to a comment, use `GET /business/comment/reply/list/`.
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PUBLIC, ALL]
+            default: ALL
+          description: |
+            `PUBLIC`: publicly viewable only.
+            `ALL`: both public and hidden (owner-hidden + moderation-hidden).
+        - name: sort_field
+          in: query
+          schema:
+            type: string
+            enum: [likes, replies, create_time]
+          description: Field to sort by. Default is random order.
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc, smart]
+            default: smart
+        - name: cursor
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: max_count
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 30
+            default: 20
+          description: |
+            Due to trust & safety filtering, may return fewer items than requested
+            even when `has_more=true`.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          comments:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Comment'
+                          has_more:
+                            type: boolean
+                          cursor:
+                            type: integer
+
+  /business/comment/reply/create/:
+    post:
+      tags: [Comments]
+      summary: Reply to a comment
+      description: |
+        Create a reply to an existing comment on an owned video or another account's video.
+
+        Reply with either text or an image — not both.
+
+        **Spam warning:** Posting many similar-content replies in a short window may get them
+        silently flagged as spam and hidden. If flagged, you will NOT receive the `comment.update`
+        webhook with `comment_action=set_to_public`. Throttle and vary content.
+
+        **v1.2 → v1.3 changes:** Path changed from `/business/comments/replies/create/`.
+        New params: `reply_image_url`, `image_uri`, `image_width`, `image_height`.
+        New response fields: `unique_identifier`, `image_url`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [business_id, video_id, comment_id]
+              properties:
+                business_id:
+                  type: string
+                video_id:
+                  type: string
+                  description: From `/business/video/list/` as `item_id`.
+                comment_id:
+                  type: string
+                  description: From `GET /business/comment/list/` as `comment_id`.
+                text:
+                  type: string
+                  description: |
+                    Reply text. Required if `image_uri` is not specified.
+                    Max 150 characters (UTF-8).
+                image_uri:
+                  type: string
+                  description: |
+                    Reply image URI. Required if `text` is not specified.
+                    Obtain from `POST /business/comment/image/upload/` first.
+                image_width:
+                  type: integer
+                  description: Required when `image_uri` is specified. From the upload response.
+                image_height:
+                  type: integer
+                  description: Required when `image_uri` is specified. From the upload response.
+                reply_image_url:
+                  type: string
+                  description: |
+                    Alternative to `image_uri`. Publicly accessible HTTPS URL for a custom image.
+                    Must be a **verified URL property** (manually or automatically verified in dev portal).
+                    Constraints: max 1080×1920 or 1920×1080 px, min 360×360 px, max 20 MB, JPG/JPEG/WebP/PNG.
+            example:
+              business_id: "{{business_id}}"
+              video_id: "{{video_id}}"
+              comment_id: "{{comment_id}}"
+              text: "Thanks for your comment!"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          comment_id:
+                            type: string
+                            description: ID of the newly created reply.
+                          parent_comment_id:
+                            type: string
+                          video_id:
+                            type: string
+                          create_time:
+                            type: string
+                            description: Unix seconds (string-encoded).
+                          text:
+                            type: string
+                            description: Present when replied with text.
+                          image_url:
+                            type: string
+                            description: Present when replied with image. URL does not expire.
+                          unique_identifier:
+                            type: string
+                          user_id:
+                            type: string
+                            description: "Deprecated. Use `unique_identifier` instead."
+                            deprecated: true
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data:
+                  comment_id: "{{comment_id}}"
+                  parent_comment_id: "{{parent_comment_id}}"
+                  video_id: "{{video_id}}"
+                  create_time: "1701334608"
+                  text: "Thanks for your comment!"
+                  unique_identifier: "{{unique_identifier}}"
+
+  # ── Direct Reply ───────────────────────────────────────────────────────────
+
+  /business/message/direct_reply/update/:
+    post:
+      tags: [Direct Reply]
+      summary: Enable or disable Comment-to-Message
+      description: |
+        Enable or disable the Comment-to-Message feature for a Business Account.
+
+        When enabled, the TikTok system identifies high-intent comments (expressing purchase intent
+        or seeking information) and fires `im_receive_high_intent_comment` webhook events,
+        allowing you to reply via `POST /business/message/send/` with `direct_reply`.
+
+        **Eligibility requirements:**
+        - Account registered in **Vietnam, Indonesia, or Thailand**
+        - Account owner is **18+**
+        - Account is a Registered Business Account or has run TikTok Messaging Ads
+        - Messaging permissions "Potential connections" and "Other on TikTok" set to "Requests"
+
+        When enabled, replies are limited to commenters registered in **APAC, LATAM, or METAP** regions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [business_id, direct_reply_type, operation_status]
+              properties:
+                business_id:
+                  type: string
+                direct_reply_type:
+                  type: string
+                  enum: [COMMENT_TO_MESSAGE]
+                operation_status:
+                  type: string
+                  enum: [ENABLE, DISABLE]
+            example:
+              business_id: "{{business_id}}"
+              direct_reply_type: COMMENT_TO_MESSAGE
+              operation_status: ENABLE
+      responses:
+        "200":
+          description: Success — `data` is an empty object `{}`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommonResponse'
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data: {}
+
+  /business/message/direct_reply/get/:
+    get:
+      tags: [Direct Reply]
+      summary: Get Comment-to-Message status
+      description: Check whether the Comment-to-Message feature is currently enabled for a Business Account.
+      parameters:
+        - name: business_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: direct_reply_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [COMMENT_TO_MESSAGE]
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          business_id:
+                            type: string
+                          direct_reply_type:
+                            type: string
+                            enum: [COMMENT_TO_MESSAGE]
+                          operation_status:
+                            type: string
+                            enum: [ENABLE, DISABLE]
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data:
+                  business_id: "{{business_id}}"
+                  direct_reply_type: COMMENT_TO_MESSAGE
+                  operation_status: ENABLE
+
+  # ── Media ──────────────────────────────────────────────────────────────────
+
+  /business/message/media/upload/:
+    post:
+      tags: [Media]
+      summary: Upload an image for messaging
+      description: |
+        Upload an image to use in a direct message.
+
+        - **File formats:** JPG, PNG only
+        - **Max size:** 3 MB
+        - **`media_id` validity:** 30 days — re-upload after expiry
+        - Image sharing is not available in all markets. Check capability first with
+          `GET /business/message/capabilities/get/`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [business_id, file, media_type]
+              properties:
+                business_id:
+                  type: string
+                  description: "`open_id` from the token response."
+                file:
+                  type: string
+                  format: binary
+                  description: JPG or PNG image file. Max 3 MB.
+                media_type:
+                  type: string
+                  enum: [IMAGE]
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          media_id:
+                            type: string
+                            description: Use in `POST /business/message/send/` as `image.media_id`. Valid 30 days.
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data:
+                  media_id: "{{media_id}}"
+
+  /business/message/media/download/:
+    post:
+      tags: [Media]
+      summary: Download an image or video from a message
+      description: |
+        Returns a temporary download URL for an image or video from a conversation message.
+
+        The `download_url` is valid for **24 hours**. Call this endpoint again to get a fresh URL.
+
+        **Important:** When GETting the `download_url`, you must include the header
+        `x-user: <Access-Token>` — otherwise the download will fail.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [business_id, conversation_id, message_id, media_id, media_type]
+              properties:
+                business_id:
+                  type: string
+                conversation_id:
+                  type: string
+                  description: From `GET /business/message/conversation/list/`.
+                message_id:
+                  type: string
+                  description: From `GET /business/message/content/list/`.
+                media_id:
+                  type: string
+                  description: From `GET /business/message/content/list/`.
+                media_type:
+                  type: string
+                  enum: [IMAGE, VIDEO]
+            example:
+              business_id: "{{business_id}}"
+              conversation_id: "{{conversation_id}}"
+              message_id: "{{message_id}}"
+              media_id: "{{media_id}}"
+              media_type: IMAGE
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          download_url:
+                            type: string
+                            description: |
+                              Valid 24 hours. When GETting this URL, include header `x-user: <Access-Token>`.
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data:
+                  download_url: "{{download_url}}"
+
+  /business/message/capabilities/get/:
+    get:
+      tags: [Media]
+      summary: Check Business Account capabilities for a conversation
+      description: |
+        Check whether a Business Account can send and/or receive images in a specific conversation.
+        Call this before attempting to send an image message — image sharing is not available in all markets.
+      parameters:
+        - name: business_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: capability_types
+          in: query
+          required: true
+          schema:
+            type: string
+          description: |
+            JSON array string. Currently only `["IMAGE_SEND"]` is supported.
+          example: '["IMAGE_SEND"]'
+        - name: conversation_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Required when `capability_types` includes `IMAGE_SEND`. URL-encode `+` as `%2B`.
+        - name: conversation_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [STRANGER, SINGLE]
+          description: Required when `capability_types` includes `IMAGE_SEND`.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          capability_infos:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                capability_type:
+                                  type: string
+                                  enum: [IMAGE_SEND]
+                                capability_result:
+                                  type: boolean
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data:
+                  capability_infos:
+                    - capability_type: IMAGE_SEND
+                      capability_result: true
+
+  # ── Stubs (schema not yet fully documented) ───────────────────────────────
+
+  /business/comment/reply/list/:
+    get:
+      tags: [Comments]
+      summary: List all replies to a comment
+      description: |
+        Returns all replies to a specific comment on an owned video, including both
+        public and hidden replies.
+
+        Use this instead of `GET /business/comment/list/?include_replies=true` when you
+        need more than the 3 replies per comment that endpoint returns.
+
+        **Limitation:** does **not** support listing replies to a *hidden* comment.
+
+        The `comment.update` webhook fires within 5 min of a reply being created, deleted,
+        or having its visibility changed. See [Webhooks](#tag/Webhooks).
+
+        ### v1.2 → v1.3 changes
+
+        Path moved from `/business/comments/replies/list/` → `/business/comment/reply/list/`.
+        Method changed from `POST` to `GET`. New response fields: `unique_identifier`,
+        `parent_comment_id`, `display_name`, `image_url`.
+      parameters:
+        - name: business_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: video_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: From `/business/video/list/` as `item_id`.
+        - name: comment_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: From `/business/comment/list/` as `comment_id`.
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PUBLIC, ALL]
+            default: ALL
+          description: |
+            `PUBLIC`: only publicly viewable replies.
+            `ALL`: both hidden and publicly viewable replies.
+        - name: sort_field
+          in: query
+          schema:
+            type: string
+            enum: [likes, replies, create_time]
+          description: Field to sort replies by. Default is random.
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+          description: Sort order. Default is semantic-aware sorting.
+        - name: cursor
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Pagination cursor. Pass the previous response's `cursor` when `has_more=true`.
+        - name: max_count
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 30
+            default: 20
+          description: |
+            Max replies per page. May return fewer than requested even when `has_more=true`
+            due to trust & safety filtering.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          comments:
+                            type: array
+                            description: |
+                              Replies to the specified comment. Each item has the same shape
+                              as a `Comment`, with `parent_comment_id` always populated.
+                            items:
+                              $ref: '#/components/schemas/Comment'
+                          cursor:
+                            type: integer
+                          has_more:
+                            type: boolean
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data:
+                  comments:
+                    - comment_id: "{{comment_id}}"
+                      parent_comment_id: "{{parent_comment_id}}"
+                      video_id: "{{video_id}}"
+                      create_time: "{{create_time}}"
+                      text: "{{text}}"
+                      likes: 0
+                      status: PUBLIC
+                      liked: false
+                      owner: true
+                      username: "{{username}}"
+                      display_name: "{{display_name}}"
+                      profile_image: "{{profile_image}}"
+                      unique_identifier: "{{unique_identifier}}"
+                  cursor: 2
+                  has_more: false
+
+  /business/comment/image/upload/:
+    post:
+      tags: [Comments]
+      summary: Upload an image for a comment or comment reply
+      description: |
+        Upload an image to use in a new comment or in a reply to an existing comment.
+        Returns `image_uri`, `width`, and `height` that you pass to
+        `POST /business/comment/reply/create/` as `image_uri`, `image_width`, and `image_height`.
+
+        **File constraints:**
+        - Max size: **5 MB**
+        - Max resolution: **1080 × 1920** or **1920 × 1080** pixels
+        - Min resolution: **360 × 360** pixels
+        - Formats: JPG, JPEG, WebP, PNG
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [business_id, image_file]
+              properties:
+                business_id:
+                  type: string
+                  description: "`open_id` from the token response."
+                image_file:
+                  type: string
+                  format: binary
+                  description: JPG, JPEG, WebP, or PNG. Max 5 MB, constraints in endpoint description.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          image_uri:
+                            type: string
+                            description: |
+                              Pass to `POST /business/comment/reply/create/` as `image_uri`.
+                          width:
+                            type: integer
+                            description: |
+                              Pass to `POST /business/comment/reply/create/` as `image_width`.
+                          height:
+                            type: integer
+                            description: |
+                              Pass to `POST /business/comment/reply/create/` as `image_height`.
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data:
+                  image_uri: "{{image_uri}}"
+                  width: 428
+                  height: 402
+
+  /business/message/auto_message/create/:
+    post:
+      tags: [Messages]
+      summary: Create an automatic message for a Business Account
+      description: |
+        Create a welcome message, suggested question, or chat prompt.
+        After creating, verify the audit status via `GET /business/message/auto_message/get/`.
+
+        **Per-account limits** (TikTok rejects creates beyond these):
+
+        | Type | Max per account | Per-call limit |
+        |---|---|---|
+        | `WELCOME_MESSAGE` | 1 | 1 |
+        | `SUGGESTED_QUESTION` | 3 | 1 (call again for more) |
+        | `CHAT_PROMPT` | 6 | 1 (call again for more) |
+
+        **Duplicates are not supported** within a type — TikTok will reject identical content.
+
+        Multiple chat prompts appear above the input box ordered by creation time (earliest first).
+        Use `/business/message/auto_message/sort/` to reorder them.
+
+        **Length limits:**
+        - `welcome_message.content`: **250 characters**. Supports `\n` line breaks — preview in
+          the TikTok mobile app after deploy to confirm rendering.
+        - `suggested_question.question`: **80 characters**.
+        - `suggested_question.answer`: **200 characters**.
+        - `chat_prompt.title`: **18 characters** (button label).
+        - `chat_prompt.content`: **150 characters** (auto-generated question).
+
+        Text, system emojis, and non-English languages are supported throughout.
+
+        **Prerequisite:** Business Messaging API access (DM data is treated as sensitive).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [business_id, auto_message_type]
+              properties:
+                business_id:
+                  type: string
+                auto_message_type:
+                  type: string
+                  enum: [WELCOME_MESSAGE, SUGGESTED_QUESTION, CHAT_PROMPT]
+                welcome_message:
+                  type: object
+                  description: Required when `auto_message_type=WELCOME_MESSAGE`.
+                  required: [content]
+                  properties:
+                    content:
+                      type: string
+                      maxLength: 250
+                      description: Welcome message text. Supports `\n` line breaks.
+                suggested_question:
+                  type: object
+                  description: Required when `auto_message_type=SUGGESTED_QUESTION`. One per call.
+                  required: [question, answer]
+                  properties:
+                    question:
+                      type: string
+                      maxLength: 80
+                    answer:
+                      type: string
+                      maxLength: 200
+                      description: Sent automatically when the user taps the question.
+                chat_prompt:
+                  type: object
+                  description: Required when `auto_message_type=CHAT_PROMPT`. One per call.
+                  required: [title, content]
+                  properties:
+                    title:
+                      type: string
+                      maxLength: 18
+                      description: Button label shown above the input box.
+                    content:
+                      type: string
+                      maxLength: 150
+                      description: Question auto-generated when user taps the prompt.
+            examples:
+              welcome:
+                summary: Create a welcome message
+                value:
+                  business_id: "{{business_id}}"
+                  auto_message_type: WELCOME_MESSAGE
+                  welcome_message:
+                    content: "Hi there!\nThanks for reaching out. We'll respond shortly."
+              suggested:
+                summary: Create a suggested question
+                value:
+                  business_id: "{{business_id}}"
+                  auto_message_type: SUGGESTED_QUESTION
+                  suggested_question:
+                    question: "What are your shipping rates?"
+                    answer: "We offer free shipping on orders over $50."
+              chat_prompt:
+                summary: Create a chat prompt
+                value:
+                  business_id: "{{business_id}}"
+                  auto_message_type: CHAT_PROMPT
+                  chat_prompt:
+                    title: "Pricing 💰"
+                    content: "Can you share your pricing for product X?"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          auto_message:
+                            type: object
+                            properties:
+                              auto_message_id:
+                                type: string
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data:
+                  auto_message:
+                    auto_message_id: "{{auto_message_id}}"
+
+  /business/message/auto_message/update/:
+    post:
+      tags: [Messages]
+      summary: Update an existing automatic message
+      description: |
+        Replace the content of an existing welcome message, suggested question, or chat prompt.
+
+        **Cannot update messages that are pending review.** Call
+        `GET /business/message/auto_message/get/` first and verify `audit_status` is **not**
+        `REVIEWING`. (Note: even though the TikTok doc only mentions `status/update/`,
+        REJECTED messages also block re-submission via this endpoint — fix the underlying
+        content issue and create a new one if needed.)
+
+        Length limits and supported characters match
+        `POST /business/message/auto_message/create/` — see that endpoint for details.
+
+        After updating, poll `auto_message/get/` until `audit_status=APPROVED` (a few seconds
+        to ~2–3 hours depending on content review queue).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [business_id, auto_message_id, auto_message_type]
+              properties:
+                business_id:
+                  type: string
+                auto_message_id:
+                  type: string
+                  description: From `GET /business/message/auto_message/get/`.
+                auto_message_type:
+                  type: string
+                  enum: [WELCOME_MESSAGE, SUGGESTED_QUESTION, CHAT_PROMPT]
+                welcome_message:
+                  type: object
+                  description: Required when `auto_message_type=WELCOME_MESSAGE`.
+                  required: [content]
+                  properties:
+                    content:
+                      type: string
+                      maxLength: 250
+                suggested_question:
+                  type: object
+                  description: Required when `auto_message_type=SUGGESTED_QUESTION`. One per call.
+                  required: [question, answer]
+                  properties:
+                    question:
+                      type: string
+                      maxLength: 80
+                    answer:
+                      type: string
+                      maxLength: 200
+                chat_prompt:
+                  type: object
+                  description: Required when `auto_message_type=CHAT_PROMPT`. One per call.
+                  required: [title, content]
+                  properties:
+                    title:
+                      type: string
+                      maxLength: 18
+                    content:
+                      type: string
+                      maxLength: 150
+            example:
+              business_id: "{{business_id}}"
+              auto_message_id: "{{auto_message_id}}"
+              auto_message_type: CHAT_PROMPT
+              chat_prompt:
+                title: "Returns 📦"
+                content: "What is your return policy?"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          auto_message:
+                            type: object
+                            properties:
+                              auto_message_id:
+                                type: string
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data:
+                  auto_message:
+                    auto_message_id: "{{auto_message_id}}"
+
+  /business/message/auto_message/get/:
+    get:
+      tags: [Messages]
+      summary: List automatic messages for a Business Account
+      description: |
+        Retrieve automatic messages of a given type for a Business Account, including
+        their content, audit status, and the account-wide on/off setting.
+
+        Optionally pass `auto_message_id` to filter to a single message.
+
+        ### Audit lifecycle
+
+        | `audit_status` | Meaning |
+        |---|---|
+        | `REVIEWING` | Pending review. Wait a few seconds to ~2–3 hours and recheck. |
+        | `APPROVED` | Approved and available for use. |
+        | `REJECTED` | Rejected. **Cannot be updated** via `auto_message/status/update/` — fix and recreate. |
+
+        ### Account-wide on/off (`operation_status`)
+
+        Separate from each message's `audit_status`, the entire feature category can be turned
+        on/off via `POST /business/message/auto_message/status/update/`. A message must be
+        both `APPROVED` *and* the feature `ENABLE`d to be served to users.
+
+        ### Default welcome message
+
+        If a Business Account enables `WELCOME_MESSAGE` for the first time without creating one,
+        TikTok sets a default:
+
+        > Hi there,
+        > Thanks for contacting {{display_name}}! Feel free to ask a question here or leave us a message and we'll get back to you shortly.
+        >
+        > Thank you!
+
+        ### Caveat in TikTok's docs
+
+        The official `CHAT_PROMPT` response example incorrectly wraps the chat prompt content
+        in a `suggested_question` key. The actual returned shape (per the schema) is a
+        `chat_prompt` object — handle this gracefully in client code (accept either key).
+      parameters:
+        - name: business_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: auto_message_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [WELCOME_MESSAGE, SUGGESTED_QUESTION, CHAT_PROMPT]
+        - name: auto_message_id
+          in: query
+          schema:
+            type: string
+          description: Optionally filter to a specific message.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          business_id:
+                            type: string
+                          operation_status:
+                            type: string
+                            enum: [ENABLE, DISABLE]
+                            description: Account-wide on/off for this `auto_message_type`.
+                          auto_messages:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                auto_message_id:
+                                  type: string
+                                auto_message_type:
+                                  type: string
+                                  enum: [WELCOME_MESSAGE, SUGGESTED_QUESTION, CHAT_PROMPT]
+                                audit_status:
+                                  type: string
+                                  enum: [REVIEWING, APPROVED, REJECTED]
+                                welcome_message:
+                                  type: object
+                                  description: Present when `auto_message_type=WELCOME_MESSAGE`.
+                                  properties:
+                                    content:
+                                      type: string
+                                suggested_question:
+                                  type: object
+                                  description: Present when `auto_message_type=SUGGESTED_QUESTION`.
+                                  properties:
+                                    question:
+                                      type: string
+                                    answer:
+                                      type: string
+                                chat_prompt:
+                                  type: object
+                                  description: |
+                                    Present when `auto_message_type=CHAT_PROMPT`.
+                                    See "Caveat in TikTok's docs" in the description.
+                                  properties:
+                                    title:
+                                      type: string
+                                    content:
+                                      type: string
+              examples:
+                welcome:
+                  summary: Welcome message
+                  value:
+                    code: 0
+                    message: OK
+                    request_id: "{{request_id}}"
+                    data:
+                      business_id: "{{business_id}}"
+                      operation_status: ENABLE
+                      auto_messages:
+                        - auto_message_id: "{{auto_message_id}}"
+                          auto_message_type: WELCOME_MESSAGE
+                          audit_status: APPROVED
+                          welcome_message:
+                            content: "Hi there! Thanks for contacting us."
+                suggested:
+                  summary: Suggested questions (up to 3)
+                  value:
+                    code: 0
+                    message: OK
+                    request_id: "{{request_id}}"
+                    data:
+                      business_id: "{{business_id}}"
+                      operation_status: ENABLE
+                      auto_messages:
+                        - auto_message_id: "{{auto_message_id}}"
+                          auto_message_type: SUGGESTED_QUESTION
+                          audit_status: APPROVED
+                          suggested_question:
+                            question: "What are your shipping rates?"
+                            answer: "Free shipping over $50."
+                        - auto_message_id: "{{auto_message_id}}"
+                          auto_message_type: SUGGESTED_QUESTION
+                          audit_status: REVIEWING
+                          suggested_question:
+                            question: "Do you ship internationally?"
+                            answer: "Yes, to 30+ countries."
+                chat_prompts:
+                  summary: Chat prompts (up to 6)
+                  value:
+                    code: 0
+                    message: OK
+                    request_id: "{{request_id}}"
+                    data:
+                      business_id: "{{business_id}}"
+                      operation_status: ENABLE
+                      auto_messages:
+                        - auto_message_id: "{{auto_message_id}}"
+                          auto_message_type: CHAT_PROMPT
+                          audit_status: APPROVED
+                          chat_prompt:
+                            title: "Pricing 💰"
+                            content: "What are your prices?"
+                        - auto_message_id: "{{auto_message_id}}"
+                          auto_message_type: CHAT_PROMPT
+                          audit_status: APPROVED
+                          chat_prompt:
+                            title: "Returns 📦"
+                            content: "What's your return policy?"
+
+  /business/message/auto_message/status/update/:
+    post:
+      tags: [Messages]
+      summary: Enable or disable an auto-message setting for a Business Account
+      description: |
+        Turn an auto-message feature on or off for a Business Account. Three feature types:
+
+        | `auto_message_type` | What it is |
+        |---|---|
+        | `WELCOME_MESSAGE` | Single message sent automatically when a user starts a new conversation |
+        | `SUGGESTED_QUESTION` | FAQ chips shown at the start of a chat; tapping one sends a preset answer |
+        | `CHAT_PROMPT` | Interactive buttons above the input box; tapping generates a conversation-starter question |
+
+        **Destructive behavior on enable:**
+        - Enabling `SUGGESTED_QUESTION` **disables every existing suggested question** on the account.
+        - Enabling `CHAT_PROMPT` **disables every existing chat prompt** on the account.
+
+        Use the create/update endpoints to (re)populate them afterwards.
+
+        **Prerequisite:** the developer must have completed data security/privacy review and
+        obtained Business Messaging API access (DM data is treated as sensitive).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [business_id, auto_message_type, operation_status]
+              properties:
+                business_id:
+                  type: string
+                  description: "`open_id` from the token response."
+                auto_message_type:
+                  type: string
+                  enum: [WELCOME_MESSAGE, SUGGESTED_QUESTION, CHAT_PROMPT]
+                operation_status:
+                  type: string
+                  enum: [ENABLE, DISABLE]
+            examples:
+              welcome_on:
+                summary: Turn on welcome message
+                value:
+                  business_id: "{{business_id}}"
+                  auto_message_type: WELCOME_MESSAGE
+                  operation_status: ENABLE
+              suggested_on:
+                summary: Turn on suggested questions (disables existing ones)
+                value:
+                  business_id: "{{business_id}}"
+                  auto_message_type: SUGGESTED_QUESTION
+                  operation_status: ENABLE
+              chat_prompt_on:
+                summary: Turn on chat prompts (disables existing ones)
+                value:
+                  business_id: "{{business_id}}"
+                  auto_message_type: CHAT_PROMPT
+                  operation_status: ENABLE
+      responses:
+        "200":
+          description: Success — `data` is an empty object `{}`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommonResponse'
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data: {}
+
+  /business/message/auto_message/sort/:
+    post:
+      tags: [Messages]
+      summary: Reorder chat prompts for a Business Account
+      description: |
+        Sort the chat prompts shown above the input box on the Business Account.
+        The first ID in `auto_message_ids` becomes the leftmost (first) prompt.
+
+        **Only `CHAT_PROMPT` is sortable** — `WELCOME_MESSAGE` and `SUGGESTED_QUESTION`
+        cannot be reordered via this endpoint.
+
+        Pass **every** chat prompt ID for the account, in the desired order. Retrieve the
+        current set via `GET /business/message/auto_message/get/?auto_message_type=CHAT_PROMPT`.
+
+        **Prerequisite:** Business Messaging API access (DM data is treated as sensitive).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [business_id, auto_message_type, auto_message_ids]
+              properties:
+                business_id:
+                  type: string
+                auto_message_type:
+                  type: string
+                  enum: [CHAT_PROMPT]
+                  description: Only `CHAT_PROMPT` is supported.
+                auto_message_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: |
+                    All chat prompt IDs for the account, in the desired display order
+                    (index 0 = first prompt).
+            example:
+              business_id: "{{business_id}}"
+              auto_message_type: CHAT_PROMPT
+              auto_message_ids:
+                - "{{auto_message_id_1}}"
+                - "{{auto_message_id_2}}"
+                - "{{auto_message_id_3}}"
+      responses:
+        "200":
+          description: Success — `data` is an empty object `{}`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommonResponse'
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data: {}
+
+  /business/video/list/:
+    get:
+      tags: [Videos]
+      summary: List posts and engagement insights for an owned account
+      description: |
+        Returns reach and engagement data for public video, photo, and text posts on a
+        TikTok Business Account. Includes organic posts plus "Only show in ads" video posts.
+
+        Use `item_id` from the response as `video_id` in comment endpoints and as
+        `share_post.item_id` in `POST /business/message/send/`.
+
+        ### Important caveats
+
+        - **Post lifetime:** post data stops updating **365 days** after publication.
+        - **Latency:** profile-level metrics have a **24–48 h delay**. Each field's response
+          schema marks its `Updated in:` cadence.
+        - **`item_id` is required in `fields`.** If you request multiple fields, you must
+          include `item_id` or the call may error.
+        - **Inactive video gap:** `reach`, `full_video_watched_rate`, `total_time_watched`,
+          `average_time_watched`, `impression_sources`, and `audience_countries` are
+          unavailable for videos with no view/like/comment/share activity in the past 7 days.
+          To populate, interact with the video and retry after 24–48 h.
+        - **Filtered posts:** posts may be omitted from results due to violations (e.g. music copyright).
+        - **`cursor` default:** if not specified, the cursor defaults to **the current Unix
+          ms timestamp**. You can pass any UTC Unix ms timestamp to fetch posts published before it.
+        - **Trust & safety:** the endpoint may return fewer than `max_count` posts even when
+          `has_more=true`.
+
+        ### v1.2 → v1.3 changes
+
+        Path moved from `/business/videos/list/` → `/business/video/list/`. Method changed
+        from `POST` to `GET`. New request param: `ad_post_only`. New response fields:
+        `favorites`, `profile_views`, `website_clicks`, `phone_number_clicks`,
+        `lead_submissions` (renamed from `submissions`), `app_download_clicks`, `email_clicks`,
+        `address_clicks`, `video_view_retention`, `audience_genders`, `audience_cities`,
+        `audience_types`, `new_followers`, `engagement_likes`, `media_type`, `is_ad`.
+
+        ### Required scopes
+
+        - `video.list` — for basic post fields (item_id, media_type, is_ad, thumbnail_url,
+          share_url, embed_url, caption, video_duration, likes, comments, shares,
+          favorites, video_views, reach, create_time).
+        - `video.insights` — for analytics fields (`total_time_watched`, `audience_*`,
+          `impression_sources`, `engagement_likes`, etc.).
+
+        Check granted scopes with `GET /tt_user/token_info/get/`.
+      parameters:
+        - name: business_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: "`open_id` from the token response."
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: |
+            JSON-array string of fields to return. **Must include `item_id`** when requesting
+            multiple fields. Defaults to `["item_id"]` if omitted.
+
+            See response schema for the full field list and required scope per field.
+          example: '["item_id","create_time","thumbnail_url","share_url","embed_url","caption","video_views","likes","comments","shares","reach","video_duration","full_video_watched_rate","total_time_watched","average_time_watched","impression_sources","audience_countries"]'
+        - name: filters
+          in: query
+          schema:
+            type: string
+          description: |
+            JSON-encoded object with filter criteria.
+
+            Properties:
+            - `video_ids` (string[]): list of post IDs to filter to.
+              Example: `{"video_ids":["6995316737801538821","8015388216995316737"]}`
+            - `ad_post_only` (boolean): when `true`, restrict to videos authorized for Spark Ads.
+              Only valid when `video_ids` is specified. Default `false`.
+          example: '{"video_ids":["6995316737801538821"]}'
+        - name: cursor
+          in: query
+          schema:
+            type: integer
+          description: |
+            Pagination cursor. Pass the `cursor` returned in the previous response when
+            `has_more=true`.
+
+            **Default:** the current Unix timestamp in **milliseconds** (UTC). You can pass
+            a custom timestamp to fetch posts published before that moment.
+        - name: max_count
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 10
+          description: |
+            Max posts per page. May return fewer than requested even when `has_more=true`
+            due to trust & safety filtering.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          videos:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Video'
+                          cursor:
+                            type: integer
+                            description: Pass to subsequent request when `has_more=true`. Real-time.
+                          has_more:
+                            type: boolean
+              example:
+                code: 0
+                message: OK
+                request_id: "2021080307532501024502410704A7306F"
+                data:
+                  videos:
+                    - item_id: "6990565363377392901"
+                      create_time: "1627617835"
+                      caption: "little coco"
+                      thumbnail_url: "https://p16-sign-va.tiktokcdn.com/.../c5_300x300.jpeg?x-expires=..."
+                      embed_url: "https://www.tiktok.com/player/v1/6990565363377392901?..."
+                      share_url: "https://www.tiktok.com/@feather_in_the_w1nd/video/6990565363377392901"
+                      likes: 10
+                      comments: 2
+                      shares: 0
+                      favorites: 3
+                      video_views: 1231
+                      reach: 154
+                      video_duration: 20.0
+                      total_time_watched: 695.942
+                      average_time_watched: 4.118
+                      full_video_watched_rate: 0.0237
+                      impression_sources:
+                        - percentage: 0.8983
+                          impression_source: "For You"
+                        - percentage: 0.0904
+                          impression_source: "Personal Profile"
+                        - percentage: 0.0113
+                          impression_source: "Follow"
+                      audience_countries:
+                        - country: "US"
+                          percentage: 0.7574
+                        - country: "GB"
+                          percentage: 0.1775
+                  cursor: 0
+                  has_more: false
+
+  /tt_user/token_info/get/:
+    post:
+      tags: [Authentication]
+      summary: Get authorized permission scopes for an access token
+      description: |
+        Returns the permission scopes granted to a given access token by either a
+        TikTok Business Account or a TikTok Personal Account.
+
+        **Auth note:** this endpoint does **not** use the `Access-Token` header. Both
+        `app_id` and `access_token` are passed in the JSON request body.
+
+        **`creator_id` is the `business_id`** — pass `creator_id` to the
+        `business_id` parameter in any Accounts API request.
+
+        Useful for checking which scopes a user has granted (e.g. `comment.list`,
+        `video.insights`) before calling a scope-gated endpoint.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [app_id, access_token]
+              properties:
+                app_id:
+                  type: string
+                  description: Your developer app ID (My Apps > App Detail > Basic Information).
+                access_token:
+                  type: string
+                  description: Access token issued to a TikTok account user.
+            example:
+              app_id: "{{app_id}}"
+              access_token: "{{access_token}}"
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CommonResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          app_id:
+                            type: string
+                          creator_id:
+                            type: string
+                            description: |
+                              Application-specific unique ID of the TikTok account.
+                              Pass this as `business_id` in Accounts API requests.
+                          scope:
+                            type: string
+                            description: |
+                              Comma-separated list of granted permission scopes.
+              example:
+                code: 0
+                message: OK
+                request_id: "{{request_id}}"
+                data:
+                  app_id: "{{app_id}}"
+                  creator_id: "{{creator_id}}"
+                  scope: "video.publish,user.info.basic,video.list,user.insights,user.insights.creator,tcm.order.update,comment.list.manage,video.insights,comment.list"
+
+components:
+  securitySchemes:
+    AccessToken:
+      type: apiKey
+      in: header
+      name: Access-Token
+      description: Short-term access token (valid 1 day). Obtain via `POST /tt_user/oauth2/token/`.
+
+  schemas:
+
+    # ── Common ────────────────────────────────────────────────────────────────
+
+    CommonResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: "`0` on success. See error code table in API description."
+          example: 0
+        message:
+          type: string
+          example: OK
+        request_id:
+          type: string
+          description: Unique log ID for the request. Record for troubleshooting.
+
+    TokenData:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: Short-term access token. Valid 1 day.
+        token_type:
+          type: string
+          enum: [Bearer]
+        scope:
+          type: string
+          description: Comma-separated list of granted permission scopes.
+          example: "message.list.manage,message.list.send,message.list.read,user.account.type"
+        expires_in:
+          type: integer
+          description: Seconds until `access_token` expires.
+          example: 86400
+        refresh_token:
+          type: string
+          description: Refresh token. Valid 1 year. Store persistently.
+        refresh_token_expires_in:
+          type: integer
+          description: Seconds until `refresh_token` expires.
+          example: 31536000
+        open_id:
+          type: string
+          description: |
+            Application-specific unique ID for this TikTok account.
+            Pass this value as `business_id` on all subsequent Business Messaging API calls.
+          example: "b1d2f34d-5b6c-78fb-91c2-cd345678912b"
+
+    FromUser:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [BUSINESS_ACCOUNT, PERSONAL_ACCOUNT]
+        id:
+          type: string
+          description: |
+            When `role=BUSINESS_ACCOUNT`: equals `business_id`.
+            When `role=PERSONAL_ACCOUNT`: equals `unique_identifier` (stable cross-API).
+
+    Participant:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [BUSINESS_ACCOUNT, PERSONAL_ACCOUNT]
+        id:
+          type: string
+        display_name:
+          type: string
+        profile_image:
+          type: string
+          description: Temporary URL. Check `x-expires` query param for expiry (Unix seconds).
+        is_follower:
+          type: boolean
+          description: Whether this Personal Account follows the Business Account. Only present for Personal Accounts.
+
+    Reaction:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [EMOJI, AI_EMOJI]
+        emoji:
+          type: string
+          description: Present only when `type=EMOJI`.
+        ai_emoji_url:
+          type: string
+          description: Present only when `type=AI_EMOJI`. Expires in 30 days (`x-expires` in URL).
+        unique_identifier:
+          type: string
+        timestamp:
+          type: integer
+          description: Unix ms.
+        original_msg_id:
+          type: string
+
+    Comment:
+      type: object
+      properties:
+        comment_id:
+          type: string
+          example: "6990565363377392901"
+        video_id:
+          type: string
+        create_time:
+          type: string
+          description: Unix seconds (string-encoded).
+        text:
+          type: string
+        likes:
+          type: integer
+        replies:
+          type: integer
+          description: Number of replies this comment has.
+        owner:
+          type: boolean
+          description: Whether the video owner made this comment.
+        liked:
+          type: boolean
+          description: Whether the video owner has liked this comment.
+        pinned:
+          type: boolean
+        status:
+          type: string
+          enum: [PUBLIC, HIDDEN]
+        username:
+          type: string
+        display_name:
+          type: string
+        profile_image:
+          type: string
+          description: Temporary URL. See `x-expires` in the URL for expiry.
+        unique_identifier:
+          type: string
+          description: Stable cross-API identifier. Prefer over `user_id`.
+        user_id:
+          type: string
+          description: Deprecated. Use `unique_identifier` instead.
+          deprecated: true
+        parent_comment_id:
+          type: string
+          description: Present only for reply comments.
+        image_url:
+          type: string
+          description: Present when the comment is an image. Does not expire.
+        reply_list:
+          type: array
+          description: |
+            Present only on top-level comments when `include_replies=true`. Max 3 entries.
+          items:
+            type: object
+            properties:
+              comment_id:
+                type: string
+              parent_comment_id:
+                type: string
+              create_time:
+                type: string
+              text:
+                type: string
+              status:
+                type: string
+                enum: [PUBLIC, HIDDEN]
+              liked:
+                type: boolean
+              likes:
+                type: integer
+              owner:
+                type: boolean
+              unique_identifier:
+                type: string
+              username:
+                type: string
+              display_name:
+                type: string
+              profile_image:
+                type: string
+              image_url:
+                type: string
+                description: Present when the comment is an image. Does not expire.
+              user_id:
+                type: string
+                deprecated: true
+
+    Video:
+      type: object
+      description: |
+        A TikTok post (video, photo, or text post). Most engagement and analytics
+        fields lag real-time by **24–48 hours**. Some fields require the `video.insights`
+        scope (the basic fields below only require `video.list`).
+      properties:
+        item_id:
+          type: string
+          description: Unique identifier for the post. Real-time. Scope `video.list`.
+          example: "6995316737801538821"
+        media_type:
+          type: string
+          enum: [VIDEO, PHOTO]
+          description: "`VIDEO` for video posts; `PHOTO` for photo or text posts. Scope `video.list`."
+        is_ad:
+          type: boolean
+          description: Whether the post is being used in an ad (Spark Ads Push or Pull). Scope `video.list`.
+        thumbnail_url:
+          type: string
+          description: Temporary URL for the thumbnail. Expires per `x-expires` query param. Scope `video.list`.
+        share_url:
+          type: string
+          description: Shareable URL. Behaves differently on mobile vs desktop. Scope `video.list`.
+        embed_url:
+          type: string
+          description: |
+            Embeddable URL. Posts with privacy "Friends" or "Only you" are not viewable.
+            Scope `video.list`.
+        caption:
+          type: string
+          description: Post caption/description. Real-time. Scope `video.list`.
+        video_duration:
+          type: number
+          format: float
+          description: Length in seconds (up to 3 decimal places). 24–48 h lag. Scope `video.list`.
+        create_time:
+          type: string
+          description: Unix seconds (UTC, string-encoded). Real-time. Scope `video.list`.
+        likes:
+          type: integer
+          description: Total likes. 24–48 h lag. Scope `video.list`.
+        comments:
+          type: integer
+          description: Total comments. 24–48 h lag. Scope `video.list`.
+        shares:
+          type: integer
+          description: |
+            Total shares — includes external shares AND in-app "Send to friends" shares.
+            24–48 h lag. Scope `video.list`.
+        favorites:
+          type: integer
+          description: Times added to favorites. Data source Business Analytics. 24–48 h lag. Scope `video.list`.
+        video_views:
+          type: integer
+          description: |
+            Total video views (organic + paid). Counts when playback duration > 0 and is the
+            first playback in an impression session. Swipe-away + swipe-back counts as 2 impressions.
+            24–48 h lag. Scope `video.list`.
+        reach:
+          type: integer
+          description: |
+            Unique viewers who watched the post at least once. Data source TikTok Studio.
+            24–48 h lag. Scope `video.list`. **Unavailable** if no view/like/comment/share activity in past 7 days.
+        total_time_watched:
+          type: number
+          format: float
+          description: Total play time across all viewers (seconds). Data source TikTok Studio. 24–48 h lag. Scope `video.insights`.
+        average_time_watched:
+          type: number
+          format: float
+          description: Average watch time per view (seconds). Data source TikTok Studio. 24–48 h lag. Scope `video.insights`.
+        full_video_watched_rate:
+          type: number
+          format: float
+          description: Fraction (0–1) of viewers who finished the video. Data source TikTok Studio. 24–48 h lag. Scope `video.insights`.
+        new_followers:
+          type: integer
+          description: Viewers who started following you via this post. Data source TikTok Studio. 24–48 h lag. Scope `video.insights`.
+        profile_views:
+          type: integer
+          description: |
+            Profile views from this post's viewers. Data source Business Analytics.
+            **Business Accounts only.** 24–48 h lag. Scope `video.insights`.
+        website_clicks:
+          type: integer
+          description: |
+            Clicks on profile website link from viewers of this post. Data source Business Analytics.
+            **Registered Business Accounts only.** 24–48 h lag. Scope `video.insights`.
+        phone_number_clicks:
+          type: integer
+          description: |
+            Clicks on profile phone link. Data source Business Analytics.
+            **Registered Business Accounts only.** 24–48 h lag. Scope `video.insights`.
+        lead_submissions:
+          type: integer
+          description: |
+            Leads (price quotes, newsletter sign-ups, etc.) from viewers of this post.
+            Data source Business Analytics. **Registered Business Accounts only.** 24–48 h lag.
+            Scope `video.insights`.
+        app_download_clicks:
+          type: integer
+          description: |
+            Clicks on profile app-download link. Data source Business Analytics.
+            **Registered Business Accounts only.** 24–48 h lag. Scope `video.insights`.
+        email_clicks:
+          type: integer
+          description: |
+            Clicks on profile Email button from this post's viewers. Data source Business Analytics.
+            **Registered Business Accounts only.** 24–48 h lag. Scope `video.insights`.
+        address_clicks:
+          type: integer
+          description: |
+            Clicks on profile Address button from this post's viewers. Data source Business Analytics.
+            **Registered Business Accounts only.** 24–48 h lag. Scope `video.insights`.
+        video_view_retention:
+          type: array
+          description: |
+            Audience retention curve — how many viewers are still watching at each second.
+            Data source TikTok Studio. 24–48 h lag. Scope `video.insights`.
+          items:
+            type: object
+            properties:
+              second:
+                type: string
+                description: Specific second in the timeline.
+              percentage:
+                type: number
+                format: float
+                description: Fraction (0–1) of viewers still watching at this second.
+        impression_sources:
+          type: array
+          description: |
+            Traffic-source breakdown, ranked from largest contribution to smallest.
+            Data source TikTok Studio. 24–48 h lag. Scope `video.insights`.
+            **Unavailable** if no activity in past 7 days.
+          items:
+            type: object
+            properties:
+              impression_source:
+                type: string
+                enum: [For You, Follow, Sound, Personal Profile, Search, Others, Direct Message]
+                description: |
+                  `Direct Message` is only returned if TikTok Studio has the data for this post.
+              percentage:
+                type: number
+                format: float
+        audience_genders:
+          type: array
+          description: Viewer gender breakdown. Data source TikTok Studio. 24–48 h lag. Scope `video.insights`.
+          items:
+            type: object
+            properties:
+              gender:
+                type: string
+                enum: [Female, Male, Other]
+              percentage:
+                type: number
+                format: float
+        audience_countries:
+          type: array
+          description: |
+            Top countries/regions of viewers. Max 10. Country codes are ISO 3166-1 alpha-2.
+            Data source TikTok Studio. 24–48 h lag. Scope `video.insights`.
+            **Unavailable** if no activity in past 7 days.
+          maxItems: 10
+          items:
+            type: object
+            properties:
+              country:
+                type: string
+                description: ISO 3166-1 alpha-2 code (e.g. `US`, `GB`).
+              percentage:
+                type: number
+                format: float
+        audience_cities:
+          type: array
+          description: Top cities of viewers. Max 10. Data source TikTok Studio. 24–48 h lag. Scope `video.insights`.
+          maxItems: 10
+          items:
+            type: object
+            properties:
+              city_name:
+                type: string
+                example: "US Cincinnati"
+              percentage:
+                type: number
+                format: float
+        audience_types:
+          type: array
+          description: Breakdown of audience by new/returning and follower/non-follower. Data source TikTok Studio. 24–48 h lag. Scope `video.insights`.
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                enum: [NEW_VIEWER, RETURN_VIEWER, FOLLOWER_PERCENT, NON_FOLLOWER_PERCENT]
+                description: |
+                  `NEW_VIEWER`: first-time or 1y+ since last view.
+                  `RETURN_VIEWER`: viewed your posts in past year.
+                  `FOLLOWER_PERCENT`: following you. `NON_FOLLOWER_PERCENT`: not following.
+              percentage:
+                type: number
+                format: float
+        engagement_likes:
+          type: array
+          description: |
+            Distribution of like events across the video timeline.
+            Data source TikTok Studio. 24–48 h lag. Scope `video.insights`.
+          items:
+            type: object
+            properties:
+              second:
+                type: string
+              percentage:
+                type: number
+                format: float
+
+    # ── Webhook event envelopes ───────────────────────────────────────────────
+
+    WebhookEnvelope:
+      type: object
+      description: |
+        Outer wrapper for every TikTok webhook POST. The `content` field is a
+        **stringified JSON** — always parse with `JSON.parse(payload.content)`.
+      properties:
+        client_key:
+          type: string
+          description: Your developer app ID.
+        event:
+          type: string
+          description: Event name (e.g. `im_receive_msg`, `comment.update`).
+        create_time:
+          type: integer
+          description: Unix seconds when the notification was sent.
+        user_openid:
+          type: string
+          description: "`open_id` / `business_id` of the Business Account that triggered the event."
+        content:
+          type: string
+          description: Stringified JSON payload. Schema varies by `event` — see event-specific schemas below.
+
+    # ── DIRECT_MESSAGE event content schemas ──────────────────────────────────
+
+    ImMessageContent:
+      type: object
+      description: |
+        Shared content shape for `im_send_msg` and `im_receive_msg`.
+        Note: `role` values in webhook payloads are **lowercase** (`business_account`,
+        `personal_account`) unlike the REST API which uses uppercase.
+      properties:
+        from:
+          type: string
+          description: TikTok username of the sender.
+        to:
+          type: string
+          description: TikTok username of the receiver.
+        unique_identifier:
+          type: string
+          description: Stable cross-API identifier of the TikTok user in the conversation.
+        from_user:
+          type: object
+          properties:
+            role:
+              type: string
+              enum: [business_account, personal_account]
+            id:
+              type: string
+        to_user:
+          type: object
+          properties:
+            role:
+              type: string
+              enum: [business_account, personal_account]
+            id:
+              type: string
+        conversation_id:
+          type: string
+          description: Use this to send a reply via `POST /business/message/send/`.
+        message_id:
+          type: string
+        timestamp:
+          type: integer
+          description: Unix ms when the message was sent.
+        type:
+          type: string
+          enum: [text, image, share_post, video, emoji, sticker, reaction, template]
+          description: Lowercase enum — different from the REST API's uppercase `message_type`.
+        text:
+          type: object
+          description: Present when `type=text`.
+          properties:
+            body:
+              type: string
+        image:
+          type: object
+          description: Present when `type=image`.
+          properties:
+            media_id:
+              type: string
+        share_post:
+          type: object
+          description: Present when `type=share_post`.
+          properties:
+            embed_url:
+              type: string
+            video_id:
+              type: string
+        video:
+          type: object
+          description: Present when `type=video`.
+          properties:
+            media_id:
+              type: string
+        sticker:
+          type: object
+          description: Present when `type=sticker`. URL expires in 30 days (`x-expires`).
+          properties:
+            url:
+              type: string
+        emoji:
+          type: object
+          description: Present when `type=emoji`. URL does not expire.
+          properties:
+            url:
+              type: string
+        reaction:
+          type: array
+          description: Present when `type=reaction`.
+          items:
+            type: object
+            properties:
+              operation:
+                type: string
+                enum: [ADD, REMOVE]
+              type:
+                type: string
+                enum: [EMOJI, AI_EMOJI]
+              emoji:
+                type: string
+                description: Present when `type=EMOJI`.
+              ai_emoji_url:
+                type: string
+                description: Present when `type=AI_EMOJI`. Expires in 30 days.
+              unique_identifier:
+                type: string
+              timestamp:
+                type: integer
+              original_msg_id:
+                type: string
+        template:
+          type: object
+          description: Present when `type=template`.
+          properties:
+            type:
+              type: string
+              enum: [qa_button_card, qa_link_card]
+              description: Lowercase in webhook payloads.
+            elements:
+              type: array
+              description: Currently max 1 element.
+              items:
+                type: object
+                properties:
+                  title:
+                    type: string
+                  buttons:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        text:
+                          type: string
+                        type:
+                          type: string
+                          enum: [REPLY]
+                        id:
+                          type: string
+        referenced_message_info:
+          type: object
+          description: Present for quoted replies.
+          properties:
+            referenced_message_id:
+              type: string
+        auto_message_type:
+          type: string
+          enum: [WELCOME_MESSAGE, SUGGESTED_QUESTION, AUTO_REPLY]
+          description: Only present for automatic messages.
+        scene_type:
+          type: integer
+          description: "`0` = normal message."
+        is_follower:
+          type: boolean
+          description: Whether the Personal Account follows the Business Account.
+        message_tag:
+          type: object
+          properties:
+            source:
+              type: string
+              enum: [APP, WEB, API, OTHERS, UNKNOWN_SOURCE]
+
+    ImReceiveMsgContent:
+      allOf:
+        - $ref: '#/components/schemas/ImMessageContent'
+        - type: object
+          description: |
+            Content for `im_receive_msg` (non-EU/EEA/UK senders).
+            For EEA/CH/UK senders, use `ImReceiveMsgEuContent` instead — it contains
+            far less information (no sender, no conversation_id, no message body).
+          properties:
+            reply_source_payload:
+              type: object
+              description: |
+                Present only when `type=text` and the message is an auto-generated reply
+                triggered by a Q&A card button/link click.
+              properties:
+                reply_source_msg_id:
+                  type: string
+                reply_source_unique_id:
+                  type: string
+                  description: The `id` you defined on the button/link in the template.
+
+    ImReceiveMsgEuContent:
+      type: object
+      description: |
+        Stripped content for `im_receive_msg_eu` (EEA/Switzerland/UK senders).
+        Contains **only** receiver info and timestamp — no sender, no conversation_id,
+        no message body. To retrieve message content, poll
+        `GET /business/message/conversation/list/` then `GET /business/message/content/list/`.
+      properties:
+        to:
+          type: string
+        to_user:
+          type: object
+          properties:
+            role:
+              type: string
+              enum: [business_account]
+            id:
+              type: string
+        timestamp:
+          type: integer
+          description: Unix ms.
+
+    ImReferralMsgContent:
+      type: object
+      description: |
+        Content for `im_referral_msg`. Fires when a user enters a conversation from a
+        Click-to-Message Ad or a `tiktok.me` shortlink.
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        unique_identifier:
+          type: string
+        from_user:
+          type: object
+          properties:
+            role:
+              type: string
+              enum: [personal_account]
+            id:
+              type: string
+        to_user:
+          type: object
+          properties:
+            role:
+              type: string
+              enum: [business_account]
+            id:
+              type: string
+        conversation_id:
+          type: string
+        timestamp:
+          type: integer
+        is_follower:
+          type: boolean
+        referral:
+          type: object
+          properties:
+            source:
+              type: string
+              enum: [ad, short_link]
+            ad:
+              type: object
+              description: Present when `source=ad`.
+              properties:
+                advertiser_id:
+                  type: string
+                ad_id:
+                  type: string
+                timestamp:
+                  type: integer
+                ad_name:
+                  type: string
+                embed_url:
+                  type: string
+                message_material_id:
+                  type: string
+                  description: Upgraded Smart+ creative encoded ID.
+            short_link:
+              type: object
+              description: Present when `source=short_link`.
+              properties:
+                ref:
+                  type: string
+                  description: URL-encoded referral param (max 2,083 chars; alphanumeric + `-_=`).
+                prefilled_message:
+                  type: string
+                prefilled_message_audit_status:
+                  type: string
+                  enum: [PASS, REJECT]
+
+    ImMarkReadMsgContent:
+      type: object
+      description: |
+        Content for `im_mark_read_msg`. Fires when a Personal Account marks all messages as read.
+        Does NOT fire when a Business Account marks messages read.
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        unique_identifier:
+          type: string
+        from_user:
+          type: object
+          properties:
+            role:
+              type: string
+              enum: [personal_account]
+            id:
+              type: string
+        to_user:
+          type: object
+          properties:
+            role:
+              type: string
+              enum: [business_account]
+            id:
+              type: string
+        conversation_id:
+          type: string
+        timestamp:
+          type: integer
+        read:
+          type: object
+          properties:
+            last_read_timestamp:
+              type: integer
+              description: Unix ms of the last message that was marked seen.
+
+    ImAutoMessageConfigUpdateContent:
+      type: object
+      description: |
+        Content for `im_auto_message_config_update`. Fires within 5 minutes of an auto-message
+        being created, updated, deleted, enabled, or disabled.
+        Requires `message.list.read` scope to remain granted.
+
+        When a welcome message is updated, up to **three** events fire in sequence:
+        DELETE (old), CREATE (new), then an `im_auto_message_audit_update`.
+      properties:
+        auto_message_id:
+          type: string
+        auto_message_type:
+          type: string
+          enum: [WELCOME_MESSAGE, SUGGESTED_QUESTION, CHAT_PROMPT]
+        auto_message_action:
+          type: string
+          enum: [CREATE, UPDATE, DELETE, ENABLE, DISABLE]
+          description: |
+            `WELCOME_MESSAGE` supports: CREATE, DELETE, ENABLE, DISABLE (no UPDATE).
+            `SUGGESTED_QUESTION` and `CHAT_PROMPT` support all five.
+        timestamp:
+          type: integer
+          description: Unix ms.
+        welcome_message:
+          type: object
+          description: Present when `auto_message_type=WELCOME_MESSAGE`.
+          properties:
+            content:
+              type: string
+        suggested_question:
+          type: object
+          description: Present when `auto_message_type=SUGGESTED_QUESTION`.
+          properties:
+            question:
+              type: string
+            answer:
+              type: string
+        chat_prompt:
+          type: object
+          description: Present when `auto_message_type=CHAT_PROMPT`.
+          properties:
+            title:
+              type: string
+              description: Button label shown above the input box.
+            content:
+              type: string
+              description: The question auto-generated when user taps the prompt.
+
+    ImAutoMessageAuditUpdateContent:
+      type: object
+      description: |
+        Content for `im_auto_message_audit_update`. Fires within 5 minutes of an auto-message
+        being approved or rejected. Requires `message.list.read` scope.
+      properties:
+        auto_message_id:
+          type: string
+        auto_message_type:
+          type: string
+          enum: [WELCOME_MESSAGE, SUGGESTED_QUESTION, CHAT_PROMPT]
+        audit_status:
+          type: string
+          enum: [APPROVED, REJECTED]
+        timestamp:
+          type: integer
+          description: Unix ms.
+
+    ImReceiveHighIntentCommentContent:
+      type: object
+      description: |
+        Content for `im_receive_high_intent_comment`. Fires when a high-intent comment
+        (expressing purchase intent or information-seeking) is left on a Business Account's video.
+
+        Requires Comment-to-Message to be enabled via `POST /business/message/direct_reply/update/`.
+        Reply using `POST /business/message/send/` with `direct_reply.reply_type=COMMENT_REPLY`.
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        timestamp:
+          type: integer
+        unique_identifier:
+          type: string
+        from_user:
+          type: object
+          properties:
+            role:
+              type: string
+              enum: [personal_account]
+            id:
+              type: string
+        to_user:
+          type: object
+          properties:
+            role:
+              type: string
+              enum: [business_account]
+            id:
+              type: string
+        comment_id:
+          type: string
+          description: Pass to `direct_reply.comment_reply.comment_id` in the send endpoint.
+        comment_text:
+          type: string
+        is_follower:
+          type: boolean
+
+    # ── BRAND_MENTION event content schema ────────────────────────────────────
+
+    BrandMentionEventContent:
+      type: object
+      description: |
+        Content for `brand.mention.event`. Fires (with up to **2–3 hour latency**) when a user
+        mentions the business handle (`@business`) in a video caption or comment.
+        Subscribe with `event_type=BRAND_MENTION`.
+
+        **Note:** TikTok's docs show `mention_type` as both `VIDEO MENTION` (with space) and
+        `VIDEO_MENTION` (with underscore). Accept both values defensively.
+      properties:
+        type_of_event:
+          type: string
+          enum: [CREATE, EDIT, PRIVACY_CHANGE]
+        mention_type:
+          type: string
+          enum: [VIDEO_MENTION, COMMENT]
+          description: |
+            `VIDEO_MENTION`: business mentioned in a video caption.
+            `COMMENT`: business mentioned in a comment or reply.
+        video_id:
+          type: string
+        video_create_time:
+          type: integer
+          description: Unix seconds.
+        open_id_of_mentioned_user:
+          type: string
+          description: "`business_id` of the mentioned account."
+        unique_name_of_mentioned_user:
+          type: string
+        unique_identifier:
+          type: string
+          description: Stable cross-API identifier of the user who posted the mention.
+        share_url:
+          type: string
+        video_caption:
+          type: string
+        comment_id:
+          type: string
+          description: "`\"0\"` when `mention_type=VIDEO_MENTION`."
+
+    # ── COMMENT event content schema ──────────────────────────────────────────
+
+    CommentUpdateContent:
+      type: object
+      description: |
+        Content for `comment.update`. Fires within **5 minutes** of a comment/reply being
+        created, deleted, or visibility-changed on any photo or public video post.
+        Covers both API-published and manually published posts.
+
+        Requires `comment.list` scope to remain granted by the account owner.
+
+        **Important:** The payload does **not** include comment text. For `insert` events,
+        call `GET /business/comment/list/?comment_ids=[<comment_id>]` to fetch the body.
+        For `delete` events, the comment is gone — the webhook is the only record.
+
+        **JSON number precision:** `comment_id`, `video_id`, and `parent_comment_id` are
+        serialized as bare numbers that exceed `Number.MAX_SAFE_INTEGER` (2^53−1).
+        In Node.js, use a BigInt reviver or `json-bigint` — naïve `JSON.parse` will silently
+        truncate the last digits and produce wrong IDs.
+      properties:
+        comment_id:
+          type: integer
+          description: "Exceeds JS `Number.MAX_SAFE_INTEGER` — parse as string or BigInt."
+          example: 7247303576418566913
+        video_id:
+          type: integer
+          description: "Exceeds JS `Number.MAX_SAFE_INTEGER` — parse as string or BigInt."
+          example: 7203946942097902849
+        parent_comment_id:
+          type: integer
+          description: Present only when `comment_type=reply`. Exceeds JS safe int range.
+        comment_type:
+          type: string
+          enum: [comment, reply]
+        comment_action:
+          type: string
+          enum: [insert, delete, set_to_hidden, set_to_friends_only, set_to_public]
+          description: |
+            `insert`: created. `delete`: deleted. `set_to_hidden`: hidden by owner or moderation.
+            `set_to_friends_only`: restricted to friends. `set_to_public`: made publicly visible.
+        unique_identifier:
+          type: string
+        timestamp:
+          type: integer
+          description: Unix ms.
+
+    # ── VIDEO event content schemas ───────────────────────────────────────────
+
+    PostPublishFailedContent:
+      type: object
+      description: |
+        Content for `post.publish.failed`. Fires when a post upload fails — either due to format
+        constraint violations or because the source URL could not be downloaded within 1 hour.
+
+        Non-deterministic latency — up to 30 minutes for a 1 GB file.
+      properties:
+        publish_id:
+          type: string
+          description: The `share_id` from the original publish API response.
+        publish_type:
+          type: string
+          enum: [DIRECT_PUBLISH]
+        reason:
+          type: string
+          description: |
+            Machine-parsable failure reason. Retryable errors marked with ✅.
+
+            | Reason | Retry? |
+            |--------|--------|
+            | `file_format_check_failed` | ❌ |
+            | `duration_check_failed` | ❌ (video must be 3–60 s) |
+            | `frame_rate_check_failed` | ❌ (must be 23–60 FPS) |
+            | `picture_size_check_failed` | ❌ (min 360×360 px) |
+            | `internal` | ✅ |
+            | `video_pull_failed` | ✅ if URL valid |
+            | `photo_pull_failed` | ✅ if URL valid |
+            | `auth_removed` | ❌ do not retry |
+            | `spam_risk_too_many_posts` | ❌ use TikTok app instead |
+            | `spam_risk_user_banned_from_posting` | ❌ |
+            | `spam_risk_text` | ❌ |
+            | `spam_risk` | ❌ not recommended |
+            | `publish_cancelled` | n/a |
+
+    PostPublishCompleteContent:
+      type: object
+      description: |
+        Content for `post.publish.complete`. Fires after upload succeeds and file format checks pass.
+        `post_id` is NOT yet available — wait for `post.publish.publicly_available`.
+      properties:
+        publish_id:
+          type: string
+        publish_type:
+          type: string
+          enum: [DIRECT_PUBLISH]
+
+    PostPublishPubliclyAvailableContent:
+      type: object
+      description: |
+        Content for `post.publish.publicly_available`. Fires after moderation approves the post
+        (typically ≤ 2 minutes after `post.publish.complete`, longer if manual moderation).
+        This is the first event where `post_id` is available. Use it for insights/comments queries.
+      properties:
+        publish_id:
+          type: string
+        post_id:
+          type: string
+          description: Usable as `video_ids` filter in `/business/video/list/`.
+        publish_type:
+          type: string
+          enum: [DIRECT_PUBLISH]
+
+    PostPublishNoLongerPubliclyAvailableContent:
+      type: object
+      description: |
+        Content for `post.publish.no_longer_publicly_available`. Fires when a previously public
+        post is removed from public view — subsequent moderation action or user made it
+        friends-only/private. May fire multiple times or never. This event is **webhook-only**;
+        `GET /business/publish/status/` cannot detect after-the-fact takedowns.
+      properties:
+        publish_id:
+          type: string
+        post_id:
+          type: string
+        publish_type:
+          type: string
+          enum: [DIRECT_PUBLISH]

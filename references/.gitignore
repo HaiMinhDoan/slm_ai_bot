@@ -1,0 +1,7 @@
+# File build sẵn trong repo tham khảo: không dùng (README), không commit
+bin/
+obj/
+*.jar
+*.dll
+*.exe
+node_modules/

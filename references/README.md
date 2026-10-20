@@ -8,13 +8,14 @@ Bản clone các repo và MCP được nhắc trong kế hoạch (`AI_Customer_C
 - **Không import** code ở đây vào ứng dụng. Adapter Java gọi API chính thức của nền tảng (mục 46.1).
 - **License:** repo ghi "không có" thì chỉ được đọc để hiểu cách API hoạt động, không copy code. Repo MIT được copy có ghi nguồn, nhưng vẫn ưu tiên viết lại theo hành vi của API. Ghi nguồn tham khảo vào file `NOTICE` của ứng dụng.
 - **Khi port:** ghi bảng đối chiếu "hàm trong repo → method Java" vào `docs/porting/<ten-repo>.md`.
-- Các thư mục clone **không commit vào git** (xem `.gitignore` ở thư mục gốc). Chỉ `README.md` và `clone.sh` được commit.
+- Các thư mục clone **được commit vào git dưới dạng file thường**: `.git` của từng repo đã bị xóa, commit gốc ghi ở `<thư mục>/.ref-commit`. File build sẵn (`bin/`, `obj/`, `*.jar`, `*.dll`, `*.exe`) không commit (xem `references/.gitignore`).
+- Repo ghi license "Không có" chỉ được để trong repo riêng tư; nếu repo này chuyển sang công khai thì phải gỡ các thư mục đó ra.
 
 ## Tạo lại / cập nhật
 
 ```bash
 bash references/clone.sh            # clone những repo còn thiếu
-bash references/clone.sh --update   # cập nhật lên commit mới nhất
+bash references/clone.sh --update   # tải lại toàn bộ lên commit mới nhất, rồi commit thay đổi
 ```
 
 ## Cấu trúc
