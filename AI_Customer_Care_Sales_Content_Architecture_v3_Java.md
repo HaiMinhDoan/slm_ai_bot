@@ -156,6 +156,8 @@ SUPPORT
 VIP
 ```
 
+**Nguồn dữ liệu khách hiện có (chưa chốt, mục 59.2).** Khoảng 3.000 khách hiện có (nhóm 1–4 ở mục 2) đang nằm ở `slm_v2` / Sales API, không nằm trong bot. Trước khi làm các chức năng cho khách đã lắp đặt, cần chốt: hệ nào là nguồn gốc của khách hàng và hệ thống điện của khách, bot nhập một lần hay đồng bộ định kỳ, khớp theo số điện thoại thế nào. Cho tới khi chốt, `khach_hang` của bot chỉ chứa khách nhắn tin qua các kênh.
+
 ## 4.2 Product Catalog (đồng bộ từ slm_v2)
 
 Vật tư, trọn gói và bảng giá đã được quản lý trong hệ thống `slm_v2` (PostgreSQL). Bot **không quản lý lại** dữ liệu này: chỉ đồng bộ về một bản chỉ đọc, chuẩn hóa, kiểm tra, rồi cho AI tra cứu qua tool. Mọi thay đổi giá và gói vẫn làm trên `slm_v2`.
@@ -304,11 +306,12 @@ Giá, gói và thông số **không** nằm trong prompt. Claude gọi tool, bac
 
 | Tool | Việc |
 |---|---|
-| `tim_goi_phu_hop(khu_vuc, loai_he_thong, so_pha, san_luong_can, dien_tich_mai, loai_mai, can_luu_tru)` | Backend quy đổi tỉnh → miền → cơ sở giá (mục 4.2.9); `SizingService` tính theo công thức của doanh nghiệp, lọc gói `dang_dung` và `duoc_goi_y`, trả 1–3 gói kèm `tong_gia`, thành phần `duoc_xem`, bảo hành, ảnh chính; khi thông tin chưa đủ thì trả dải giá theo loại hệ, số pha và cơ sở (mục 58.2) |
+| `tim_goi_phu_hop(khu_vuc, loai_he_thong, so_pha, san_luong_can, dien_tich_mai, loai_mai, can_luu_tru)` | Backend quy đổi tỉnh → miền → cơ sở giá (mục 4.2.9); `SizingService` tính theo công thức của doanh nghiệp, lọc gói `dang_dung` và `duoc_goi_y`, trả 1–3 gói kèm `tong_gia`, thành phần `duoc_xem`, bảo hành, ảnh chính; khi thông tin chưa đủ thì trả dải giá theo khoảng hóa đơn (nếu đã biết), loại hệ, số pha và cơ sở, không trả dải giá của toàn catalog (mục 58.2, 59.3) |
 | `chi_tiet_goi(goi_id)` | Thành phần hiển thị, bảo hành, giá khung sắt nếu có |
 | `tra_cuu_vat_tu(ma hoặc từ khóa)` | Thông số đã chuẩn hóa, bảo hành, giá lẻ theo cơ sở (nếu có) |
 
-- Mọi con số trong câu trả lời phải xuất hiện trong kết quả tool; Policy Engine kiểm tra trước khi gửi.
+- Mọi con số về giá, công suất, sản lượng trong câu trả lời phải có nguồn hợp lệ; Policy Engine kiểm tra trước khi gửi theo quy tắc ở mục 33.
+- Mỗi lần báo giá đi kèm điều kiện báo giá do doanh nghiệp chốt (VAT, vận chuyển / lắp đặt ở tỉnh xa, giá cuối sau khảo sát, hiệu lực; mục 4.2.8). Tool trả kèm `hieu_luc_tu` của giá để biết báo giá dựa trên bản catalog nào.
 - Nếu mái cần khung sắt, công thức cộng thêm `gia_khung_sat` (hiện mọi gói đều đang là 0).
 - Bản tóm tắt catalog (danh sách hãng, loại hệ, dải kWp theo cơ sở, địa chỉ và hotline; **không có giá**) được đưa vào prompt để AI biết công ty đang bán gì (mục 5.4).
 
@@ -329,6 +332,9 @@ Giá, gói và thông số **không** nằm trong prompt. Claude gọi tool, bac
 - Danh sách tỉnh thuộc miền Bắc / miền Nam (doanh nghiệp sẽ cung cấp; mục 4.2.9).
 - Sửa gói 101 và các lỗi dữ liệu trên ở DB nguồn.
 - Nhập giá khung cho mái bằng (`gia_khung_sat` hiện bằng 0 ở mọi gói, mục 58.4).
+- **Công thức sizing của doanh nghiệp** (hóa đơn → kWh theo bậc EVN → kWh/ngày → kWp, hệ số sản lượng theo miền, diện tích mái theo loại mái). Chưa có công thức thì chưa làm được `tim_goi_phu_hop`; đây là việc chặn của Phase 0.
+- **Điều kiện báo giá:** giá đã gồm VAT chưa; có phụ phí vận chuyển / lắp đặt ở tỉnh xa không; chiết khấu của sales so với giá niêm yết; báo giá có hiệu lực bao lâu. AI luôn nói rõ giá là giá niêm yết, giá cuối do nhân viên báo sau khảo sát.
+- **Vùng phục vụ:** tỉnh nào công ty lắp đặt được (mục 4.2.9).
 
 ### 4.2.9 Quy đổi tỉnh → miền → cơ sở giá
 
@@ -342,6 +348,7 @@ Khách nói tỉnh/thành ─► rules/regions.yaml ─► miền (BAC / NAM) �
 - Lưu ở `knowledge/rules/regions.yaml`, sửa và phát hành qua Knowledge Editor như mọi tài liệu (mục 5.3). Khi phát hành, hệ thống kiểm tra: mỗi tỉnh chỉ thuộc một miền, mỗi miền trỏ tới một cơ sở có trong catalog.
 - Danh sách nên theo đơn vị hành chính hiện hành (sau sắp xếp tỉnh năm 2025) và kèm **tên cũ, tên viết tắt, tên không dấu** làm alias, vì khách thường nói theo tên cũ hoặc gõ tắt.
 - AI không chọn cơ sở: AI chỉ ghi tỉnh khách nói (`khu_vuc`), backend quy đổi. Tỉnh không có trong danh sách hoặc không rõ: AI hỏi lại một câu; vẫn không xác định được thì chuyển nhân viên, không tự đoán miền.
+- **Vùng phục vụ:** mỗi tỉnh có cờ `serviced`. Tỉnh công ty không lắp đặt: AI nói rõ, không báo giá gói, ghi lead với lý do "ngoài vùng phục vụ" để sales quyết định (mục 59.3).
 - `ho_so_tu_van.thong_tin_da_thu` lưu cả tỉnh và miền đã quy đổi; lead gửi Sales API kèm cả hai.
 
 Bản nháp:
@@ -351,10 +358,11 @@ regions:
   BAC: { co_so: HN }
   NAM: { co_so: HCM }
 provinces:                   # doanh nghiệp cung cấp danh sách đầy đủ
-  - { name: "Hà Nội", region: BAC, aliases: ["HN", "Ha Noi", "Hà Tây"] }
-  - { name: "TP. Hồ Chí Minh", region: NAM, aliases: ["HCM", "Sài Gòn", "SG", "Ho Chi Minh"] }
+  - { name: "Hà Nội", region: BAC, serviced: true, aliases: ["HN", "Ha Noi", "Hà Tây"] }
+  - { name: "TP. Hồ Chí Minh", region: NAM, serviced: true, aliases: ["HCM", "Sài Gòn", "SG", "Ho Chi Minh"] }
   # ...
 unknown_province: ASK_AGAIN_THEN_HANDOFF
+outside_service_area: INFORM_AND_LOG_LEAD
 ```
 
 Bảng phía bot: mục 29 (Catalog).
@@ -424,7 +432,7 @@ Mỗi tài liệu có các trường khai báo. Trên admin, các trường này
 ``` yaml
 ---
 ma_tai_lieu: policy.bao-hanh
-loai_tai_lieu: policy # core | playbook | policy | faq | example | content | guide | template
+loai_tai_lieu: policy # core | playbook | policy | faq | example | content | rule | guide | template
 tieu_de: Chính sách bảo hành
 chu_de: [bao-hanh]    # theo rules/topics.yaml
 cac_kenh: [messenger, comment]
@@ -1152,18 +1160,20 @@ Không tách "Response Planner" thành một lời gọi AI riêng. Trong cùng 
 Kết quả gồm đúng những gì trước đây Response Planner quyết định:
 
 1.  Mục tiêu của lượt này (hỏi thêm, giải thích, đề xuất gói, xin thông tin liên hệ).
-2.  Câu trả lời gửi khách.
-3.  Thông tin tư vấn mới thu thập được, câu vừa hỏi khách, và tín hiệu phân loại khách (mục 58.3).
-4.  Media đính kèm và lý do (mục 7).
-5.  Tài liệu kiến thức đã dựa vào.
-6.  Lỗ hổng kiến thức, nếu có.
-7.  Có cần chuyển nhân viên không, vì sao.
+2.  Loại câu hỏi (`intent`, danh sách ở mục 35), dùng để quyết định gửi tự động hay để nháp.
+3.  Câu trả lời gửi khách.
+4.  Thông tin tư vấn mới thu thập được, câu vừa hỏi khách, và tín hiệu phân loại khách (mục 58.3).
+5.  Media đính kèm và lý do (mục 7).
+6.  Tài liệu kiến thức đã dựa vào.
+7.  Lỗ hổng kiến thức, nếu có.
+8.  Có cần chuyển nhân viên không, vì sao.
 
 Ví dụ:
 
 ``` json
 {
   "goal": "qualify_lead",
+  "intent": "HOI_GIA",
   "reply": "Dạ, để em tính sát cho nhà mình nhé. Nhà mình dùng điện nhiều vào ban ngày hay buổi tối ạ?",
   "collected": { "hoa_don_thang": 2000000, "khu_vuc": "Hà Nội" },
   "question_asked": "ty_le_ngay_dem",
@@ -1210,16 +1220,19 @@ Ghi tin_nhan (OUT), luot_goi_ai, media_lan_gui, kt_lo_hong, ho_so_tu_van
 
 - Thời gian gộp tin cấu hình được (5–8 giây).
 - Nếu khách nhắn thêm trong lúc AI đang xử lý, kết quả cũ bị bỏ và hội thoại được xử lý lại với đủ các tin.
-- Nhân viên trả lời từ Page Inbox (sự kiện echo) → `HUMAN_OWNED` ngay, kể cả khi AI đang soạn.
+- **Tác dụng phụ của tool chỉ áp dụng khi lượt được chốt.** Tool đọc chạy ngay. Tool ghi (`cap_nhat_ho_so_tu_van`, `tao_lead`, `chuyen_nhan_vien`) chỉ ghi vào danh sách chờ của lượt; khi lượt qua Policy và được chốt (gửi, lưu nháp hoặc chuyển người) thì mới áp dụng, trong cùng transaction với `tin_nhan` (OUT) và `luot_goi_ai`. Lượt bị bỏ thì danh sách chờ bị hủy. Khóa chống trùng của lead tính theo `hoi_thoai_id` + số điện thoại, nên chạy lại không tạo lead trùng.
+- Nhân viên trả lời từ Page Inbox (sự kiện echo) → `HUMAN_OWNED` ngay, kể cả khi AI đang soạn. Echo do chính ứng dụng gửi (cùng `app_id`) **không** tính là nhân viên trả lời.
+- **Trả hội thoại lại cho AI:** nhân viên bấm "Trả lại AI" trên admin; hoặc tự động khi đã quá `N` giờ (cấu hình, ví dụ 24 giờ) kể từ tin cuối của nhân viên (`nhan_vien_tin_cuoi_luc`). Khi tự trả lại, tin tiếp theo của khách đi theo chế độ `DRAFT` và báo nhân viên phụ trách trước, không để AI chen vào giữa lúc nhân viên đang theo.
 - Chế độ `DRAFT`: bản nháp hiện trong inbox admin; nhân viên gửi, sửa (lưu `kt_sua_ban_nhap`) hoặc bỏ.
-- Chế độ mặc định của mỗi loại câu hỏi và tiêu chí chuyển sang `AUTO`: mục 35.
+- Chế độ mặc định của mỗi loại câu hỏi và các trường hợp một lượt `AUTO` chuyển sang `DRAFT`: mục 35.
+- **Công tắc dừng toàn cục** (mục 33): khi bật, mọi lượt đi theo `DRAFT` bất kể cấu hình.
 ------------------------------------------------------------------------
 
 # 20. Chọn model Claude
 
 ## 20.1 Một model cho hội thoại với khách
 
-Toàn bộ hội thoại với khách dùng **một model**, chọn bằng bộ test (mục 35): thử Haiku 5.5 trước; nếu không đạt thì Sonnet 5.5, rồi Opus 5.5. Lý do:
+Toàn bộ hội thoại với khách dùng **một model**, chọn bằng bộ test (mục 35). Chạy bộ test với model mạnh nhất (Opus 5.5) trước để biết mức chất lượng tối đa, rồi thử Sonnet 5.5 và Haiku 5.5; chỉ hạ model khi model nhỏ hơn đạt ngang trên bộ test. Chi phí AI chỉ khoảng $8–260/tháng (mục 37), nhỏ so với giá trị một lead, nên khi chưa đủ số liệu thì ưu tiên chất lượng. Lý do dùng một model:
 
 - Lượng tin thấp nên chênh lệch chi phí giữa các cách chia model nhỏ (mục 37).
 - Định tuyến theo từng tin cần một bước phân loại. Phân loại nhầm thì câu hỏi rơi vào model yếu hơn; trả lời sai về giá hay bảo hành đắt hơn nhiều so với tiền token tiết kiệm được.
@@ -1300,9 +1313,11 @@ Claude chỉ chuyển kết quả thành ngôn ngữ dễ hiểu.
 
 ## 21.3 Dữ liệu dự kiến (chốt khi làm Phase 4)
 
-- `solar_systems`: hệ của khách (một khách có thể có nhiều hệ), công suất, ngày lắp, hãng inverter, có đồng hồ đo tiêu thụ hay không.
-- `solar_devices`: mã thiết bị / mã trạm theo từng hãng, dùng để gọi API.
-- `energy_daily`: số liệu theo ngày: sản lượng, tiêu thụ, phát lưới, sản lượng kỳ vọng, cờ bất thường.
+Tên bảng theo quy ước ở mục 29, tiền tố `nl_` (năng lượng):
+
+- `nl_he_thong` (EN: `solar_systems`): hệ của khách (một khách có thể có nhiều hệ), công suất, ngày lắp, hãng inverter, có đồng hồ đo tiêu thụ hay không.
+- `nl_thiet_bi` (EN: `solar_devices`): mã thiết bị / mã trạm theo từng hãng, dùng để gọi API.
+- `nl_so_lieu_ngay` (EN: `energy_daily`): số liệu theo ngày: sản lượng, tiêu thụ, phát lưới, sản lượng kỳ vọng, cờ bất thường.
 ------------------------------------------------------------------------
 
 # 22. Báo cáo tuần/tháng
@@ -1330,24 +1345,21 @@ Video:
 Luồng:
 
 ``` text
-Solar API
+Solar API / API hãng inverter (mục 21.1)
     ↓
-Energy Analytics
+Energy Analytics: Java tính chỉ số, phát hiện bất thường (mục 21)
     ↓
 Customer Metrics
     ↓
-Knowledge RAG
+Claude: diễn giải số liệu thành lời, khuyến nghị
+        (kiến thức trong prompt có cache + danh mục media, mục 5.4, 7; văn phong báo cáo, mục 15)
     ↓
-Media RAG
+Personalized Report (trang báo cáo web)
     ↓
-Style Engine
-    ↓
-Claude
-    ↓
-Personalized Report
-    ↓
-Zalo (ZNS + trang báo cáo web, mục 54.4)
+Zalo (ZNS + link trang báo cáo web, mục 54.4)
 ```
+
+Mọi con số trong báo cáo lấy từ Energy Analytics; Claude không tự tính (mục 21).
 
 ------------------------------------------------------------------------
 
@@ -1685,52 +1697,38 @@ Không chỉ dựa trên similarity.
 Sau khi AI gửi media:
 
 ``` text
-AI chọn Video #102
+AI chọn M07
         ↓
 Khách nhận
         ↓
-Khách click?
-        ↓
 Khách phản hồi?
         ↓
-Có lấy số điện thoại?
-        ↓
-Có tạo lead?
+Có lấy số điện thoại / tạo lead?
         ↓
 Có chốt sale?
 ```
 
-Lưu:
+Không có bảng riêng cho việc này. Dữ liệu lấy từ các bảng đã có (mục 29):
 
-``` text
-goi_y_noi_dung
------------------------
-id
-khach_hang_id
-hoi_thoai_id
-tai_lieu_id
-media_id
-ly_do
-diem
-da_bam
-da_tra_loi
-tao_lead
-tao_don
-tao_luc
-```
+| Câu hỏi | Nguồn |
+|---|---|
+| AI đã gửi media nào, vì sao | `media_lan_gui` (`chon_boi`, `ly_do`, `luot_goi_ai_id`) |
+| Khách có phản hồi sau khi nhận không | `media_lan_gui.khach_tra_loi_luc` |
+| Có tạo lead không | `media_lan_gui.tao_lead`, `khach_tiem_nang` cùng `hoi_thoai_id` |
+| Có chốt sale không | Kết quả Sales API / CRM trả về theo lead |
+| Khách có bấm xem không | Chỉ khi nền tảng cung cấp; Messenger không báo lượt bấm, nên không dựa vào chỉ số này |
 
-Sau đó dùng dữ liệu này để đánh giá từng media.
+Sau đó dùng dữ liệu này để đánh giá từng media khi đủ số lượng (mục 7.5).
 
 Ví dụ:
 
 ``` text
-Video #102
+M07
 
-AI recommendations: 342
-Clicks: 87
-Phone numbers: 19
-Sales leads: 13
-Closed: 4
+Số lần gửi: 342
+Khách phản hồi: 120
+Để lại số điện thoại / lead: 19
+Chốt: 4
 ```
 
 ------------------------------------------------------------------------
@@ -1740,7 +1738,7 @@ Closed: 4
 ## Quy ước đặt tên
 
 - Tên bảng tiếng Việt không dấu, dạng `snake_case`, giống quy ước của `slm_v2` (`vat_tu`, `tron_goi`).
-- Tiền tố theo nhóm: `dm_` danh mục (catalog đồng bộ từ `slm_v2`), `kt_` kiến thức, `media_` thư viện media, `nd_` nội dung đăng bài, `tl_` trợ lý trong admin.
+- Tiền tố theo nhóm: `dm_` danh mục (catalog đồng bộ từ `slm_v2`), `kt_` kiến thức, `media_` thư viện media, `nd_` nội dung đăng bài, `tl_` trợ lý trong admin, `nl_` năng lượng (Phase 4, mục 21.3).
 - Tên cột cũng tiếng Việt không dấu, theo quy ước của `slm_v2`: thời điểm kết thúc bằng `_luc` (`tao_luc`, `sua_luc`), `trang_thai`, `ten`, `ma`, `mo_ta`, `sdt`; khóa ngoại dạng `<bảng>_id` (`khach_hang_id`, `hoi_thoai_id`, `vat_tu_id`).
 - Mỗi lệnh `CREATE TABLE` có một dòng `-- EN:` ghi tên bảng tiếng Anh; mỗi dòng cột có comment `[EN: ...]` ghi tên cột tiếng Anh, để code và các phiên AI khác tra cứu dễ.
 - Giữ nguyên tiếng Anh: `id`, `email`, `model`, `cta`, `caption`, `hashtags`, `attachment_id`, `media_id`; giá trị enum (`APPROVED`, `DRAFT`...); key JSON trong kết quả của AI (mục 18); key YAML của các file `rules/`; payload gửi Sales API (mục 23, 47); tên trường của API nền tảng (`user_id` của Zalo, `campaign_id` của TikTok...).
@@ -1749,6 +1747,7 @@ Closed: 4
 |---|---|---|
 | `khach_hang` | `customers` | Khách hàng, consent, opt-out |
 | `dinh_danh_kenh` | `channel_identities` | Định danh khách trên từng kênh |
+| `khach_hang_lich_su_gop` | `customer_merges` | Lịch sử gộp hai bản ghi khách trùng |
 | `dm_thuong_hieu` | `catalog_brands` | Thương hiệu (đồng bộ) |
 | `dm_co_so` | `catalog_branches` | Cơ sở giá: HN miền Bắc, HCM miền Nam |
 | `dm_vat_tu` | `catalog_materials` | Vật tư (đồng bộ) |
@@ -1783,7 +1782,6 @@ Closed: 4
 | `khach_tiem_nang` | `leads` | Lead gửi Sales API |
 | `lich_follow_up` | `lead_follow_up_jobs` | Lịch follow-up khách tiềm năng |
 | `lich_follow_up_su_kien` | `lead_follow_up_events` | Nhật ký lịch follow-up |
-| `goi_y_noi_dung` | `content_recommendations` | Theo dõi gợi ý nội dung (bản cũ, mục 28) |
 
 ## Từ điển cột
 
@@ -1914,6 +1912,8 @@ Tên cột tiếng Việt ↔ tên tiếng Anh (cùng một tên tiếng Anh lu�
 | `ma_tai_lieu` | `doc_key` | `vat_tu_id` | `material_id` |
 | `ma_tai_lieu_bo_sung` | `resolved_doc_key` | `xu_ly_luc` | `processed_at` |
 | `ma_tai_lieu_da_dua_vao` | `promoted_doc_key` | `y_dinh` | `intent` |
+| `gop_vao_id` | `merged_into_id` | `khach_hang_bi_gop_id` | `merged_customer_id` |
+| `tiep_quan_luc` | `taken_over_at` | `nhan_vien_tin_cuoi_luc` | `last_staff_message_at` |
 
 ## Customers
 
@@ -1922,13 +1922,14 @@ Tên cột tiếng Việt ↔ tên tiếng Anh (cùng một tên tiếng Anh lu�
 CREATE TABLE khach_hang (
     id                  UUID PRIMARY KEY,
     ten                 VARCHAR(200),                         -- [EN: name]
-    sdt                 VARCHAR(20) UNIQUE,                   -- [EN: phone] chuẩn hóa dạng 0xxxxxxxxx; NULL khi chưa có
+    sdt                 VARCHAR(20) UNIQUE,                   -- [EN: phone] chuẩn hóa dạng 0xxxxxxxxx; NULL khi chưa có. Một số = một khách (số dùng chung trong gia đình coi là một hộ)
     email               VARCHAR(200),
     giai_doan           VARCHAR(20) NOT NULL DEFAULT 'LEAD',  -- [EN: stage] mục 4.1
     nhan_vien_sales_id  VARCHAR(100),                         -- [EN: sales_id]
     so_thich            JSONB NOT NULL DEFAULT '{}',          -- [EN: preferences] ví dụ: thích trả lời ngắn (Customer Memory, mục 17)
     dong_y              JSONB NOT NULL DEFAULT '{}',          -- [EN: consent] theo kênh / mục đích: {"MESSENGER": {"marketing": false}}
     tu_choi_lien_he_luc TIMESTAMPTZ,                          -- [EN: opt_out_at] khách yêu cầu ngừng liên hệ
+    gop_vao_id          UUID REFERENCES khach_hang(id),       -- [EN: merged_into_id] khác NULL: bản ghi đã bị gộp vào khách khác, không dùng nữa
     tao_luc             TIMESTAMPTZ NOT NULL DEFAULT now(),   -- [EN: created_at]
     sua_luc             TIMESTAMPTZ NOT NULL DEFAULT now()    -- [EN: updated_at]
 );
@@ -1944,7 +1945,8 @@ CREATE TABLE dinh_danh_kenh (
     id                  UUID PRIMARY KEY,
     khach_hang_id       UUID NOT NULL REFERENCES khach_hang(id),  -- [EN: customer_id]
     kenh                VARCHAR(20) NOT NULL                      -- [EN: channel]
-                        CHECK (kenh IN ('MESSENGER','ZALO_OA','TIKTOK_DM','FACEBOOK_GROUP','ZALO_PERSONAL')),
+                        CHECK (kenh IN ('MESSENGER','FACEBOOK_COMMENT','ZALO_OA','TIKTOK_DM','TIKTOK_COMMENT',
+                                        'FACEBOOK_GROUP','ZALO_PERSONAL')),  -- mã kênh hội thoại, mục 54.1
     tai_khoan_id        VARCHAR(100) NOT NULL,                    -- [EN: account_id] page_id / oa_id / tài khoản TikTok của công ty
     id_nguoi_dung_ngoai VARCHAR(200) NOT NULL,                    -- [EN: external_user_id] PSID / Zalo user_id theo OA / ID người dùng TikTok
     ten_hien_thi        VARCHAR(200),                             -- [EN: display_name]
@@ -1956,6 +1958,28 @@ CREATE TABLE dinh_danh_kenh (
     UNIQUE (kenh, tai_khoan_id, id_nguoi_dung_ngoai)
 );
 CREATE INDEX idx_dinh_danh_kenh_khach_hang_id ON dinh_danh_kenh (khach_hang_id);
+```
+
+### Gộp khách trùng
+
+Mỗi định danh kênh mới tạo một `khach_hang` tạm (chưa có số điện thoại). Khi khách cho số điện thoại mà số đó đã thuộc khách khác:
+
+1. Giữ bản ghi đã có số (hoặc bản ghi cũ hơn); bản ghi còn lại là bản bị gộp.
+2. Trong một transaction: chuyển `dinh_danh_kenh`, `hoi_thoai`, `ho_so_tu_van`, `khach_tiem_nang`, `lich_follow_up` sang bản giữ lại; gộp `so_thich`, `dong_y` (lấy giá trị chặt hơn: đã từ chối thì giữ từ chối); đặt `gop_vao_id` cho bản bị gộp; ghi `khach_hang_lich_su_gop`.
+3. Gộp tự động chỉ khi số trùng khớp sau chuẩn hóa (`PHONE_MATCH`). Mọi trường hợp khác (cùng tên, nghi trùng) chỉ gợi ý trên admin, người duyệt mới gộp (`HUMAN`).
+4. Không tách lại tự động; nếu gộp nhầm, nhân viên tách bằng tay dựa trên `khach_hang_lich_su_gop`.
+
+``` sql
+-- EN: customer_merges — log of merged duplicate customers
+CREATE TABLE khach_hang_lich_su_gop (
+    id                   BIGSERIAL PRIMARY KEY,
+    khach_hang_id        UUID NOT NULL REFERENCES khach_hang(id),         -- [EN: customer_id] bản ghi giữ lại
+    khach_hang_bi_gop_id UUID NOT NULL REFERENCES khach_hang(id),         -- [EN: merged_customer_id]
+    ly_do                VARCHAR(16) NOT NULL CHECK (ly_do IN ('PHONE_MATCH','HUMAN')),  -- [EN: reason]
+    du_lieu_su_kien      JSONB,                                           -- [EN: event_data] id các bản ghi đã chuyển
+    nguoi_tao            VARCHAR(100),                                    -- [EN: created_by] NULL khi tự động
+    tao_luc              TIMESTAMPTZ NOT NULL DEFAULT now()               -- [EN: created_at]
+);
 ```
 
 ## Catalog (đồng bộ từ slm_v2)
@@ -2172,7 +2196,7 @@ CREATE TABLE luot_goi_ai (
     id                UUID PRIMARY KEY,
     muc_dich          VARCHAR(20) NOT NULL DEFAULT 'CUSTOMER_CHAT'  -- [EN: purpose]
                       CHECK (muc_dich IN ('CUSTOMER_CHAT','CONTENT_ASSISTANT','DAILY_BRIEF','KNOWLEDGE_ASSISTANT','RELEASE_EVAL')),
-    hoi_thoai_id      UUID NOT NULL,                                -- [EN: conversation_id] hội thoại khách hoặc phiên trợ lý
+    hoi_thoai_id      UUID,                                         -- [EN: conversation_id] hội thoại khách hoặc phiên trợ lý; NULL với DAILY_BRIEF, RELEASE_EVAL
     model             VARCHAR(64) NOT NULL,
     phien_ban_kt      CHAR(64) NOT NULL,                            -- [EN: kb_version]
     phien_ban_catalog CHAR(64) NOT NULL,                            -- [EN: catalog_version]
@@ -2192,7 +2216,7 @@ CREATE TABLE luot_goi_ai (
 CREATE INDEX idx_luot_goi_ai_hoi_thoai_id_tao_luc ON luot_goi_ai (hoi_thoai_id, tao_luc);
 ```
 
-Điều chỉnh kiểu khóa ngoại tới `hoi_thoai` / `tin_nhan` theo schema thực tế khi dựng migration.
+`hoi_thoai_id` trỏ tới `hoi_thoai` (với `CUSTOMER_CHAT`) hoặc `tl_phien_chat` (với `CONTENT_ASSISTANT`, `KNOWLEDGE_ASSISTANT`), nên không đặt khóa ngoại; ứng dụng kiểm tra khi ghi.
 
 ## Media
 
@@ -2472,7 +2496,9 @@ CREATE TABLE hoi_thoai (
     nguoi_phu_trach        VARCHAR(16) NOT NULL DEFAULT 'AI_ACTIVE'         -- [EN: ownership]
                            CHECK (nguoi_phu_trach IN ('AI_ACTIVE','HUMAN_OWNED')),
     nhan_vien_phu_trach_id VARCHAR(100),                                    -- [EN: owner_staff_id]
-    che_do_tra_loi         VARCHAR(8) NOT NULL DEFAULT 'DRAFT' CHECK (che_do_tra_loi IN ('DRAFT','AUTO')),  -- [EN: reply_mode]
+    tiep_quan_luc          TIMESTAMPTZ,                                     -- [EN: taken_over_at] lúc chuyển HUMAN_OWNED
+    nhan_vien_tin_cuoi_luc TIMESTAMPTZ,                                     -- [EN: last_staff_message_at] để tự trả lại AI (mục 19)
+    che_do_tra_loi         VARCHAR(8) NOT NULL DEFAULT 'AUTO' CHECK (che_do_tra_loi IN ('DRAFT','AUTO')),  -- [EN: reply_mode] AUTO: theo loại câu hỏi (mục 35); DRAFT: ép nháp cả hội thoại
     trang_thai             VARCHAR(8) NOT NULL DEFAULT 'OPEN' CHECK (trang_thai IN ('OPEN','CLOSED')),  -- [EN: status]
     y_dinh                 VARCHAR(50),                                     -- [EN: intent]
     tom_tat                TEXT,                                            -- [EN: summary] tóm tắt khi hội thoại dài
@@ -2535,7 +2561,7 @@ CREATE TABLE khach_tiem_nang (
     id                      UUID PRIMARY KEY,
     khach_hang_id           UUID NOT NULL REFERENCES khach_hang(id),        -- [EN: customer_id]
     hoi_thoai_id            UUID REFERENCES hoi_thoai(id),                  -- [EN: conversation_id]
-    kenh_nguon              VARCHAR(20) NOT NULL,                           -- [EN: source_channel]
+    kenh_nguon              VARCHAR(20) NOT NULL,                           -- [EN: source_channel] mã kênh mục 54.1: MESSENGER, ZALO_OA, TIKTOK_LEAD...
     tinh                    VARCHAR(100),                                   -- [EN: province] tỉnh khách nói
     mien                    VARCHAR(8) CHECK (mien IN ('BAC','NAM')),       -- [EN: region] theo rules/regions.yaml
     sdt                     VARCHAR(20) NOT NULL,                           -- [EN: phone] đã chuẩn hóa
@@ -2580,24 +2606,7 @@ CREATE TABLE kt_ung_vien_vi_du (                      -- duyệt xong mới đư
 );
 ```
 
-## Recommendations
-
-``` sql
-goi_y_noi_dung
------------------------
-id
-khach_hang_id
-hoi_thoai_id
-tai_lieu_id
-media_id
-ly_do
-diem
-da_bam
-da_tra_loi
-tao_lead
-tao_don
-tao_luc
-```
+Đo hiệu quả media (mục 28) dùng `media_lan_gui` và `khach_tiem_nang`, không có bảng riêng.
 
 ------------------------------------------------------------------------
 
@@ -2629,41 +2638,44 @@ tao_luc
 
 Một ứng dụng Spring Boot chia module theo các thư mục dưới đây (modular monolith), cộng một worker; không tách microservice ở giai đoạn đầu.
 
+Đây là cấu trúc chuẩn duy nhất; các mục 26.9, 53, 55.4, 56.5, 57.5 đều theo cấu trúc này. Gói Java gốc chốt khi tạo project; các đường dẫn trong tài liệu ghi tương đối so với gói gốc.
+
 ``` text
 /apps
-  /api
-  /worker
-  /scheduler
-  /dashboard
+  /api              # REST cho Vben Admin + webhook các kênh
+  /worker           # job nền: gộp tin, follow-up, đăng bài, đồng bộ, media (lịch trong PostgreSQL)
+  /admin            # Vben Admin (mục 34)
 
 /services
-  /customer
-  /conversation
-  /ai
-  /catalog
-  /sizing
-  /knowledge
-  /media
-  /style
-  /content
-  /energy
-  /campaign
-  /sales
-  /automation
+  /customer         # Customer 360, dinh_danh_kenh
+  /conversation     # hội thoại, gộp tin, khóa, người phụ trách
+  /ai               # orchestrator, ghép prompt, MediaResolver, luot_goi_ai
+  /policy           # Policy Engine (mục 33)
+  /catalog          # đồng bộ slm_v2, tool catalog
+  /sizing           # SizingService (rules/sizing-rules.yaml)
+  /knowledge        # Knowledge Base, phát hành, AI hỗ trợ soạn (văn phong, playbook, ví dụ cũng ở đây)
+  /media            # Media Library
+  /content          # Content Planner, Trợ lý nội dung, xuất bản (mục 26, 55)
+  /lead             # tạo lead, lead-scoring, gửi Sales API (mục 23, 58.5)
+  /leadnurturing    # follow-up (mục 56)
+  /energy           # Phase 4 (mục 21)
 
 /adapters
-  /zalo
-  /facebook
-  /meta
-  /solar
-  /slm_v2
+  /facebook         # Page + Messenger + đăng bài, Meta Graph API
+  /zalo             # Zalo OA + ZNS
+  /tiktok           # messaging / publishing / lead tách riêng (mục 57.5)
+  /slm_v2           # đọc view ai_v_*
   /sales_api
+  /solar            # Solar API, API hãng inverter (Phase 4)
+  /facebook_groups  # tùy chọn rủi ro cao, tắt mặc định (mục 54.6)
 
 /infrastructure
-  /postgres      # dữ liệu + job queue
-  /storage
+  /postgres         # dữ liệu + job queue
+  /storage          # MinIO / S3
   /monitoring
 ```
+
+Zalo cá nhân (`zca-js`), nếu được duyệt ngoại lệ, là worker Node.js riêng ngoài cấu trúc này (mục 46.1).
 
 ------------------------------------------------------------------------
 
@@ -2735,6 +2747,25 @@ Policy kiểm tra:
 -   Nội dung có vi phạm policy không?
 -   Có cần human approval không?
 -   Video có được phép dùng ở channel đó không?
+-   Con số trong câu trả lời có nguồn hợp lệ không (dưới đây)?
+-   Công tắc dừng toàn cục có đang bật không?
+
+## 33.1 Kiểm tra con số
+
+1. **Tách số:** chuẩn hóa cách viết tiếng Việt ("90,8 triệu", "90.800.000đ", "~91tr", "5 kWp", "500 kWh") thành giá trị + đơn vị. Số viết bằng chữ ("chín mươi triệu") bị cấm trong văn phong (`core/voice.md`), nên coi là lỗi.
+2. **Chỉ kiểm tra các loại số rủi ro:** tiền (đ, nghìn, triệu, tr), công suất (W, kW, kWp), điện năng (kWh), phần trăm, số năm / tháng bảo hành.
+3. **Nguồn hợp lệ** của mỗi số:
+   - kết quả tool trong hội thoại này, của bản catalog hiện hành;
+   - tin của chính khách (ví dụ nhắc lại "hóa đơn 2 triệu");
+   - tài liệu kiến thức đang phát hành (ví dụ năm bảo hành trong `policies/`).
+4. **Cho phép làm tròn** theo quy tắc cố định (ví dụ 90.800.000 ↔ "90,8 triệu" ↔ "khoảng 91 triệu"); ngoài ra phải khớp.
+5. **Không qua kiểm tra:** không bỏ tin, mà chuyển lượt đó sang `DRAFT` kèm lý do trong `luot_goi_ai.ket_qua_policy`. Tỷ lệ lượt bị chặn theo dõi trên dashboard để chỉnh bộ tách số, tránh chặn nhầm quá nhiều.
+
+## 33.2 Công tắc dừng toàn cục
+
+- Một cờ trên admin (quyền cao nhất): khi bật, mọi lượt đi theo `DRAFT`, Lead Nurturing và đăng bài tự động tạm dừng; tin nhận vẫn được lưu.
+- Tự bật khi có dấu hiệu bất thường: tỷ lệ lỗi Claude API, tỷ lệ lượt bị Policy chặn hoặc tỷ lệ nhân viên báo BAD vượt ngưỡng trong một khoảng thời gian (cấu hình).
+- Mỗi lần bật / tắt gửi cảnh báo cho admin và ghi audit log.
 
 ------------------------------------------------------------------------
 
@@ -2846,18 +2877,48 @@ Style / Example Library
 Không tự động biến mọi chỉnh sửa thành luật.
 
 
-## Bộ test và tiêu chí bật gửi tự động
+## Loại câu hỏi
+
+AI trả loại câu hỏi của lượt trong trường `intent` (mục 18); backend lưu vào `hoi_thoai.y_dinh` và dùng để chọn `AUTO` / `DRAFT`.
+
+| `intent` | Nội dung | Chế độ mặc định |
+|---|---|---|
+| `CHAO_HOI` | Chào hỏi, câu chung, hỏi công ty | `AUTO` |
+| `TU_VAN_LAP_MOI` | Thu thập thông tin tư vấn, đề xuất gói | `AUTO` |
+| `HOI_GIA` | Hỏi giá, khoảng giá | `AUTO` |
+| `GIAI_THICH` | On-grid / hybrid, pin lưu trữ, cách hoạt động (FAQ) | `AUTO` |
+| `CHINH_SACH` | Bảo hành, thanh toán, quy trình lắp đặt | `AUTO` |
+| `KY_THUAT_SU_CO` | Khách đã lắp báo lỗi, sản lượng thấp | Luôn chuyển nhân viên |
+| `KHIEU_NAI` | Phàn nàn, tranh chấp | Luôn chuyển nhân viên |
+| `KHAC` | Không thuộc nhóm nào | `DRAFT` |
+
+Doanh nghiệp chốt ngày 2026-10-20: năm loại đầu gửi tự động ngay từ Phase 1.
+
+- Chế độ tính theo **lượt**. Một lượt thuộc loại `AUTO` vẫn chuyển sang `DRAFT` khi:
+  - không qua kiểm tra của Policy Engine, kể cả kiểm tra con số (mục 33, 33.1);
+  - AI yêu cầu chuyển nhân viên (`handoff.needed`);
+  - công tắc dừng toàn cục đang bật (mục 33.2);
+  - hội thoại đang `HUMAN_OWNED`, hoặc là lượt đầu sau khi tự trả lại AI (mục 19);
+  - hội thoại bị đặt `che_do_tra_loi = DRAFT` (ép nháp cả hội thoại, mục 29).
+- Khi một lượt rơi vào `DRAFT` ngoài giờ làm việc, gửi một câu báo nhận ("em đã ghi nhận, nhân viên sẽ phản hồi trong giờ làm việc") theo template cố định, để khách không chờ trong im lặng.
+- Nhân viên vẫn xem được mọi tin AI đã gửi trên inbox admin và chấm GOOD / BAD / EDIT; các chấm này là nguồn dữ liệu để phát hiện lỗi.
+
+## Bộ test và điều kiện gửi tự động
 
 - **Bộ test:** 100–200 câu hỏi thật (ẩn thông tin khách), mỗi câu ghi hành vi kỳ vọng: con số phải lấy từ tool, trường hợp phải chuyển người, media kỳ vọng, tài liệu liên quan.
+- **Kịch bản nhiều lượt:** 30–50 hội thoại mẫu, mỗi kịch bản có hồ sơ khách (tỉnh, số pha, hóa đơn, ngày/đêm, loại mái, mức sẵn sàng). Claude đóng vai khách theo hồ sơ; bot chạy như thật với tool thật trên catalog cố định.
+- **Chấm điểm:**
+  - Bằng code: mỗi tin chỉ một câu hỏi; thu đủ 5 thông tin tối thiểu trong số lượt cho phép; mức tiềm năng cuối đúng kỳ vọng; con số qua kiểm tra mục 33.1; chuyển người đúng lúc.
+  - Bằng model chấm theo tiêu chí viết sẵn: văn phong, độ ngắn gọn, không gây áp lực.
+  - Người duyệt đọc mẫu ngẫu nhiên mỗi lần chạy để kiểm tra lại model chấm.
 - Chạy lại bộ test trong CI mỗi khi kiến thức, prompt, model hoặc tool thay đổi.
-- **Bật `AUTO` theo từng loại câu hỏi** khi đạt cả ba (con số ví dụ, doanh nghiệp tự chỉnh):
-  1. Ít nhất 50 bản nháp loại đó đã được nhân viên xử lý.
-  2. Tỷ lệ phải sửa đáng kể dưới 10%.
-  3. Không có lỗi sai thông tin (giá, bảo hành, thông số).
-- Phát hiện lỗi sai thông tin ở loại đã bật `AUTO` thì tự quay về `DRAFT` và báo admin.
+- **Điều kiện trước khi chạy thật** (con số ví dụ, doanh nghiệp tự chỉnh): bộ test đạt trên từng loại `AUTO`, không có lỗi sai thông tin (giá, bảo hành, thông số), không có ca phải chuyển người mà bot tự trả lời. Chưa đạt loại nào thì loại đó chạy `DRAFT` cho tới khi đạt.
+- **Quay về `DRAFT` khi chạy thật:** phát hiện lỗi sai thông tin ở một loại, hoặc tỷ lệ nhân viên chấm BAD / EDIT của loại đó vượt ngưỡng (ví dụ 10% trong 7 ngày) → loại đó tự quay về `DRAFT` và báo admin; bật lại sau khi đã sửa kiến thức / prompt và chạy lại bộ test.
 ------------------------------------------------------------------------
 
 # 36. Cost Control
+
+Chi phí AI dự kiến nhỏ (mục 37); khoản lớn là công người. Vì vậy chỉ tối ưu khi số liệu thật trong `luot_goi_ai` cho thấy cần. Riêng mục 1–3 nên làm ngay vì không ảnh hưởng chất lượng.
 
 Theo thứ tự nên làm:
 
@@ -2900,8 +2961,12 @@ Chi phí cần tính riêng:
 
 Lộ trình cho một người phát triển, Facebook làm trước.
 
+**Lưu ý:** phạm vi dưới đây lớn so với một người phát triển. Phương án rút gọn và các phần nên hoãn ở mục 59.6–59.7, chờ chốt.
+
 ## Phase 0: Chuẩn bị dữ liệu và nội dung
 
+- **Chốt các quyết định chặn** (mục 59.8): nguồn dữ liệu khách cũ, công thức sizing, điều kiện báo giá, vùng phục vụ, pháp lý dữ liệu cá nhân.
+- **Đặt KPI mục tiêu và tiêu chí qua phase:** thời gian phản hồi đầu tiên, tỷ lệ hội thoại có số điện thoại, tỷ lệ lead → khảo sát → chốt, % lượt `AUTO`, tỷ lệ nhân viên sửa nháp. Mỗi phase chỉ mở rộng khi phase trước đạt.
 - Tạo view `ai_v_*` và user `ai_sync` trên `slm_v2`; sửa các lỗi dữ liệu nguồn (mục 4.2.7).
 - Đồng bộ catalog; viết `SizingService` theo công thức của doanh nghiệp, có unit test.
 - Nhập danh sách tỉnh thuộc miền Bắc / miền Nam vào `rules/regions.yaml` (mục 4.2.9).
@@ -2910,18 +2975,18 @@ Lộ trình cho một người phát triển, Facebook làm trước.
 - Tạo Meta App, xác minh doanh nghiệp, nộp App Review (mục 54.3).
 - Đo số liệu nền: thời gian phản hồi hiện tại, tỷ lệ lead → khảo sát → chốt.
 
-## Phase 1: Facebook Messenger, chế độ nháp
+## Phase 1: Facebook Messenger, gửi tự động có kiểm soát
 
 - Webhook, hội thoại, gộp tin, khóa, nhân viên tiếp quản (mục 19).
 - Claude + tool catalog / sizing / lead / handoff (mục 32); ảnh gói gắn tự động; vài video đầu tiên trong Media Library.
-- AI chỉ soạn nháp, nhân viên bấm gửi; lead → Sales API.
+- Gửi tự động cho 5 loại câu hỏi `CHAO_HOI`, `TU_VAN_LAP_MOI`, `HOI_GIA`, `GIAI_THICH`, `CHINH_SACH` sau khi bộ test đạt; `KHAC` để nháp; sự cố kỹ thuật và khiếu nại chuyển nhân viên (mục 35). Policy kiểm tra con số và công tắc dừng toàn cục có từ ngày đầu (mục 33.1, 33.2). Lead → Sales API.
 - Inbox admin, `luot_goi_ai`, `kt_sua_ban_nhap`.
 - Phân loại mức tiềm năng (mục 58.5), gửi kèm lead.
 - Knowledge Editor cơ bản: sửa, phiên bản, phát hành, rollback; mẫu và kiểm tra tức thì (mục 5.9, 5.10 A).
 
 ## Phase 2: Tự động có kiểm soát và nội dung
 
-- Bật gửi tự động cho từng loại câu hỏi đạt tiêu chí (mục 35).
+- Xem lại `KHAC` và các loại đang bị quay về `DRAFT` theo số liệu chấm của nhân viên (mục 35).
 - Trả lời comment + private reply.
 - Danh mục media đầy đủ (mục 7).
 - Trợ lý nội dung + đăng bài lên Page (mục 26).
@@ -3066,29 +3131,29 @@ Phần Facebook nên tách thành **hai lớp**, vì Facebook Groups và Faceboo
 Repository:
 https://github.com/oliverames/meta-mcp-server
 
-Đây là lựa chọn ưu tiên cho lớp **Facebook Page / Meta Business**.
+Đây là **nguồn tham khảo chính** khi viết adapter Java cho lớp **Facebook Page / Meta Business** (mục 46.1).
 
 Repository hiện mô tả đây là MCP server cho Meta Business Platform và cung cấp số lượng lớn tools cho Facebook Pages, Instagram, Threads, Ads Manager, Commerce, Conversions API, Insights và các chức năng liên quan.
 
-Trong kiến trúc của công ty:
+Trong kiến trúc của công ty, repo nằm **ngoài** đường chạy production:
 
 ```text
 AI Orchestrator
        │
        ▼
-Meta / Facebook Adapter
+Policy Engine
        │
        ▼
-oliverames/meta-mcp-server
+MetaGraphFacebookAdapter (Java)   ◄── đọc & port logic từ oliverames/meta-mcp-server
        │
        ▼
 Meta Graph API
        │
        ▼
-Facebook Page
+Facebook Page / Messenger
 ```
 
-Có thể sử dụng cho các nhóm chức năng:
+Các nhóm chức năng nên đọc để port:
 
 - Facebook Page.
 - Đăng nội dung.
@@ -3098,23 +3163,15 @@ Có thể sử dụng cho các nhóm chức năng:
 - Insights.
 - Các chức năng Meta Business khác khi cần.
 
-**Khuyến nghị:** Đây là repository Meta/Facebook nên ưu tiên nghiên cứu và tích hợp đầu tiên cho phần Page/Business.
+**Khuyến nghị:** Đây là repository Meta/Facebook nên ưu tiên đọc đầu tiên cho phần Page/Business, rồi port phần cần dùng sang Java.
 
-Không để Claude gọi repository trực tiếp trong production. Nên đặt một adapter nội bộ:
-
-```text
-MetaAdapter
-   ↓
-Meta MCP Server / Meta Graph API
-```
-
-Như vậy sau này thay repository hoặc gọi Graph API trực tiếp cũng không phải sửa AI Orchestrator.
+Không deploy repository này và không để Claude gọi nó. Adapter Java gọi thẳng Meta Graph API, nên repo thay đổi hay ngừng bảo trì cũng không ảnh hưởng hệ thống.
 
 ---
 
-# 43. Facebook Groups Repository
+# 43. Chiến lược Java và repo Facebook Groups
 
-## 43. Java Backend Strategy — dùng repo sẵn, thay implementation Go bằng Java
+## 43.1 Java Backend Strategy — dùng repo sẵn làm tham khảo, viết lại bằng Java
 
 ### Mục tiêu
 
@@ -3122,7 +3179,7 @@ Hệ thống **không bỏ các repo Facebook đã chọn**. Thay vào đó:
 
 1. Dùng repo có sẵn làm **reference implementation / source of logic**.
 2. Giữ nguyên các flow, API operation, authentication flow, request/response mapping, pagination, retry, error handling và business capabilities cần thiết.
-3. Viết lại phần backend/adapter cần tích hợp bằng **Java 21/25 + Spring Boot**.
+3. Viết lại phần backend/adapter cần tích hợp bằng **Java 21 + Spring Boot** (mục 30).
 4. Không để Claude hoặc business logic phụ thuộc trực tiếp vào MCP repo.
 
 ### Kiến trúc sau khi chuyển sang Java
@@ -3131,24 +3188,18 @@ Hệ thống **không bỏ các repo Facebook đã chọn**. Thay vào đó:
 Vben Admin (Vue 3 + TypeScript)
       │
       ▼
-Java Spring Boot Backend
+Java Spring Boot Backend (modules theo mục 31)
       │
-      ├── Customer Service
-      ├── Conversation Service
-      ├── AI Orchestrator
-      ├── Knowledge Service
-      ├── Video Service
-      ├── Style Service
-      ├── Energy Service
-      ├── Campaign Service
-      └── Channel Adapters
-              ├── Facebook Official Adapter
-              ├── Facebook Groups Adapter
-              ├── Zalo Adapter
-              ├── Solar API Adapter
-              └── Sales API Adapter
+      ├── customer · conversation · ai (orchestrator) · policy
+      ├── catalog · sizing · knowledge · media · content
+      ├── lead · leadnurturing · energy
+      └── adapters
+              ├── facebook          (Meta Graph API chính thức)
+              ├── facebook_groups   (tùy chọn rủi ro cao, tắt mặc định)
+              ├── zalo · tiktok
+              └── slm_v2 · sales_api · solar
 
-Facebook repos
+Facebook repos (chỉ đọc, nằm ở references/, không deploy)
       │
       ├── oliverames/meta-mcp-server
       │       └── reference cho Meta/Facebook Business operations
@@ -3177,22 +3228,16 @@ Spring Boot Adapter
 Meta / Facebook
 ```
 
-### Java stack đề xuất
+### Java stack
+
+Bảng công nghệ đầy đủ ở mục 30. Phần riêng cho adapter:
 
 | Thành phần | Công nghệ |
 |---|---|
-| Backend | Java 21 LTS hoặc Java 25 + Spring Boot |
 | REST/Webhook | Spring Web |
-| HTTP Client | Spring WebClient hoặc Java HttpClient |
-| Database | PostgreSQL |
+| HTTP Client | Spring WebClient |
 | ORM | Spring Data JPA / Hibernate |
-| Vector | pgvector |
-| Cache/Queue | Redis |
-| Scheduler | Spring Scheduler; Quartz nếu cần workflow phức tạp |
-| Security | Spring Security + OAuth2/Keycloak |
-| Storage | S3/MinIO |
-| Monitoring | Micrometer + Prometheus + Grafana |
-| AI | Claude API |
+| Retry, giới hạn tần suất | Trong ứng dụng (ví dụ Resilience4j, Bucket4j); job lưu trong PostgreSQL (mục 30) |
 
 ### Facebook Adapter
 
@@ -3275,13 +3320,13 @@ Meta/Facebook
 
 Đây là hướng được chọn cho phiên bản Java của hệ thống.
 
-### `teslashibe/facebook-go`
+## 43.2 Facebook Groups: `teslashibe/facebook-go`
 
 Repository:
 
 https://github.com/teslashibe/facebook-go
 
-Đây là lựa chọn cho **Facebook Groups**, không phải repository chính cho Page/Messenger.
+Đây là nguồn tham khảo cho **Facebook Groups** (tùy chọn rủi ro cao, tắt mặc định, mục 54.6), không phải repository chính cho Page/Messenger.
 
 Repository hiện cung cấp Go client cho Facebook internal GraphQL API, với Groups surface hỗ trợ:
 
@@ -3303,10 +3348,10 @@ Repository hiện cung cấp Go client cho Facebook internal GraphQL API, với 
 Kiến trúc:
 
 ```text
-Facebook Group Engine
+FacebookGroupsAdapter (Java, port từ facebook-go)
         │
         ▼
-facebook-go
+Facebook internal GraphQL
         │
         ▼
 Facebook Groups
@@ -3314,9 +3359,9 @@ Facebook Groups
 
 Repository sử dụng cookie/session authentication và Facebook internal GraphQL, không phải official Graph API.
 
-**Do đó phải coi đây là adapter riêng và có rủi ro bảo trì cao hơn official API.**
+**Do đó adapter port từ repo này phải tách riêng và có rủi ro bảo trì cao hơn official API.**
 
-Không để `facebook-go` trở thành dependency xuyên suốt hệ thống.
+Không chạy `facebook-go` ở production và không để nó trở thành dependency của hệ thống (mục 46.1).
 
 ---
 
@@ -3335,17 +3380,7 @@ Repository này là MCP server cho Facebook Page dựa trên Facebook Graph API,
 - Insights.
 - Sentiment filtering.
 
-Có thể dùng làm:
-
-```text
-Meta Page Adapter
-       ↓
-HagaiHen/facebook-mcp-server
-       ↓
-Facebook Graph API
-```
-
-Tuy nhiên, trong kiến trúc mới tôi **không chọn nó làm adapter chính**.
+Trong kiến trúc mới, repo này **chỉ dùng để đối chiếu** khi viết `MetaGraphFacebookAdapter`, không phải nguồn tham khảo chính.
 
 Lý do:
 
@@ -3353,13 +3388,7 @@ Lý do:
 - Repository tập trung vào Page automation.
 - `oliverames/meta-mcp-server` có phạm vi Meta Business rộng hơn.
 
-Có thể giữ repository này như:
-
-```text
-Alternative / Reference
-```
-
-hoặc fork nếu team muốn một implementation Python nhỏ, dễ đọc.
+Giữ repository này ở mức tham khảo phụ: code Python nhỏ, dễ đọc, tiện đối chiếu cách gọi Graph API. Không fork để chạy (mục 46.1).
 
 ---
 
@@ -3368,50 +3397,48 @@ hoặc fork nếu team muốn một implementation Python nhỏ, dễ đọc.
 Tôi đề xuất:
 
 ```text
-                    FACEBOOK
-                       │
-           ┌───────────┴───────────┐
-           │                       │
-           ▼                       ▼
-       PAGE / MSG                GROUPS
-           │                       │
-           ▼                       ▼
-   Meta Graph/API             facebook-go
-           │                       │
-           │                       │
-           └───────────┬───────────┘
-                       ▼
-                Facebook Adapter
-                       │
-                       ▼
                 AI Orchestrator
+                       │
+                 Policy Engine
+                       │
+           ┌───────────┴────────────────┐
+           ▼                            ▼
+ MetaGraphFacebookAdapter      FacebookGroupsAdapter
+ (Java, Meta Graph API)        (Java, tắt mặc định, mục 54.6)
+           │                            │
+           ▼                            ▼
+      PAGE / MSG                     GROUPS
+
+ Tham khảo khi viết (không deploy):
+   meta-mcp-server ─► MetaGraphFacebookAdapter
+   facebook-go     ─► FacebookGroupsAdapter
 ```
 
 Trong đó:
 
-### Ưu tiên 1
+### Tham khảo chính
 
 **`oliverames/meta-mcp-server`**
 
-Dùng cho Facebook Page/Meta Business.
+Nguồn tham khảo để viết adapter Java cho Facebook Page/Meta Business.
 
 ### Tùy chọn rủi ro cao (tắt mặc định, mục 54.6)
 
 **`teslashibe/facebook-go`**
 
-Dùng riêng cho Facebook Groups nếu công ty cần:
+Nguồn tham khảo để port `FacebookGroupsAdapter`, chỉ khi công ty cần:
 
 - Tìm group.
 - Theo dõi group.
 - Đọc bài.
 - Phân tích chủ đề.
-- Đăng/comment trong những trường hợp được phép.
+- Đăng/comment trong những trường hợp được phép, có người duyệt từng lần (mục 54.6).
 
-### Tham khảo/alternative
+### Tham khảo phụ
 
 **`HagaiHen/facebook-mcp-server`**
 
-Dùng làm reference hoặc alternative implementation cho Page automation.
+Dùng để đối chiếu cách gọi Graph API cho Page.
 
 ---
 
@@ -3443,14 +3470,15 @@ Production nên là:
                        │
                  Policy Engine
                        │
-                 Facebook Adapter
+              Facebook adapters (Java)
                        │
-          ┌────────────┴────────────┐
-          ▼                         ▼
-      Meta API                 facebook-go
-          │                         │
-          ▼                         ▼
-       PAGE/MSG                   GROUPS
+          ┌────────────┴─────────────────┐
+          ▼                              ▼
+ MetaGraphFacebookAdapter       FacebookGroupsAdapter
+ → Meta Graph API               (port từ facebook-go, tắt mặc định)
+          │                              │
+          ▼                              ▼
+       PAGE/MSG                        GROUPS
 ```
 
 Lợi ích:
@@ -3479,7 +3507,7 @@ Lợi ích:
 4. **License:** không copy nguyên code khi license không cho phép; ưu tiên viết lại theo hành vi của API. Ghi nguồn tham khảo và license vào file `NOTICE`.
 5. **MCP chính thức do nền tảng host** (ví dụ TikTok for Business MCP Server): không đi qua MCP, mà gọi REST API tương ứng từ Java.
 6. **Khi cần MCP** (cho công cụ phát triển, hoặc để AI bên ngoài gọi tool): expose chính các hàm Java thành MCP tool bằng MCP Java SDK / Spring AI, trong cùng ứng dụng. Bot chăm sóc khách dùng tool use của Claude API trực tiếp (mục 32), nên production không cần MCP.
-7. Repo và MCP vẫn được dùng **trên máy dev** để thử API, khám phá dữ liệu, đối chiếu kết quả; không deploy chúng lên server. Bản clone để đọc nằm ở thư mục `references/` của repo, chia theo kênh (`facebook/`, `zalo/`, `tiktok/`, `rui-ro-cao/`). Tạo lại bằng `bash references/clone.sh`; các thư mục clone không commit vào git; danh sách, commit, license và "nên đọc gì" ở `references/README.md`.
+7. Repo và MCP vẫn được dùng **trên máy dev** để thử API, khám phá dữ liệu, đối chiếu kết quả; không deploy chúng lên server. Bản clone để đọc nằm ở thư mục `references/` của repo, chia theo kênh (`facebook/`, `zalo/`, `tiktok/`, `rui-ro-cao/`). Bản clone được commit vào repo dưới dạng file thường (bỏ `.git` và file build sẵn); cập nhật bằng `bash references/clone.sh --update`; danh sách, commit, license và "nên đọc gì" ở `references/README.md`.
 
 **Ngoại lệ đang chờ quyết định: Zalo cá nhân (`zca-js`)**
 
@@ -3568,31 +3596,23 @@ source = facebook
 # 48. Facebook Content Flow
 
 ```text
-Content Planner
-      │
-      ▼
-Knowledge RAG
-      │
-      ▼
-Media RAG
-      │
-      ▼
-Style Engine
-      │
+Content Planner / Trợ lý nội dung (mục 26)
+      │  kiến thức content/ + core/voice.md + rules/content-schedule.yaml (prompt có cache)
+      │  tool đọc: media, lịch đăng, hiệu quả, catalog (mục 26.3)
       ▼
 Claude
       │
       ▼
-Draft
+Bản nháp (nd_bai_dang + nd_ban_dang_kenh)
       │
       ▼
-Policy
+ScheduleRuleChecker + Policy (mục 26.5)
       │
       ▼
-Human Approval
+Admin duyệt & lên lịch
       │
       ▼
-Meta Adapter
+PublishScheduler → FacebookPublishingAdapter (Meta Graph API)
       │
       ▼
 Facebook Page
@@ -3605,7 +3625,7 @@ Facebook Page
 **Tùy chọn rủi ro cao, tắt mặc định (mục 54.6).** Chỉ dùng khi doanh nghiệp có nhu cầu và quyền/phương thức phù hợp:
 
 ```text
-facebook-go
+FacebookGroupsAdapter (Java, port từ facebook-go)
      │
      ▼
 Group Discovery
@@ -3626,14 +3646,14 @@ AI Classification
      └── Irrelevant
      │
      ▼
-Knowledge RAG
+Kiến thức (prompt có cache, mục 5.4)
 +
-Style Engine
+Văn phong comment (mục 15)
 +
 Policy
      │
      ▼
-Human Approval / Allowed Automation
+Người duyệt từng lần (mục 54.6, quy tắc 4)
      │
      ▼
 Comment
@@ -3645,11 +3665,13 @@ Không nên thiết kế hệ thống theo hướng spam hoặc tự động tha
 
 # 50. Repository Decision Table
 
-| Repository | Vai trò | Ưu tiên | Kiến trúc |
+Cả ba repo chỉ để đọc và port, không chạy ở production (mục 46.1).
+
+| Repository | Vai trò | Ưu tiên | Port thành |
 |---|---|---:|---|
-| `oliverames/meta-mcp-server` | Meta/Facebook Business | **1** | Page / Meta Adapter |
-| `teslashibe/facebook-go` | Facebook Groups | Rủi ro cao, tắt mặc định (mục 54.6) | Group Adapter riêng |
-| `HagaiHen/facebook-mcp-server` | Page automation/reference | 3 | Alternative Adapter |
+| `oliverames/meta-mcp-server` | Meta/Facebook Business | **1** | `MetaGraphFacebookAdapter` (Java) |
+| `teslashibe/facebook-go` | Facebook Groups | Rủi ro cao, tắt mặc định (mục 54.6) | `FacebookGroupsAdapter` (Java), tách riêng |
+| `HagaiHen/facebook-mcp-server` | Page, đối chiếu | 3 | Không port riêng; dùng để đối chiếu |
 
 Repository URLs:
 
@@ -3696,36 +3718,36 @@ Application chỉ nhận secret khi cần.
                            │
                     POLICY ENGINE
                            │
-                  FACEBOOK ADAPTER
+               FACEBOOK ADAPTERS (Java)
                            │
               ┌────────────┴────────────┐
               │                         │
               ▼                         ▼
-       META BUSINESS               GROUP ENGINE
-              │                         │
-              ▼                         ▼
-  oliverames/meta-mcp-server     teslashibe/facebook-go
+ MetaGraphFacebookAdapter      FacebookGroupsAdapter
+ (Meta Graph API)              (tắt mặc định, mục 54.6)
               │                         │
               ▼                         ▼
        Facebook Page             Facebook Groups
        Messenger                 Group Feed
        Comments                  Posts
        Insights                  Comments
-       Content                  Trends
+       Content                   Trends
+
+ Tham khảo (không deploy): oliverames/meta-mcp-server · teslashibe/facebook-go
 ```
 
-**Kết luận:** Với hệ thống của anh, tôi sẽ lấy **`oliverames/meta-mcp-server` làm lựa chọn Facebook/Meta chính**, `teslashibe/facebook-go` làm adapter riêng cho Groups, còn `HagaiHen/facebook-mcp-server` giữ ở mức alternative/reference. Repository không phải là “bộ não AI”; chúng chỉ là nguồn implementation/reference cho lớp kết nối Facebook bên dưới `Facebook Adapter`. Backend production của hệ thống dùng Java + Spring Boot.
+**Kết luận:** lấy **`oliverames/meta-mcp-server` làm nguồn tham khảo chính cho Facebook/Meta**, `teslashibe/facebook-go` làm nguồn tham khảo cho adapter Groups riêng (tùy chọn rủi ro cao), còn `HagaiHen/facebook-mcp-server` để đối chiếu. Repository không phải là "bộ não AI" và không chạy ở production; chúng chỉ là nguồn tham khảo cho các adapter Java bên dưới Policy Engine.
 
 
 ---
 
-## 44. Quyết định công nghệ cuối cùng
+## 52.1 Quyết định công nghệ cuối cùng
 
-**Backend chính: Java 21 LTS/Java 25 + Spring Boot.**
+**Backend chính: Java 21 LTS + Spring Boot** (mục 30).
 
-**Repo Facebook:** vẫn sử dụng các repo đã đề xuất làm reference/source logic; không loại bỏ repo chỉ vì backend Java. Phần cần thiết được port thành Java adapters trong hệ thống.
+**Repo Facebook:** vẫn sử dụng các repo đã đề xuất làm nguồn tham khảo logic; không loại bỏ repo chỉ vì backend Java. Phần cần thiết được port thành Java adapters trong hệ thống (mục 46.1).
 
-**Ưu tiên:** `oliverames/meta-mcp-server` cho Meta/Facebook Business; `teslashibe/facebook-go` cho Facebook Groups/internal GraphQL; `HagaiHen/facebook-mcp-server` làm alternative/reference.
+**Ưu tiên tham khảo:** `oliverames/meta-mcp-server` cho Meta/Facebook Business; `teslashibe/facebook-go` cho Facebook Groups/internal GraphQL (rủi ro cao); `HagaiHen/facebook-mcp-server` để đối chiếu.
 
 **Mục tiêu:** giữ lợi thế của code/repo có sẵn nhưng hệ thống lõi, database, AI orchestration, policy, workflow và adapters thuộc quyền kiểm soát của hệ thống Java.
 
@@ -3735,7 +3757,7 @@ Application chỉ nhận secret khi cần.
 
 ## Mục tiêu
 
-Bổ sung TikTok vào cùng nền tảng Customer 360 để hệ thống có thể nhận tin nhắn, đồng bộ hội thoại, dùng Claude trả lời theo Knowledge RAG + Style RAG, chuyển lead nóng cho sales và lưu toàn bộ lịch sử vào CRM.
+Bổ sung TikTok vào cùng nền tảng Customer 360 để hệ thống có thể nhận tin nhắn, đồng bộ hội thoại, dùng Claude trả lời theo Knowledge Base và văn phong chung (mục 5, 15), chuyển lead nóng cho sales và lưu toàn bộ lịch sử vào CRM.
 
 **Lưu ý:** TikTok DM API không đồng nghĩa với API đăng video. Cần kiểm tra tài khoản, thị trường, quyền ứng dụng và điều kiện Business Messaging trước khi triển khai. Không giả định mọi tài khoản cá nhân đều có thể tự động hóa DM.
 
@@ -3743,8 +3765,8 @@ Bổ sung TikTok vào cùng nền tảng Customer 360 để hệ thống có th�
 
 ### 1. Ưu tiên: TikTok for Business Business Messaging API + MCP được TikTok tài liệu hóa
 
-- Tài liệu chính thức: https://business-api.tiktok.com/gateway/docs/index?tai_lieu_id=1739473020978177
-- Tài liệu về quản lý direct messages: https://business-api.tiktok.com/gateway/docs/index?tai_lieu_id=1751443956638721
+- Tài liệu chính thức: https://business-api.tiktok.com/gateway/docs/index?doc_id=1739473020978177
+- Tài liệu về quản lý direct messages: https://business-api.tiktok.com/gateway/docs/index?doc_id=1751443956638721
 
 Tài liệu TikTok for Business hiện liệt kê các công cụ Business Messaging/MCP liên quan đến:
 
@@ -3798,12 +3820,11 @@ TikTok Messaging Adapter (Java / Spring Boot)
 Conversation Service ─── Customer 360 / PostgreSQL
         │
         ▼
-AI Orchestrator
-        ├── Intent / lead qualification
-        ├── Knowledge RAG
-        ├── Media RAG
-        ├── Style RAG + playbooks
-        └── Claude model routing
+AI Orchestrator (mục 32)
+        ├── Lead qualification (mục 58)
+        ├── Kiến thức + playbook + văn phong (prompt có cache, mục 5.4)
+        ├── Danh mục media (mục 7)
+        └── Cùng một model với các kênh khác (mục 20.1)
         │
         ▼
 Policy Engine
@@ -3817,28 +3838,20 @@ TikTok Messaging Adapter → TikTok DM
 
 ## Java package structure
 
+Theo cấu trúc chuẩn ở mục 31; phần TikTok nằm trong `adapters/tiktok/` (danh sách class đầy đủ ở mục 57.5):
+
 ```text
-com.yourcompany.customerplatform
-├── channel
-│   ├── tiktok
-│   │   ├── config
-│   │   ├── auth              # OAuth, token storage/refresh
-│   │   ├── webhook           # Incoming DM events
-│   │   ├── client            # TikTok Business API HTTP client
-│   │   ├── conversation      # List/read conversations and messages
-│   │   ├── messaging         # Send replies and media
-│   │   ├── dto
-│   │   └── TikTokMessagingAdapter.java
-│   ├── facebook
-│   └── zalo
-├── conversation
-├── customer
-├── ai
-├── knowledge
-├── style
-├── workflow
-└── policy
+adapters/tiktok/
+├── config
+├── auth              # OAuth, lưu tham chiếu secret, refresh token
+├── webhook           # sự kiện DM, lead
+├── client            # HTTP client TikTok Business API
+├── messaging         # đồng bộ hội thoại, gửi trả lời và media
+├── dto
+└── TikTokMessagingAdapter.java
 ```
+
+Hội thoại, khách hàng, AI, kiến thức và policy dùng chung module trong `services/` như các kênh khác.
 
 ## Các tool nội bộ nên cung cấp
 
@@ -3896,14 +3909,13 @@ Nếu lead nóng/đủ số điện thoại → Sales API
                          Vben Admin (Vue 3 + TypeScript) Dashboard
                                    │
                                    ▼
-                        Java / Spring Boot API
+              Java / Spring Boot (modular monolith + worker, mục 31)
                                    │
             ┌──────────────────────┼──────────────────────┐
             ▼                      ▼                      ▼
-      Customer 360            AI Orchestrator        Workflow Engine
-            │                      │                      │
-            │             Knowledge / Video / Style       │
-            │                      │                      │
+      Customer 360            AI Orchestrator        Job nền (worker)
+            │        kiến thức · catalog · media     follow-up, đăng bài,
+            │        · văn phong (mục 5.4)           đồng bộ
             └──────────────────────┼──────────────────────┘
                                    ▼
                              Policy Engine
@@ -3912,18 +3924,18 @@ Nếu lead nóng/đủ số điện thoại → Sales API
              ┌─────────────────────┼─────────────────────┐
              ▼                     ▼                     ▼
       Facebook Adapter       Zalo Adapter         TikTok Adapter
-      ├─ Meta Graph API      ├─ OA official       ├─ Business Messaging API
-      ├─ Page/Messenger      └─ Personal MCP*     ├─ DM Webhooks
-      └─ Groups adapter*                           └─ Conversations/replies
+      ├─ Meta Graph API      ├─ OA + ZNS          ├─ Business Messaging API
+      ├─ Page/Messenger      └─ Zalo cá nhân*     ├─ Content Posting API
+      └─ Groups adapter*                           └─ Lead Generation API
              │                     │                     │
              └─────────────────────┼─────────────────────┘
                                    ▼
-                   PostgreSQL + pgvector + Redis/Queue
+               PostgreSQL (dữ liệu + job) · MinIO · slm_v2
                                    │
-                       Solar API + Sales API + MinIO
+                         Solar API + Sales API
 ```
 
-`*` Facebook Groups/internal GraphQL và Zalo cá nhân (`zca-js`, mục 54.6) là lựa chọn rủi ro cao hơn API chính thức; giữ tách biệt, bật riêng theo cấu hình, không coi là nền tảng ổn định như official API; quy tắc bắt buộc ở mục 54.6. TikTok DM ưu tiên Business Messaging API chính thức, không đồng nhất với các MCP chỉ đọc dữ liệu công khai hoặc chỉ đăng video.
+`*` Facebook Groups/internal GraphQL và Zalo cá nhân (`zca-js`; nếu được duyệt thì chạy worker Node.js riêng, mục 46.1, 54.6) là lựa chọn rủi ro cao hơn API chính thức; giữ tách biệt, bật riêng theo cấu hình, không coi là nền tảng ổn định như official API; quy tắc bắt buộc ở mục 54.6. TikTok DM ưu tiên Business Messaging API chính thức, không đồng nhất với các MCP chỉ đọc dữ liệu công khai hoặc chỉ đăng video.
 
 ## Bảng phân loại repo TikTok
 
@@ -3936,13 +3948,13 @@ Nếu lead nóng/đủ số điện thoại → Sales API
 
 Nguồn tham khảo:
 
-- TikTok for Business API/MCP docs: https://business-api.tiktok.com/gateway/docs/index?tai_lieu_id=1739473020978177
-- TikTok Business Messaging docs: https://business-api.tiktok.com/gateway/docs/index?tai_lieu_id=1751443956638721
+- TikTok for Business API/MCP docs: https://business-api.tiktok.com/gateway/docs/index?doc_id=1739473020978177
+- TikTok Business Messaging docs: https://business-api.tiktok.com/gateway/docs/index?doc_id=1751443956638721
 - OpenAPI reference: https://github.com/justomat/tiktok-business-api-docs
 - TikTok posting MCP: https://github.com/postoncehq/tiktok-mcp
 - Public-data TikTok MCP: https://github.com/HasData/tiktok-mcp
 
-**Quyết định:** Backend lõi tiếp tục là Java 21 LTS + Spring Boot. TikTok được thêm thành channel adapter độc lập, chia sẻ Customer 360, Conversation Service, AI Orchestrator, RAG, Policy Engine và Sales API với Facebook/Zalo. Trước khi cam kết tự động hóa DM, cần xác minh quyền truy cập thật của tài khoản/app TikTok tại thị trường Việt Nam.
+**Quyết định:** Backend lõi tiếp tục là Java 21 LTS + Spring Boot. TikTok được thêm thành channel adapter độc lập, chia sẻ Customer 360, Conversation Service, AI Orchestrator, Knowledge Base, Policy Engine và Sales API với Facebook/Zalo. Trước khi cam kết tự động hóa DM, cần xác minh quyền truy cập thật của tài khoản/app TikTok tại thị trường Việt Nam.
 
 ## 54.1 Mã kênh dùng chung
 
@@ -3955,8 +3967,16 @@ Nguồn tham khảo:
 | `TIKTOK_DM` | Nhắn tin | Hội thoại (khi có Business Messaging API) | Chính thức, phụ thuộc quyền |
 | `TIKTOK_COMMENT` | Bình luận | Trả lời comment video | Chính thức, phụ thuộc quyền |
 | `TIKTOK` | Đăng bài | `nd_ban_dang_kenh` | Chính thức, phụ thuộc audit |
+| `TIKTOK_LEAD` | Lead từ form / quảng cáo | `khach_tiem_nang.kenh_nguon` (mục 57.2) | Chính thức, phụ thuộc quyền |
 | `FACEBOOK_GROUP` | Đọc / bình luận / đăng | Group adapter | **Rủi ro cao** (mục 54.6) |
 | `ZALO_PERSONAL` | Nhắn tin | Zalo cá nhân | **Rủi ro cao** (mục 54.6) |
+
+Cách dùng mã:
+
+- Kênh hội thoại (`hoi_thoai.kenh`, `dinh_danh_kenh.kenh`, `media.kenh_cho_phep`, `media_lan_gui.kenh`, `lich_follow_up.kenh`): `MESSENGER`, `FACEBOOK_COMMENT`, `ZALO_OA`, `TIKTOK_DM`, `TIKTOK_COMMENT`, `FACEBOOK_GROUP`, `ZALO_PERSONAL`.
+- Kênh đăng bài (`nd_ban_dang_kenh.kenh`): `FACEBOOK_PAGE`, `ZALO_OA`, `TIKTOK`, `FACEBOOK_GROUP`.
+- Nguồn lead (`khach_tiem_nang.kenh_nguon`): mã kênh hội thoại nơi khách để lại số, hoặc `TIKTOK_LEAD`.
+- Mọi chỗ trong tài liệu, JSON và code đều dùng đúng các mã này (không dùng biến thể như `facebook_messenger`).
 
 Mọi adapter cài đặt `getCapabilities(accountId)` và trả về capability **thực tế** của tài khoản đã kết nối. AI Orchestrator, Policy Engine, Trợ lý nội dung và giao diện admin đều đọc capability này; không gọi chức năng nào đang `false`.
 
@@ -4013,7 +4033,7 @@ Không tìm thấy MCP chính thức cho Zalo OA (kiểm tra ngày 2026-10-20). 
 
 - Các sự kiện cần đăng ký: tin nhắn, postback, `message_echoes`, referral (link `m.me?ref=...`), comment mới trên Page (`feed`).
 - Xác thực chữ ký `X-Hub-Signature-256`, trả 200 ngay, lưu sự kiện thô rồi xử lý bất đồng bộ, chống trùng theo message ID.
-- `message_echoes` từ Page Inbox nghĩa là nhân viên đang trả lời: chuyển hội thoại sang `HUMAN_OWNED`, AI dừng cho đến khi được trả lại.
+- `message_echoes` từ Page Inbox nghĩa là nhân viên đang trả lời: chuyển hội thoại sang `HUMAN_OWNED`, AI dừng cho đến khi được trả lại (luật trả lại ở mục 19). Echo cũng được gửi cho tin do chính ứng dụng gửi qua Send API: so `app_id` của echo với app của mình và bỏ qua những echo đó, nếu không bot sẽ tự chuyển hội thoại của mình sang người.
 
 **Quy tắc nhắn tin**
 
@@ -4167,7 +4187,7 @@ Admin / Content Planner / Campaign Scheduler
 
 Xuất bản dùng chung Media Library (mục 6 và bảng ở mục 29), không có bảng video riêng.
 
-- File để upload lên nền tảng đích là `media_nguon` loại `UPLOAD`: `duong_dan_luu_tru` trên MinIO/S3, `loai_mime`, `dung_luong_byte`, `thoi_luong_giay`, `width`, `height`, `ma_bam_sha256`, `trang_thai_xu_ly`. Không lưu file binary trong PostgreSQL.
+- File để upload lên nền tảng đích là `media_nguon` loại `UPLOAD`: `duong_dan_luu_tru` trên MinIO/S3, `loai_mime`, `dung_luong_byte`, `thoi_luong_giay`, `chieu_rong`, `chieu_cao`, `ma_bam_sha256`, `trang_thai_xu_ly`. Không lưu file binary trong PostgreSQL.
 - Chỉ xuất bản khi `media.trang_thai = APPROVED` và `quyen_su_dung` là `OWNED` hoặc `LICENSED`.
 - Nguồn `YOUTUBE`, `FACEBOOK`, `TIKTOK` là link tham chiếu, không phải file nguồn hợp lệ để upload lại. Không tự động tải/rip video từ các nền tảng này để đăng chéo.
 - Nếu công ty có file gốc của một video đã đăng YouTube hoặc Facebook, thêm nguồn `UPLOAD` vào cùng `media`. AI vẫn quản lý một mục duy nhất, còn bộ xuất bản dùng nguồn `UPLOAD`.
@@ -4217,15 +4237,17 @@ services/media/
   MediaAvailabilityChecker.java      # job kiểm tra link chết
   MediaTranscodingService.java       # tùy chọn, dùng FFmpeg worker
 
-adapters/publishing/
+adapters/
   facebook/FacebookPublishingAdapter.java
   tiktok/TikTokPublishingAdapter.java
   zalo/ZaloOaPublishingAdapter.java
 
-workers/
+apps/worker/
   MediaProcessingWorker.java
   ContentPublishingWorker.java
 ```
+
+Đường dẫn theo cấu trúc chuẩn ở mục 31.
 
 Định nghĩa interface nội bộ, không để logic AI phụ thuộc vào API riêng của từng mạng xã hội:
 
@@ -4274,8 +4296,8 @@ Repo tham khảo đã có trong tài liệu:
 ## 56.1 Mục tiêu và nguyên tắc
 
 - AI phân tích ngữ cảnh hội thoại, giai đoạn mua hàng, mức độ quan tâm, câu hỏi còn bỏ ngỏ, phản hồi trước đây và lịch sử tương tác để **đề xuất** thời điểm follow-up, mục tiêu và cách tiếp cận.
-- Chiến lược bán hàng, playbook, ví dụ tin nhắn tốt/xấu, văn phong công ty và quy tắc xử lý từ chối được lưu trong Knowledge/Strategy Library và truy xuất bằng RAG khi ra quyết định.
-- Không nhét toàn bộ file chiến lược vào prompt mỗi lần. Lưu tài liệu có phiên bản, metadata, nguồn và trạng thái hiệu lực; chỉ truy xuất đoạn liên quan tới tình huống hiện tại.
+- Chiến lược bán hàng, playbook, ví dụ tin nhắn tốt/xấu, văn phong công ty và quy tắc xử lý từ chối là tài liệu trong Knowledge Base (`playbooks/`, `examples/`, `core/voice.md`; mục 5, 58.7), có phiên bản và bản phát hành.
+- Planner dùng cùng khối kiến thức trong prompt có cache như bot chăm sóc khách (mục 5.4), không dùng RAG. Khi kiến thức vượt ngân sách token thì chuyển sang tra cứu như mục 5.7.
 - AI đề xuất kế hoạch; **Follow-up Policy Engine + Scheduler** kiểm tra điều kiện, lưu lịch và thực thi. Không để LLM tự tạo timer tùy ý hoặc tự gửi tin ngoài cơ chế kiểm soát của backend.
 - Tin nhắn có thể kèm ảnh hoặc video trong Media Library (file upload hoặc link YouTube/Facebook/TikTok) nếu liên quan đến sản phẩm khách đang tìm hiểu và kênh cho phép gửi nội dung đó.
 - Tôn trọng opt-out/đề nghị ngừng liên hệ, chính sách kênh, consent và khung thời gian nhắn tin. Nếu kênh không cho phép gửi chủ động hoặc đã hết messaging window, không được tìm cách lách; chuyển sang tác vụ hợp lệ như nhắc nhân viên hoặc chờ khách chủ động liên hệ.
@@ -4301,8 +4323,8 @@ Tin nhắn mới / hội thoại được cập nhật
  Hủy lịch đang chờ       ▼
  Cập nhật nhu cầu   Lead Nurturing Planner
                            │
-             Strategy RAG + Knowledge RAG
-             Style RAG + Media Library
+      Kiến thức + playbook + văn phong (cache)
+      + danh mục media + hồ sơ tư vấn
                            │
                            ▼
        Đề xuất: thời điểm / mục tiêu / kênh /
@@ -4347,7 +4369,7 @@ AI không nên được cấu hình một khoảng thời gian cố định cho 
 - Ý định mua, sản phẩm quan tâm (On-Grid, Hybrid, pin lưu trữ, công suất), mức độ cấp bách và câu hỏi đang chờ trả lời.
 - Nội dung tin nhắn gần nhất, thời điểm khách thường tương tác nếu có đủ dữ liệu hợp lệ, và số lần follow-up đã gửi.
 - Kết quả trước đây: khách có mở/click/trả lời video hay tin nhắn tương tự không; chiến dịch nào tạo lead hoặc đơn hàng thực tế.
-- Strategy/Playbook RAG: mục tiêu từng bước, cách tháo gỡ băn khoăn, cách gửi case study/video hữu ích, cách kết thúc lịch sự khi khách chưa sẵn sàng.
+- Playbook trong Knowledge Base (mục 5, 58): mục tiêu từng bước, cách tháo gỡ băn khoăn, cách gửi case study/video hữu ích, cách kết thúc lịch sự khi khách chưa sẵn sàng.
 - Thời gian im lặng, ngày/giờ gửi hợp lý, múi giờ, chính sách kênh, consent và giới hạn tần suất.
 
 AI trả về một kế hoạch có cấu trúc, ví dụ:
@@ -4358,16 +4380,16 @@ AI trả về một kế hoạch có cấu trúc, ví dụ:
   "reason": "Khách đang cân nhắc pin lưu trữ và chưa trả lời câu hỏi so sánh chi phí",
   "next_action_at": "2026-10-20T10:00:00+07:00",
   "objective": "Giúp khách hiểu lợi ích sử dụng điện buổi tối",
-  "channel": "facebook_messenger",
+  "channel": "MESSENGER",
   "content_type": "VIDEO_WITH_SOFT_MESSAGE",
-  "media_query": "hybrid pin lưu trữ sử dụng điện buổi tối",
+  "media": { "id": "M07", "reason": "khách quan tâm pin lưu trữ, dùng điện chủ yếu buổi tối" },
   "message_brief": "Nhắc lại mối quan tâm trước đó, chia sẻ video hữu ích, không gây áp lực mua hàng",
   "confidence": 0.86,
   "requires_human_approval": false
 }
 ```
 
-Đây là ví dụ về schema, không phải thời gian mặc định cho mọi khách. Backend phải xác thực JSON, timezone, thời điểm tối thiểu/tối đa, confidence và policy trước khi tạo lịch. Nếu dữ liệu thiếu hoặc độ tin cậy thấp, hỏi nhân viên hoặc dùng lịch đã được doanh nghiệp phê duyệt; không bịa thông tin về khách.
+Đây là ví dụ về schema, không phải thời gian mặc định cho mọi khách. `channel` dùng mã kênh ở mục 54.1; `media.id` là mã trong danh mục media và vẫn đi qua `MediaResolver` trước khi gửi (mục 7.1). Backend phải xác thực JSON, timezone, thời điểm tối thiểu/tối đa, confidence và policy trước khi tạo lịch. Nếu dữ liệu thiếu hoặc độ tin cậy thấp, hỏi nhân viên hoặc dùng lịch đã được doanh nghiệp phê duyệt; không bịa thông tin về khách.
 
 ## 56.4 Ví dụ chiến lược follow-up
 
@@ -4395,21 +4417,19 @@ services/
     FollowUpPolicyEngine.java
     FollowUpSuppressionService.java
     FollowUpOutcomeService.java
-  ai/
-    StrategyRagService.java
-    LeadScoringService.java
-    VideoRecommendationService.java
-  workflow/
-    OutboundMessageQueue.java
-    HumanTaskService.java
+    HumanTaskService.java          # tạo việc cho sales khi không được gửi tự động
+  lead/
+    LeadScoringService.java        # tính mức theo rules/lead-scoring.yaml (mục 58.5)
 ```
+
+Không có service RAG hay gợi ý media riêng: planner dùng khối kiến thức có cache (mục 5.4) và danh mục media (mục 7); gửi đi dùng chung `MediaResolver` + Policy Engine + channel adapter (mục 7.1, 33); job lưu trong PostgreSQL (mục 30).
 
 Trách nhiệm:
 
 - `LeadNurturingPlanner`: gọi Claude với ngữ cảnh tối thiểu cần thiết; yêu cầu kết quả JSON theo schema; tạo đề xuất chứ không trực tiếp gửi tin.
 - `FollowUpPolicyEngine`: kiểm tra kênh, consent/opt-out, giới hạn số lần, thời gian yên lặng, lead ownership, nội dung được phép và yêu cầu duyệt.
 - `FollowUpJobService`: lưu job bền vững trong PostgreSQL, idempotency key, trạng thái và lịch sử quyết định.
-- `FollowUpScheduler`: tìm job đến hạn và đẩy vào queue. Có thể dùng Spring Scheduler cho MVP; cân nhắc Quartz nếu cần lịch bền vững/phức tạp. Không chỉ giữ lịch trong RAM.
+- `FollowUpScheduler`: tìm job đến hạn và chạy trên worker, dùng cơ chế job lưu trong PostgreSQL chung của hệ thống (Quartz JDBC hoặc JobRunr, mục 30). Không giữ lịch trong RAM.
 - `FollowUpSuppressionService`: hủy hoặc bỏ qua job khi có tin nhắn mới, khách opt-out, lead đã chuyển đổi, nhân viên đang xử lý hoặc trạng thái kênh không còn hợp lệ.
 - `FollowUpOutcomeService`: ghi nhận đã gửi, lỗi, phản hồi, click (nếu nền tảng cung cấp), lead tạo mới và sale; dữ liệu này dùng để cải thiện playbook.
 - Channel adapters: chịu trách nhiệm gửi tin qua API/kênh hợp lệ. Mỗi adapter phải báo capability thực tế; không giả định mọi kênh đều cho phép gửi media hoặc chủ động nhắn sau thời gian dài.
@@ -4420,9 +4440,9 @@ Trách nhiệm:
 -- EN: lead_follow_up_jobs — scheduled lead follow-up jobs
 CREATE TABLE lich_follow_up (
     id                      UUID PRIMARY KEY,
-    khach_hang_id           UUID NOT NULL,                       -- [EN: customer_id]
-    hoi_thoai_id            UUID NOT NULL,                       -- [EN: conversation_id]
-    kenh                    VARCHAR(40) NOT NULL,                -- [EN: channel]
+    khach_hang_id           UUID NOT NULL REFERENCES khach_hang(id),  -- [EN: customer_id]
+    hoi_thoai_id            UUID NOT NULL REFERENCES hoi_thoai(id),   -- [EN: conversation_id]
+    kenh                    VARCHAR(20) NOT NULL,                -- [EN: channel] mã kênh hội thoại, mục 54.1
     trang_thai              VARCHAR(32) NOT NULL,                -- [EN: status]
     -- PLANNED, SCHEDULED, PROCESSING, SENT, CANCELLED,
     -- SUPPRESSED, FAILED, NEEDS_HUMAN_REVIEW
@@ -4430,7 +4450,7 @@ CREATE TABLE lich_follow_up (
     muc_tieu                TEXT,                                -- [EN: objective]
     tom_tat_tin_nhan        TEXT,                                -- [EN: message_brief]
     loai_noi_dung           VARCHAR(40),                         -- [EN: content_type]
-    media_chon_id           UUID,                                -- [EN: selected_media_id]
+    media_chon_id           UUID REFERENCES media(id),           -- [EN: selected_media_id]
     tai_lieu_chien_luoc_ids JSONB,                               -- [EN: strategy_document_ids]
     quyet_dinh_json         JSONB,                               -- [EN: decision_json]
     ly_do_quyet_dinh        TEXT,                                -- [EN: decision_reason]
@@ -4458,7 +4478,7 @@ CREATE TABLE lich_follow_up_su_kien (
 );
 ```
 
-Điều chỉnh kiểu ID/khóa ngoại theo schema thực tế của `khach_hang` và `hoi_thoai`. Nên có thêm cấu hình theo doanh nghiệp/kênh về giới hạn follow-up, khoảng nghỉ tối thiểu, khung giờ liên hệ, số lần thử tối đa và thời gian giữ lead ở trạng thái nurture.
+Nên có thêm cấu hình theo doanh nghiệp/kênh về giới hạn follow-up, khoảng nghỉ tối thiểu, khung giờ liên hệ, số lần thử tối đa và thời gian giữ lead ở trạng thái nurture.
 
 ## 56.7 Điều kiện bắt buộc kiểm tra ngay trước khi gửi
 
@@ -4483,11 +4503,13 @@ Admin cần xem được:
 
 ## 56.9 Phạm vi MVP khuyến nghị
 
-- Giai đoạn đầu: lead scoring + lịch follow-up bền vững + kiểm tra phản hồi mới/opt-out + gợi ý nội dung từ Knowledge/Media Library; cho nhân viên duyệt trước khi gửi.
+- **Ràng buộc kênh quyết định phạm vi:** Messenger ngoài 24 giờ chỉ người thật được nhắn (tag `HUMAN_AGENT`), Zalo OA chỉ có tin tư vấn trong cửa sổ hoặc ZNS theo template, TikTok DM chưa có quyền. Trên thực tế phần lớn follow-up là **việc cho sales**, không phải tin tự động.
+- Giai đoạn đầu: dùng **luật cố định** thay cho planner AI, ví dụ `WARM` im lặng quá X giờ → tạo việc cho sales kèm tóm tắt hội thoại và gợi ý nội dung; kiểm tra phản hồi mới / opt-out trước khi nhắc. Lịch follow-up vẫn lưu bền vững.
+- Planner AI (mục 56.3) chỉ làm khi có kênh cho phép gửi chủ động hợp lệ và đã có số liệu cho thấy luật cố định chưa đủ.
 - Sau khi có dữ liệu thực: bật auto-send cho nhóm tình huống rủi ro thấp đã được phê duyệt, với giới hạn rõ ràng và audit log.
 - Chỉ mở tự động gửi trên những kênh mà API/tài khoản hiện tại cho phép. Nếu kênh không hỗ trợ tin chủ động hợp lệ, hệ thống vẫn có thể tạo nhiệm vụ nhắc nhân viên hoặc chờ khách phản hồi.
 
-**Kết luận:** Lead Nurturing là workflow độc lập tích hợp với Customer 360, Claude, Strategy/Knowledge/Style RAG, Media Library, Scheduler, Policy Engine và các channel adapter. AI quyết định đề xuất *khi nào, vì sao và nên gửi nội dung gì*; backend kiểm soát *có được phép gửi hay không, có còn phù hợp tại thời điểm gửi hay không*.
+**Kết luận:** Lead Nurturing là workflow độc lập tích hợp với Customer 360, Claude, Knowledge Base (mục 5), Media Library, Scheduler, Policy Engine và các channel adapter. AI quyết định đề xuất *khi nào, vì sao và nên gửi nội dung gì*; backend kiểm soát *có được phép gửi hay không, có còn phù hợp tại thời điểm gửi hay không*.
 
 # 57. TikTok — phạm vi tích hợp end-to-end cho hệ thống điện mặt trời
 
@@ -4500,7 +4522,7 @@ Mục tiêu của phần này là xem TikTok như một nguồn thu hút khách 
 | Đăng video organic | Content Planner → duyệt nội dung → TikTok Publishing Adapter → theo dõi trạng thái | Dùng TikTok Content Posting API hoặc nhà cung cấp được phê duyệt; kiểm tra app review, OAuth, quyền tài khoản và quy định hiện hành |
 | Video quảng cáo / chiến dịch trả phí | Lưu campaign reference, landing page và mã chiến dịch; đối soát lead về Customer 360 | Quản lý qua TikTok for Business API khi tài khoản và app được cấp quyền; không mặc định mọi tài khoản đều có quyền |
 | TikTok Lead Generation / Instant Form | Webhook hoặc API đồng bộ lead → chuẩn hóa dữ liệu → chống trùng → Customer 360 → phân công sales | Xác minh quyền Lead Generation, webhook/API và phạm vi truy cập của advertiser trước khi triển khai |
-| Tin nhắn trực tiếp (DM) | Đồng bộ hội thoại → phân loại ý định → Claude + Knowledge/Style RAG → trả lời hoặc chuyển người thật | Chỉ tự động đọc/gửi khi Business Messaging API và quyền thực tế cho phép; nếu không, tạo nhiệm vụ cho nhân viên |
+| Tin nhắn trực tiếp (DM) | Đồng bộ hội thoại → phân loại ý định → Claude + Knowledge Base (mục 5) → trả lời hoặc chuyển người thật | Chỉ tự động đọc/gửi khi Business Messaging API và quyền thực tế cho phép; nếu không, tạo nhiệm vụ cho nhân viên |
 | Bình luận video | Thu thập/trả lời bình luận nếu API hỗ trợ; phân loại câu hỏi về giá, công suất, bảo hành và nhu cầu lắp đặt | Không giả định API cho phép đọc/trả lời mọi bình luận hoặc tự chuyển bình luận thành DM |
 | Phân tích hiệu quả | Lưu ID video/campaign, số liệu API cho phép, lead, cuộc gọi, khảo sát và kết quả bán hàng | Chỉ hiển thị chỉ số mà API hoặc hệ thống nội bộ thực sự cung cấp; phân biệt số liệu nền tảng và số liệu CRM |
 
@@ -4510,14 +4532,15 @@ Mục tiêu của phần này là xem TikTok như một nguồn thu hút khách 
 2. `TikTokLeadWebhookController` tiếp nhận webhook (nếu được cấp quyền), xác thực chữ ký/token theo tài liệu API và ghi sự kiện vào hàng đợi/inbox bền vững.
 3. `TikTokLeadSyncJob` lấy chi tiết lead theo quyền API; chuẩn hóa tên, số điện thoại, khu vực, nhu cầu, thời điểm gửi và mã chiến dịch.
 4. `LeadDeduplicationService` tìm khách hàng hiện có theo số điện thoại/email đã chuẩn hóa. Không tạo khách hàng trùng nếu đã tồn tại; lưu nguồn lead và lịch sử tương tác mới.
-5. `LeadScoringService` phân loại mức độ nóng dựa trên nhu cầu, khu vực, thời điểm, ngân sách/công suất nếu khách tự cung cấp và lịch sử tương tác.
+5. `LeadScoringService` tính mức tiềm năng theo `rules/lead-scoring.yaml` (mục 58.5), dùng thông tin khách tự cung cấp trong form (khu vực, thời điểm, ngân sách nếu có) và lịch sử tương tác.
 6. `SalesAssignmentService` phân công theo khu vực, tải công việc hoặc quy tắc doanh nghiệp; gửi thông báo cho nhân viên kèm nguồn TikTok, campaign/form ID và thông tin khách được phép sử dụng.
 7. AI chỉ tạo nội dung tư vấn/follow-up phù hợp với consent và quyền liên hệ của kênh. Nếu TikTok không cho phép chủ động nhắn tin, tạo tác vụ gọi điện hoặc liên hệ qua kênh khác khi có căn cứ đồng ý phù hợp.
 8. Khi sale cập nhật kết quả, lưu trạng thái khảo sát, báo giá, thắng/thua và lý do để đo hiệu quả theo chiến dịch.
 
 ## 57.3 Dữ liệu bổ sung nên lưu
 
-- `kenh_nguon = TIKTOK`, `loai_nguon = ORGANIC | LEAD_FORM | PAID_AD | LANDING_PAGE | DM | COMMENT`.
+- `kenh_nguon` theo mã kênh mục 54.1: `TIKTOK_DM`, `TIKTOK_COMMENT` hoặc `TIKTOK_LEAD`.
+- `hinh_thuc_nguon` (EN: `source_kind`) = `ORGANIC | LEAD_FORM | PAID_AD | LANDING_PAGE | DM | COMMENT`. Không đặt tên `loai_nguon` để tránh trùng với `media_nguon.loai_nguon`.
 - `external_lead_id`, `advertiser_id`, `campaign_id`, `adgroup_id`, `ad_id`, `form_id`, `video_id` khi API cung cấp.
 - `consent_status`, `consent_timestamp`, `consent_source`, `privacy_notice_version` nếu có thu thập thông tin đồng ý.
 - `first_touch_at`, `last_touch_at`, `assigned_sales_user_id`, `lead_status`, `conversion_status`.
@@ -4535,9 +4558,10 @@ Các ID trường quảng cáo chỉ lưu khi thực tế có trong payload/API.
 
 ## 57.5 Java modules đề xuất
 
+Theo cấu trúc chuẩn ở mục 31:
+
 ```text
-com.devmam.slmapiv2
-  integrations/tiktok/
+adapters/tiktok/
     TikTokOAuthService.java
     TikTokCapabilityService.java
     TikTokWebhookController.java
@@ -4548,7 +4572,7 @@ com.devmam.slmapiv2
     TikTokMessagingAdapter.java
     TikTokPublishingAdapter.java
     TikTokAnalyticsSyncService.java
-  leads/
+services/lead/
     LeadScoringService.java
     LeadAssignmentService.java
     LeadAttributionService.java
@@ -4618,11 +4642,11 @@ Tài liệu chính thức: https://developers.tiktok.com/docs/en/content-posting
 1. **Không đồng nhất quyền đăng video với quyền DM.** TikTok Accounts API có thể hỗ trợ đăng video/bình luận/insights cho Personal Account khi được phê duyệt; Business Messaging API được mô tả dành cho Business Accounts đã được cấp quyền. Xem tài liệu Accounts API: https://business-api.tiktok.com/portal/docs/accounts-api-overview/v1.3 và Business Messaging API: https://business-api.tiktok.com/portal/bm-api/education-hub.
 2. Kiểm tra trong TikTok for Business/Developer Portal xem tài khoản công ty đã là Business Account/được xác minh khi cần, app có được cấp Business Messaging API, quyền đọc/gửi tin nhắn và webhook hay không. TikTok có thể yêu cầu Business Center và xác minh doanh nghiệp cho một số quyền quản lý DM.
 3. Nếu được cấp quyền, `TikTokMessagingAdapter` nhận sự kiện qua webhook, xác thực sự kiện, ghi inbox bền vững rồi cập nhật hội thoại và Customer 360.
-3. AI phân loại ý định: hỏi giá điện mặt trời, công suất, pin lưu trữ, bảo hành, khảo sát mái, hóa đơn tiền điện hoặc yêu cầu nhân viên gọi lại.
-4. AI soạn câu trả lời dựa trên Knowledge Base, bảng giá/API nội bộ và Brand Voice. Không tự bịa giá, sản lượng, thời gian hoàn vốn hoặc cam kết kỹ thuật.
-5. Với MVP, mặc định AI tạo bản nháp để nhân viên duyệt. Chỉ bật gửi tự động cho các tình huống rủi ro thấp sau khi đã kiểm thử, có giới hạn tần suất, chính sách từ chối liên hệ và nhật ký kiểm toán.
-6. Khi có ý định mua rõ ràng, yêu cầu thông tin liên hệ phù hợp, lưu nguồn TikTok/campaign/video và chuyển lead cho sales. Không tự ý lấy số điện thoại hoặc nhắn ngoài nền tảng nếu chưa có căn cứ đồng ý hợp lệ.
-7. Nếu không được cấp quyền Messaging API, dùng quy trình nhân viên xử lý trong ứng dụng TikTok; hệ thống chỉ quản lý lead được gửi hợp lệ qua form/landing page hoặc được nhập thủ công. Không giả định MCP nghiên cứu video có thể đọc/gửi DM.
+4. AI phân loại ý định: hỏi giá điện mặt trời, công suất, pin lưu trữ, bảo hành, khảo sát mái, hóa đơn tiền điện hoặc yêu cầu nhân viên gọi lại.
+5. AI soạn câu trả lời dựa trên Knowledge Base, bảng giá/API nội bộ và Brand Voice. Không tự bịa giá, sản lượng, thời gian hoàn vốn hoặc cam kết kỹ thuật.
+6. Với MVP, mặc định AI tạo bản nháp để nhân viên duyệt. Chỉ bật gửi tự động cho các tình huống rủi ro thấp sau khi đã kiểm thử, có giới hạn tần suất, chính sách từ chối liên hệ và nhật ký kiểm toán.
+7. Khi có ý định mua rõ ràng, yêu cầu thông tin liên hệ phù hợp, lưu nguồn TikTok/campaign/video và chuyển lead cho sales. Không tự ý lấy số điện thoại hoặc nhắn ngoài nền tảng nếu chưa có căn cứ đồng ý hợp lệ.
+8. Nếu không được cấp quyền Messaging API, dùng quy trình nhân viên xử lý trong ứng dụng TikTok; hệ thống chỉ quản lý lead được gửi hợp lệ qua form/landing page hoặc được nhập thủ công. Không giả định MCP nghiên cứu video có thể đọc/gửi DM.
 
 Tài liệu chính thức: https://business-api.tiktok.com/portal/docs/business-messaging-api-get-started/v1.3 và https://business-api.tiktok.com/portal/bm-api/education-hub. TikTok mô tả Business Messaging API dành cho Business Accounts được ủy quyền. Không tự động giả định API này hoạt động cho Personal Account. Phạm vi tính năng, khả năng mở API tại thị trường Việt Nam, quy tắc gửi tin và điều kiện tài khoản cần được xác nhận trong Developer/Business Portal trước khi phát triển production. Nếu chưa có quyền DM API, MVP dùng hộp thư vận hành thủ công trong ứng dụng TikTok và AI chỉ tạo bản nháp/tác vụ follow-up từ dữ liệu khách hàng được thu thập hợp lệ.
 
@@ -4704,6 +4728,8 @@ Cách tư vấn:
   - Khi chưa đủ thông tin: đưa **khoảng giá** theo loại hệ / số pha / khu vực (tool `tim_goi_phu_hop` trả dải giá khi thông tin chưa đủ, mục 4.2.6).
   - Khi đủ thông tin tối thiểu (mục 58.4): đưa giá chính xác của gói đề xuất (`tong_gia`).
   - Mọi con số giá đều lấy từ tool, không tự nhẩm.
+  - Luôn kèm điều kiện báo giá (mục 4.2.8): giá niêm yết, đã / chưa gồm VAT, giá cuối do nhân viên báo sau khảo sát. Như vậy sales vẫn có chỗ điều chỉnh và khách không coi con số của AI là cam kết.
+- **Mỗi lần hỏi một câu không có nghĩa là lượt nào cũng phải hỏi.** Khi khách đang hỏi để hiểu (ví dụ hybrid khác on-grid thế nào), trả lời cho đủ trước; chỉ hỏi thêm khi câu hỏi đó giúp tư vấn. Tiêu chí "3 câu đã trả lời" dùng để đo mức quan tâm, không phải để AI cố hỏi cho đủ.
 
 **Thay đổi so với thiết kế trước:** playbook "khách hỏi giá" ở mục 13 trước đây là "không báo giá ngay". Chiến lược này thay thế bằng "báo khoảng giá sớm và hỏi một câu"; mục 13 đã được cập nhật theo.
 
@@ -4817,3 +4843,126 @@ flags:
 ```
 
 Các câu `ask` chỉ là câu gợi ý; AI diễn đạt lại theo văn phong (mục 10, 15) và ngữ cảnh hội thoại.
+
+------------------------------------------------------------------------
+
+# 59. Phản biện hệ thống và quyết định cần chốt
+
+Kết quả rà soát kiến trúc ngày 2026-10-20, không xét rủi ro của các repo / MCP tham khảo. Mỗi vấn đề có trạng thái:
+
+- **Đã áp dụng:** đã sửa vào các mục liên quan của tài liệu.
+- **Chờ doanh nghiệp:** cần doanh nghiệp quyết định hoặc cung cấp dữ liệu.
+- **Chờ chốt:** đề xuất kỹ thuật / phạm vi, cần người phụ trách dự án đồng ý.
+
+## 59.1 Bảng tổng hợp
+
+| # | Vấn đề | Mức | Trạng thái | Mục liên quan |
+|---|---|---|---|---|
+| 1 | Phạm vi quá lớn so với một người phát triển | Cao | Chờ chốt (59.6, 59.7) | 38 |
+| 2 | Khách đã lắp đặt không có nguồn dữ liệu | Cao | Chờ doanh nghiệp | 2, 4.1 |
+| 3 | Ràng buộc kênh làm Lead Nurturing gần như chỉ còn việc cho sales | Cao | Đã áp dụng | 56.9 |
+| 4 | Chế độ `DRAFT` làm mất lợi ích trả lời 24/7; "loại câu hỏi" chưa định nghĩa | Cao | Đã áp dụng; doanh nghiệp chốt 5 loại `AUTO` (2026-10-20) | 18, 35, 38 |
+| 5 | Kiểm tra "mọi con số phải có trong tool" khó làm, dễ chặn nhầm | Trung bình | Đã áp dụng | 4.2.6, 33.1 |
+| 6 | Công thức sizing chưa có; dải giá khi thiếu thông tin quá rộng | Cao | Chờ doanh nghiệp | 4.2.6, 4.2.8 |
+| 7 | Báo giá thiếu điều kiện (VAT, phụ phí, chiết khấu, hiệu lực, vùng phục vụ) | Cao | Chờ doanh nghiệp; cách AI nói đã áp dụng | 4.2.8, 4.2.9, 58.2 |
+| 8 | Chuyển nhân viên không có đường trả lại AI; echo của chính app | Trung bình | Đã áp dụng | 19, 29, 54.3 |
+| 9 | Hủy lượt nhưng tool ghi đã chạy | Trung bình | Đã áp dụng | 19 |
+| 10 | Gộp khách trùng số điện thoại chưa có quy trình | Trung bình | Đã áp dụng | 29 |
+| 11 | Nhân viên phải dùng hai inbox | Trung bình | Chờ doanh nghiệp | 34 |
+| 12 | Bộ test câu đơn lẻ không đo được hội thoại nhiều lượt | Trung bình | Đã áp dụng | 35 |
+| 13 | Chọn model bắt đầu từ model rẻ nhất là ngược | Thấp | Đã áp dụng | 20.1, 36 |
+| 14 | Thiếu công tắc dừng toàn cục và KPI mục tiêu | Trung bình | Công tắc đã áp dụng; KPI chờ doanh nghiệp | 33.2, 38 |
+| 15 | Chưa có phần pháp lý dữ liệu cá nhân | Cao | Chờ doanh nghiệp | 59.5 |
+
+## 59.2 Vấn đề nền tảng
+
+**1. Phạm vi so với nguồn lực.** Phase 1 hiện gồm webhook, gộp tin, khóa, tiếp quản, 6 tool, catalog sync, SizingService, inbox admin, Knowledge Editor có phiên bản / phát hành / rollback / lint và phân loại lead; Vben Admin có khoảng 20 module. Với một người phát triển, rủi ro lớn nhất là nhiều tháng chưa có khách nào được trả lời. Đề xuất: MVP rút gọn ở mục 59.7, mỗi phase có KPI mục tiêu và tiêu chí qua phase (mục 38).
+
+**2. Khách đã lắp đặt không có nguồn dữ liệu.** Nhóm 1–4 ở mục 2 là phần lớn trong khoảng 3.000 khách, nhưng bot không đọc khách hàng / hợp đồng của `slm_v2` và chưa có kế hoạch nhập khách cũ. Cần doanh nghiệp chốt:
+
+- Hệ nào là nguồn gốc của khách hàng và hệ thống điện của khách (`slm_v2`, Sales API hay CRM khác)?
+- Bot nhập một lần hay đồng bộ định kỳ? Đồng bộ những trường nào (tên, số điện thoại, tỉnh, công suất, ngày lắp, hãng inverter, sales phụ trách)?
+- Nếu đồng bộ từ `slm_v2`: thêm view `ai_v_khach_hang` / `ai_v_hop_dong` chỉ gồm các trường cần thiết, cùng cách làm ở mục 4.2.5.
+
+Cho tới khi chốt, các chức năng cho khách đã lắp đặt (CSKH sau bán, báo cáo điện năng, giới thiệu) không có dữ liệu để chạy.
+
+**3. Ràng buộc kênh và Lead Nurturing.** Messenger ngoài 24 giờ chỉ người thật được nhắn; Zalo OA chỉ có tin tư vấn trong cửa sổ hoặc ZNS theo template; TikTok DM chưa có quyền. Planner AI ở mục 56 vì vậy chủ yếu sinh việc cho sales. Đã đổi phạm vi MVP của mục 56 sang luật cố định (mục 56.9).
+
+**4. `DRAFT` và loại câu hỏi.** Nếu mọi tin đều chờ nhân viên duyệt thì tin lúc 22h chờ tới sáng, mất lợi ích chính là trả lời ngay. Đã áp dụng: danh sách `intent` và chế độ theo từng loại (mục 35), `intent` trong kết quả AI (mục 18), câu báo nhận ngoài giờ khi lượt rơi vào `DRAFT`.
+
+**Đã chốt (2026-10-20):** gửi tự động ngay từ Phase 1 cho `CHAO_HOI`, `TU_VAN_LAP_MOI`, `HOI_GIA`, `GIAI_THICH`, `CHINH_SACH`, sau khi bộ test đạt. `KHAC` để nháp; sự cố kỹ thuật và khiếu nại luôn chuyển nhân viên. Lượt nào không qua Policy (kể cả kiểm tra con số) tự chuyển `DRAFT`; loại nào có lỗi sai thông tin hoặc tỷ lệ BAD / EDIT vượt ngưỡng tự quay về `DRAFT`; công tắc dừng toàn cục (mục 33.2) đưa tất cả về `DRAFT` khi cần (mục 35).
+
+## 59.3 Lỗ hổng thiết kế
+
+| # | Vấn đề | Cách xử lý |
+|---|---|---|
+| 5 | Kiểm tra con số | Mục 33.1: chỉ kiểm tra loại số rủi ro, nguồn hợp lệ gồm tool, tin của khách và Knowledge; lệch thì chuyển `DRAFT`, không bỏ tin |
+| 6 | Sizing và dải giá | Công thức sizing là việc chặn của Phase 0 (mục 4.2.8). Dải giá khi thiếu thông tin tính theo khoảng hóa đơn (mục 4.2.6), không dùng dải 53,6–838,6 triệu của cả catalog. Số liệu nguồn còn lỗi (gói 101, gói 97/98, đơn vị sản lượng) phải sửa trước |
+| 7 | Điều kiện báo giá, vùng phục vụ | Doanh nghiệp chốt VAT, phụ phí, chiết khấu, hiệu lực (mục 4.2.8) và danh sách tỉnh phục vụ (cờ `serviced`, mục 4.2.9). AI luôn nói giá niêm yết, giá cuối sau khảo sát (mục 58.2) |
+| 8 | Trả hội thoại lại cho AI | Nút "Trả lại AI" hoặc tự trả sau N giờ, lượt đầu sau khi trả đi `DRAFT` (mục 19); cột `tiep_quan_luc`, `nhan_vien_tin_cuoi_luc` (mục 29); lọc echo theo `app_id` (mục 54.3) |
+| 9 | Tác dụng phụ của tool | Tool ghi chỉ áp dụng khi lượt được chốt, cùng transaction (mục 19) |
+| 10 | Gộp khách trùng | Quy trình gộp, cột `gop_vao_id`, bảng `khach_hang_lich_su_gop`; một số điện thoại = một khách / hộ (mục 29) |
+
+**11. Hai inbox (chờ doanh nghiệp).** Nhân viên quen trả lời trong Meta Business Suite; bản nháp AI lại nằm ở inbox admin. Nếu nhân viên bỏ qua inbox admin thì không có dữ liệu `kt_sua_ban_nhap` để bật `AUTO`. Cần chọn một trong hai:
+
+- **Inbox admin là nơi làm việc chính:** nhân viên trả lời mọi tin Messenger từ admin; Meta Business Suite chỉ dùng khi admin lỗi. Inbox admin cần đủ tiện (thông báo, lọc, phím tắt) để thay được.
+- **Giữ Meta Business Suite:** AI trả lời `AUTO` cho 5 loại câu hỏi đã chốt (mục 35); phần còn lại AI ghi nháp thành ghi chú nội bộ / việc cho nhân viên, nhân viên trả lời trong Meta Business Suite và hệ thống thu tin trả lời qua echo để so với nháp.
+
+## 59.4 Đánh giá và vận hành
+
+- **12. Bộ test nhiều lượt:** đã thêm kịch bản hội thoại nhiều lượt, khách giả lập và cách chấm (mục 35).
+- **13. Chọn model:** chạy bộ test với Opus 5.5 trước, chỉ hạ model khi đạt ngang (mục 20.1); tối ưu chi phí chỉ khi số liệu cho thấy cần (mục 36).
+- **14. Vận hành:** công tắc dừng toàn cục, tự bật theo ngưỡng (mục 33.2). KPI mục tiêu và tiêu chí qua phase do doanh nghiệp đặt ở Phase 0 (mục 38).
+
+## 59.5 Pháp lý dữ liệu cá nhân
+
+Nội dung chat chứa tên, số điện thoại, địa chỉ và được gửi tới Claude API (máy chủ ở nước ngoài), tức là xử lý và chuyển dữ liệu cá nhân ra nước ngoài. Cần người phụ trách pháp chế xác nhận theo Nghị định 13/2023/NĐ-CP và Luật Bảo vệ dữ liệu cá nhân (hiệu lực từ 2026) trước khi chạy với khách thật, tối thiểu các việc:
+
+- Hồ sơ đánh giá tác động xử lý dữ liệu cá nhân và hồ sơ đánh giá tác động chuyển dữ liệu ra nước ngoài.
+- Thông báo cho khách: đang trò chuyện với trợ lý AI (đã có ở `core/identity.md`) và dữ liệu được xử lý thế nào; cơ chế đồng ý hoặc căn cứ pháp lý thay thế.
+- **Thời hạn lưu:** `tin_nhan`, `su_kien_webhook`, `luot_goi_ai`, nội dung trong `tl_tin_nhan`. Có job xóa / ẩn danh khi hết hạn.
+- **Quyền của khách:** xem, xóa dữ liệu; quy trình xử lý yêu cầu trên admin.
+- **Giảm dữ liệu gửi đi:** chỉ gửi phần hội thoại cần thiết; che số điện thoại trong lịch sử gửi cho Claude sau khi đã lưu vào `ho_so_tu_van`.
+- Kiểm tra điều khoản lưu trữ dữ liệu của Anthropic phù hợp với yêu cầu trên.
+
+## 59.6 Phần nên cắt hoặc hoãn
+
+| Phần | Lý do | Thay bằng |
+|---|---|---|
+| Trợ lý nội dung + PublishScheduler cho 3 kênh (mục 26, 55) | Meta Business Suite đã lên lịch đăng được; số bài ít | Đăng tay; làm lại khi lượng nội dung và kênh tăng |
+| Media Library đủ 5 loại nguồn, chống trùng sha256, transcode, kiểm tra link chết (mục 6) | Chỉ có vài chục video | `UPLOAD` (ảnh) + link YouTube; ảnh gói từ `SLM_V2` |
+| AI góp ý, AI viết từ yêu cầu thô, phát hiện xung đột, hẹn giờ kích hoạt (mục 5.9–5.10) | Ít người sửa kiến thức | Sửa, phát hành, rollback, đếm token; mẫu tài liệu |
+| Planner AI của Lead Nurturing (mục 56.3) | Ràng buộc kênh (59.2 mục 3) | Luật cố định → việc cho sales (mục 56.9) |
+| Adapter 7 hãng inverter (mục 21) | Mỗi hãng một API riêng | 1–2 hãng có nhiều khách nhất |
+| Persona, phong cách theo nhân viên (mục 16) | Chưa cần | `Company Default` |
+
+## 59.7 MVP rút gọn đề xuất
+
+Mục tiêu: có khách thật được trả lời trên Messenger sớm nhất có thể, đo được giá trị trước khi làm tiếp.
+
+1. **Dữ liệu:** view `ai_v_*`, catalog sync, `SizingService` có unit test, `regions.yaml` có vùng phục vụ.
+2. **Kiến thức:** tài liệu Markdown / YAML nhập vào DB, có phát hành và rollback; chưa cần editor đầy đủ (sửa bằng form đơn giản hoặc nhập lại từ repo).
+3. **Hội thoại Messenger:**
+   - webhook, gộp tin, khóa, tiếp quản và trả lại;
+   - tool catalog / sizing / lead / handoff;
+   - Policy (kiểm tra con số);
+   - `AUTO` cho 5 loại câu hỏi đã chốt, `DRAFT` cho `KHAC`, chuyển nhân viên cho sự cố kỹ thuật và khiếu nại;
+   - công tắc dừng toàn cục.
+4. **Lead → Sales API**, kèm mức tiềm năng.
+5. **Inbox admin tối thiểu** (hoặc phương án Meta Business Suite, 59.3 mục 11), dashboard `luot_goi_ai` cơ bản.
+6. **Bộ test** câu đơn lẻ + kịch bản nhiều lượt.
+
+Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
+
+## 59.8 Việc cần chốt trước khi code
+
+| Việc | Người quyết định | Chặn phần nào |
+|---|---|---|
+| Nguồn dữ liệu khách cũ và cách đồng bộ (59.2) | Doanh nghiệp | CSKH khách cũ, báo cáo điện năng |
+| Công thức sizing, đơn vị sản lượng, sửa dữ liệu nguồn (4.2.7, 4.2.8) | Doanh nghiệp | Tool `tim_goi_phu_hop`, báo giá |
+| Điều kiện báo giá: VAT, phụ phí, chiết khấu, hiệu lực (4.2.8) | Doanh nghiệp | Mọi câu trả lời có giá |
+| Danh sách tỉnh theo miền và vùng phục vụ (4.2.9) | Doanh nghiệp | Quy đổi giá |
+| Pháp lý dữ liệu cá nhân (59.5) | Doanh nghiệp + pháp chế | Chạy với khách thật |
+| Inbox làm việc của nhân viên (59.3 mục 11) | Doanh nghiệp | Inbox admin, dữ liệu sửa nháp |
+| KPI mục tiêu và tiêu chí qua phase (38) | Doanh nghiệp | Quyết định mở rộng |
+| MVP rút gọn và các phần hoãn (59.6, 59.7) | Người phụ trách dự án | Lộ trình |
