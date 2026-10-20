@@ -1,5 +1,10 @@
-# Bản clone repo / MCP tham khảo (kế hoạch mục 46.1): không commit.
-# Tạo lại bằng: bash references/clone.sh. Chỉ references/README.md và references/clone.sh được commit.
-/references/*/
-
 .DS_Store
+
+# Cấu hình triển khai chứa mật khẩu thật; chỉ commit .env.example
+# .env
+
+# Build
+backend/target/
+frontend/node_modules/
+frontend/**/node_modules/
+frontend/dist/

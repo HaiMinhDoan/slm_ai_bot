@@ -1,0 +1,17 @@
+{
+  "okText": "Đồng ý",
+  "closeText": "Đóng",
+  "cancelText": "Huỷ",
+  "loadingText": "Đang tải...",
+  "saveText": "Lưu",
+  "delText": "Xoá",
+  "resetText": "Đặt lại",
+  "searchText": "Tìm kiếm",
+  "queryText": "Tìm kiếm",
+  "inputText": "Vui lòng nhập ",
+  "chooseText": "Vui lòng chọn ",
+  "redo": "Tải lại",
+  "back": "Quay lại",
+  "light": "Sáng",
+  "dark": "Tối"
+}

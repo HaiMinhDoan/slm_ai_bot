@@ -1,0 +1,37 @@
+node_modules
+.DS_Store
+dist
+.cache
+.turbo
+
+tests/server/static
+tests/server/static/upload
+
+.local
+# local env files
+.env.local
+.env.*.local
+.eslintcache
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor directories and files
+.idea
+# .vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# CỐ Ý KHÔNG bỏ qua pnpm-lock.yaml nữa (mặc định của template vben bỏ qua nó).
+# Đây là ứng dụng chứ không phải thư viện: lockfile phải nằm trong git thì build trên server
+# mới ra đúng bộ phụ thuộc như máy dev, và `pnpm install --frozen-lockfile` trong Dockerfile
+# mới chạy được. Thiếu nó, build trên server dừng với ERR_PNPM_NO_LOCKFILE.
+package-lock.json
+
+.history

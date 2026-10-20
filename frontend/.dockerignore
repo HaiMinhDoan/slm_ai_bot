@@ -1,0 +1,11 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.turbo
+**/.turbo
+# Tải lại lúc build (scripts/setup-mediapipe.mjs), ~20MB không cần nằm trong context
+apps/portal-view/public/mediapipe
+.git
+.husky
+*.log

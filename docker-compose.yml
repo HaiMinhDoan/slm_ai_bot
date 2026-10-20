@@ -1,0 +1,56 @@
+# SLM AI — mẫu từ fsignai:
+#   cp .env.example .env   (rồi điền giá trị thật)
+#   docker compose build
+#   docker compose up -d
+#
+# PostgreSQL và MinIO không nằm ở đây: dùng máy chủ dùng chung (cùng chỗ với slm_v2).
+
+name: slm-ai
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # Tên container dùng gạch ngang, KHÔNG dùng gạch dưới: Tomcat trả 400 với Host header chứa "_"
+  slm-ai-backend:
+    build:
+      context: ./backend
+    image: slm-ai/backend:latest
+    container_name: slm-ai-backend
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: .env
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    networks:
+      - web
+    mem_limit: 1g
+
+  # CMS (Vben Admin). nginx trong container chuyển /basic-api/* sang slm-ai-backend:8080
+  slm-ai-cms:
+    build:
+      context: ./frontend
+      target: cms
+    image: slm-ai/cms:latest
+    container_name: slm-ai-cms
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    networks:
+      - web
+    # Vào thẳng bằng IP khi chưa có tên miền; có tên miền + SSL thì nên bỏ dòng này
+    ports:
+      - "5175:5173"
+    depends_on:
+      - slm-ai-backend
+    mem_limit: 256m
+
+networks:
+  # Mạng dùng chung với nginx-proxy-manager. Nếu chưa có: docker network create slm_v2_app-network
+  web:
+    name: ${SHARED_NETWORK:-slm_v2_app-network}
+    external: true
