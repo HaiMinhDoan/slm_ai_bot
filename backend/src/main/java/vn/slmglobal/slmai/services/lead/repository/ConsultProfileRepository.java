@@ -1,0 +1,9 @@
+package vn.slmglobal.slmai.services.lead.repository;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import vn.slmglobal.slmai.services.lead.entity.ConsultProfile;
+
+import java.util.UUID;
+
+public interface ConsultProfileRepository extends JpaRepository<ConsultProfile, UUID> {
+}

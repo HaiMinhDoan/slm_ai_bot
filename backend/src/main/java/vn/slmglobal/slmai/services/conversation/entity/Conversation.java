@@ -81,6 +81,10 @@ public class Conversation {
     @Column(name = "han_tra_loi_luc")
     private OffsetDateTime replyDueAt;
 
+    /** Lúc tự trả lại AI (V4): lượt AI đầu tiên sau đó đi theo DRAFT (mục 19); xoá khi lượt đó được chốt */
+    @Column(name = "tu_tra_lai_luc")
+    private OffsetDateTime autoHandbackAt;
+
     @Column(name = "tao_luc", nullable = false, updatable = false)
     @Builder.Default
     private OffsetDateTime createdAt = OffsetDateTime.now();
@@ -100,5 +104,19 @@ public class Conversation {
         }
         lastStaffMessageAt = at;
         replyDueAt = null;
+        autoHandbackAt = null;
+    }
+
+    /**
+     * AI xin chuyển nhân viên (mục 18, 35). Không ghi {@code lastStaffMessageAt} vì chưa có nhân viên nào trả lời;
+     * việc tự trả lại AI tính từ {@code takenOverAt} cho tới khi nhân viên nhắn.
+     */
+    public void requestHuman(OffsetDateTime at) {
+        if (ownership != Ownership.HUMAN_OWNED) {
+            ownership = Ownership.HUMAN_OWNED;
+            takenOverAt = at;
+        }
+        replyDueAt = null;
+        autoHandbackAt = null;
     }
 }

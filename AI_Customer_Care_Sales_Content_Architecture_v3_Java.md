@@ -2211,6 +2211,9 @@ CREATE TABLE luot_goi_ai (
     co_lo_hong_kt     BOOLEAN NOT NULL DEFAULT false,               -- [EN: knowledge_gap]
     ket_qua_policy    JSONB,                                        -- [EN: policy_result]
     do_tre_ms         INT,                                          -- [EN: latency_ms]
+    ket_qua_ai        JSONB,                                        -- [EN: ai_output] kết quả có cấu trúc (mục 18), để kiểm tra lại và làm bộ test
+    ly_do_dung        VARCHAR(40),                                  -- [EN: stop_reason] end_turn, refusal, max_tokens...
+    loi               TEXT,                                         -- [EN: error] lỗi gọi Claude hoặc lỗi đọc kết quả
     tao_luc           TIMESTAMPTZ NOT NULL DEFAULT now()            -- [EN: created_at]
 );
 CREATE INDEX idx_luot_goi_ai_hoi_thoai_id_tao_luc ON luot_goi_ai (hoi_thoai_id, tao_luc);
@@ -2503,7 +2506,8 @@ CREATE TABLE hoi_thoai (
     y_dinh                 VARCHAR(50),                                     -- [EN: intent]
     tom_tat                TEXT,                                            -- [EN: summary] tóm tắt khi hội thoại dài
     tin_khach_cuoi_luc     TIMESTAMPTZ,                                     -- [EN: last_customer_message_at] tính cửa sổ 24 giờ / cửa sổ tin tư vấn
-    han_tra_loi_luc        TIMESTAMPTZ,                                     -- [EN: reply_due_at] gộp tin: xử lý khi tới hạn (mục 19)
+    han_tra_loi_luc        TIMESTAMPTZ,                                     -- [EN: reply_due_at] gộp tin: xử lý khi tới hạn (mục 19); trong lúc AI xử lý là hạn giữ lượt
+    tu_tra_lai_luc         TIMESTAMPTZ,                                     -- [EN: auto_handback_at] lượt AI đầu tiên sau khi tự trả lại đi theo DRAFT (mục 19)
     tao_luc                TIMESTAMPTZ NOT NULL DEFAULT now(),              -- [EN: created_at]
     sua_luc                TIMESTAMPTZ NOT NULL DEFAULT now()               -- [EN: updated_at]
 );
@@ -2549,6 +2553,7 @@ CREATE TABLE ho_so_tu_van (                        -- thông tin tư vấn đã 
     muc_tiem_nang              VARCHAR(16) CHECK (muc_tiem_nang IN ('HOT','WARM','COLD','OFF_SEGMENT')),  -- [EN: lead_level]
     ly_do_muc_tiem_nang       TEXT,  -- [EN: lead_level_reason]
     tron_goi_de_xuat_ids INT[]  NOT NULL DEFAULT '{}',  -- [EN: recommended_package_ids]
+    cau_hoi_cuoi         VARCHAR(50),  -- [EN: last_question_asked] câu AI vừa hỏi ở tin đã gửi; tin sau của khách trả lời đúng câu này thì so_cau_da_tra_loi tăng
     sua_luc              TIMESTAMPTZ NOT NULL DEFAULT now()  -- [EN: updated_at]
 );
 ```

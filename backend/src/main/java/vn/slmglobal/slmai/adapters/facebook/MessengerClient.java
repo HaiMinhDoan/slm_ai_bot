@@ -73,4 +73,23 @@ public class MessengerClient {
         }
         return new SendResult(response.path("message_id").asText(), response.path("recipient_id").asText(null));
     }
+
+    /** Hành động người gửi: {@code mark_seen}, {@code typing_on}, {@code typing_off}. */
+    public void senderAction(String psid, String action) {
+        if (!properties.hasPageAccessToken()) {
+            throw new MessengerApiException("Chưa cấu hình FB_PAGE_ACCESS_TOKEN");
+        }
+        restClient.post()
+                .uri(b -> b.path("/{version}/me/messages")
+                        .queryParam("access_token", properties.pageAccessToken())
+                        .build(properties.graphApiVersion()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("recipient", Map.of("id", psid), "sender_action", action))
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, (request, resp) -> {
+                    throw new MessengerApiException("Send API (sender_action) lỗi HTTP " + resp.getStatusCode().value()
+                            + ": " + MessengerApiException.describeGraphError(resp.getBody().readAllBytes()));
+                })
+                .toBodilessEntity();
+    }
 }

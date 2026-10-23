@@ -87,6 +87,36 @@ app:
     worker-enabled: ${CONVERSATION_WORKER_ENABLED:true}
     worker-batch-size: 50
 
+  # AI trả lời khách (mục 18–20, 33, 35). Thiếu ANTHROPIC_API_KEY thì worker AI không chạy, tin khách vẫn được lưu.
+  ai:
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${AI_MODEL:claude-opus-5-5}
+    effort: ${AI_EFFORT:medium}
+    max-tokens: 8000
+    timeout: 120s
+    server-side-fallback: true
+    # Công tắc dừng toàn cục (mục 33.2): true = mọi lượt đi theo DRAFT
+    force-draft: ${AI_FORCE_DRAFT:false}
+    worker-enabled: ${AI_WORKER_ENABLED:true}
+    worker-concurrency: 4
+    history-limit: 40
+    max-attempts: 3
+    retry-backoff: 20s
+    turn-lease: 3m
+    typing-indicator: true
+    company-name: ${AI_COMPANY_NAME:SolarMax}
+    auto-intents: CHAO_HOI,TU_VAN_LAP_MOI,HOI_GIA,GIAI_THICH,CHINH_SACH
+    handoff-intents: KY_THUAT_SU_CO,KHIEU_NAI
+    business-hours:
+      zone: Asia/Ho_Chi_Minh
+      start: "08:00"
+      end: "17:30"
+      days: MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY,SATURDAY
+    templates:
+      out-of-hours-ack: "Dạ em đã ghi nhận thông tin của mình ạ. Nhân viên tư vấn sẽ phản hồi mình trong giờ làm việc sớm nhất nhé."
+      handoff-ack: "Dạ em đã chuyển thông tin cho nhân viên phụ trách, anh/chị chờ em một chút nhé."
+      ack-cooldown: 12h
+
 springdoc:
   api-docs:
     path: /v3/api-docs
