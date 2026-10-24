@@ -43,12 +43,25 @@ public class MessengerSender implements ChannelSender {
     }
 
     @Override
+    public void markSeen(ChannelIdentity recipient) {
+        senderAction(recipient, "mark_seen");
+    }
+
+    @Override
     public void typing(ChannelIdentity recipient) {
+        senderAction(recipient, "typing_on");
+    }
+
+    @Override
+    public void stopTyping(ChannelIdentity recipient) {
+        senderAction(recipient, "typing_off");
+    }
+
+    private void senderAction(ChannelIdentity recipient, String action) {
         try {
-            client.senderAction(recipient.getExternalUserId(), "mark_seen");
-            client.senderAction(recipient.getExternalUserId(), "typing_on");
+            client.senderAction(recipient.getExternalUserId(), action);
         } catch (RuntimeException e) {
-            log.debug("Không gửi được typing_on: {}", e.getMessage());
+            log.debug("Không gửi được {}: {}", action, e.getMessage());
         }
     }
 }

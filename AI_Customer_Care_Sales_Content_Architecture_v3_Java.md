@@ -1248,6 +1248,8 @@ Toàn bộ hội thoại với khách dùng **một model**, chọn bằng bộ 
 
 Khách VIP hoặc trường hợp phức tạp được chuyển cho người thật, không chuyển sang model lớn hơn.
 
+**Thử nghiệm ngày 2026-10-24:** 4 lượt đầu trên Opus 5.5 (effort `medium`) mất 8, 112, 11 và 82 giây cho cùng cỡ đầu ra (800–1.200 token): tốc độ sinh của API lúc nhanh lúc chậm, quá lâu với chat bán hàng. Chuyển sang thử **Sonnet 5.5, effort `low`** (tài liệu Anthropic khuyên `low` cho chat), giá bằng một nửa. Theo dõi `luot_goi_ai.do_tre_ms` và chất lượng trả lời; quay lại Opus bằng `AI_MODEL` / `AI_EFFORT` nếu chất lượng giảm rõ. Trong lúc chờ Claude, "đang soạn tin" được bật lại mỗi 10 giây.
+
 ## 20.2 Model khác cho việc khác
 
 | Việc | Model gợi ý | Lý do |

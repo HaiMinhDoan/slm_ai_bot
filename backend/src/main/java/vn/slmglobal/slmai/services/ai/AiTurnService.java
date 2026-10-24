@@ -4,6 +4,7 @@ import com.anthropic.errors.AnthropicServiceException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import vn.slmglobal.slmai.common.util.HashUtil;
@@ -31,6 +32,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 /**
  * Một lượt AI trả lời khách (mục 19): nhận lượt → ghép prompt → Claude → Policy → chốt → gửi.
@@ -60,6 +63,12 @@ public class AiTurnService {
     private final Map<UUID, Integer> failures = new ConcurrentHashMap<>();
     /** Định danh kênh đã thử lấy tên, để không gọi lại API hồ sơ mỗi lượt khi không lấy được */
     private final Set<UUID> nameLookups = ConcurrentHashMap.newKeySet();
+    /** Bật lại "đang soạn tin" theo chu kỳ trong lúc chờ Claude */
+    private final ScheduledExecutorService typingScheduler = Executors.newScheduledThreadPool(2, r -> {
+        Thread t = new Thread(r, "ai-typing");
+        t.setDaemon(true);
+        return t;
+    });
 
     public AiTurnService(AiTurnStore store, CustomerChatPromptBuilder promptBuilder, ClaudeChatClient claude,
                          ReplyPolicy policy, KnowledgeBase knowledgeBase, AiProperties properties,
@@ -74,6 +83,11 @@ public class AiTurnService {
         this.conversationProperties = conversationProperties;
         this.objectMapper = objectMapper;
         channelSenders.forEach(s -> senders.put(s.channel(), s));
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        typingScheduler.shutdownNow();
     }
 
     public void process(UUID conversationId) {
@@ -92,18 +106,35 @@ public class AiTurnService {
             store.release(s);
             return;
         }
-        if (properties.typingIndicator() && sender != null && windowOpen) {
-            sender.typing(s.identity());
-        }
+        TypingIndicator typing = properties.typingIndicator() && sender != null && windowOpen
+                ? TypingIndicator.start(sender, s.identity(), typingScheduler)
+                : null;
 
         AiRun run = newRun(s);
-        ClaudeChatClient.ChatCompletion completion;
+        ClaudeChatClient.ChatCompletion completion = null;
+        RuntimeException failure = null;
         try {
             completion = claude.complete(request);
         } catch (RuntimeException e) {
-            onCallFailed(s, run, e, businessOpen, windowOpen, sender);
-            return;
+            failure = e;
+        } finally {
+            if (typing != null) {
+                typing.stop();
+            }
         }
+        int sent = failure != null
+                ? onCallFailed(s, run, failure, businessOpen, windowOpen, sender)
+                : finish(s, run, completion, businessOpen, windowOpen, sender);
+        // Không gửi gì (nháp, bỏ lượt, chờ thử lại): tắt bong bóng thay vì để khách thấy "đang soạn" thêm 20 giây
+        if (typing != null && sent == 0) {
+            sender.stopTyping(s.identity());
+        }
+    }
+
+    /** Phần sau khi Claude trả lời: đọc kết quả, Policy, chốt, gửi. Trả số tin đã gửi ra kênh. */
+    private int finish(TurnSnapshot s, AiRun run, ClaudeChatClient.ChatCompletion completion, boolean businessOpen,
+                       boolean windowOpen, ChannelSender sender) {
+        UUID conversationId = s.conversationId();
         failures.remove(conversationId);
         fillUsage(run, completion);
 
@@ -125,7 +156,7 @@ public class AiTurnService {
                     decision.action(), decision.reasons(), run.getLatencyMs(), run.getCacheReadTokens(),
                     run.getCacheWriteTokens());
         }
-        deliver(s, sender, commit.outgoing());
+        return deliver(s, sender, commit.outgoing());
     }
 
     /** Lấy tên Facebook của khách một lần (để AI chọn anh / chị theo core/voice), lưu vào dinh_danh_kenh. */
@@ -141,8 +172,9 @@ public class AiTurnService {
         return s.customerName() == null ? s.withCustomerName(name) : s;
     }
 
-    private void onCallFailed(TurnSnapshot s, AiRun run, RuntimeException e, boolean businessOpen,
-                              boolean windowOpen, ChannelSender sender) {
+    /** Trả số tin đã gửi ra kênh (câu báo nhận khi chuyển nhân viên); 0 khi hẹn thử lại. */
+    private int onCallFailed(TurnSnapshot s, AiRun run, RuntimeException e, boolean businessOpen,
+                             boolean windowOpen, ChannelSender sender) {
         int attempt = failures.merge(s.conversationId(), 1, Integer::sum);
         run.setError(truncate(describe(e)));
         boolean retryable = !(e instanceof AnthropicServiceException ase
@@ -153,14 +185,14 @@ public class AiTurnService {
             log.warn("Gọi Claude lỗi (hội thoại {}, lần {}), thử lại sau {}: {}", s.conversationId(), attempt, wait,
                     run.getError());
             store.recordFailure(s, run, OffsetDateTime.now().plus(wait));
-            return;
+            return 0;
         }
         failures.remove(s.conversationId());
         log.error("Gọi Claude lỗi (hội thoại {}, lần {}), chuyển nhân viên: {}", s.conversationId(), attempt,
                 run.getError());
         AiTurnStore.Commit commit = store.commit(s, run, null, ReplyPolicy.Decision.handoff("AI_ERROR"),
                 businessOpen, windowOpen, sender != null);
-        deliver(s, sender, commit.outgoing());
+        return deliver(s, sender, commit.outgoing());
     }
 
     /** null khi không dùng được: model từ chối, hết token giữa chừng, JSON hỏng. Lý do ghi vào luot_goi_ai.loi. */
@@ -183,19 +215,23 @@ public class AiTurnService {
         }
     }
 
-    private void deliver(TurnSnapshot s, ChannelSender sender, List<AiTurnStore.Outgoing> outgoing) {
+    /** Gửi các tin đã chốt; trả số tin gửi thành công. */
+    private int deliver(TurnSnapshot s, ChannelSender sender, List<AiTurnStore.Outgoing> outgoing) {
         if (sender == null) {
-            return;
+            return 0;
         }
+        int sent = 0;
         for (AiTurnStore.Outgoing o : outgoing) {
             try {
                 String externalId = sender.sendText(s.identity(), o.text());
                 store.markSent(o.messageId(), externalId);
+                sent++;
             } catch (RuntimeException e) {
                 log.warn("Gửi tin {} của hội thoại {} thất bại: {}", o.messageId(), s.conversationId(), e.getMessage());
                 store.markFailed(o.messageId());
             }
         }
+        return sent;
     }
 
     private AiRun newRun(TurnSnapshot s) {

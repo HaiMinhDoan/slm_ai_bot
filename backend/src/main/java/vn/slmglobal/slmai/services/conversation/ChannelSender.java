@@ -19,8 +19,16 @@ public interface ChannelSender {
     /** Gửi tin văn bản; trả mã tin của nền tảng. Lỗi thì ném exception. */
     String sendText(ChannelIdentity recipient, String text);
 
-    /** Báo "đang soạn tin". Không bắt buộc; lỗi bị bỏ qua. */
+    /** Báo đã xem tin của khách. Không bắt buộc; lỗi bị bỏ qua. */
+    default void markSeen(ChannelIdentity recipient) {
+    }
+
+    /** Bật "đang soạn tin" (Messenger tự tắt sau khoảng 20 giây). Không bắt buộc; lỗi bị bỏ qua. */
     default void typing(ChannelIdentity recipient) {
+    }
+
+    /** Tắt "đang soạn tin" khi lượt kết thúc mà không gửi gì. Không bắt buộc; lỗi bị bỏ qua. */
+    default void stopTyping(ChannelIdentity recipient) {
     }
 
     /** Tên hiển thị của khách trên kênh, để AI chọn cách xưng hô. Không lấy được thì rỗng. */
