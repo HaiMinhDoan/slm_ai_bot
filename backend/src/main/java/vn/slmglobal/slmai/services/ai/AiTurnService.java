@@ -58,6 +58,8 @@ public class AiTurnService {
     private final Map<ChannelCode, ChannelSender> senders = new EnumMap<>(ChannelCode.class);
     /** Số lần gọi Claude lỗi liên tiếp của từng hội thoại (chỉ trong tiến trình này) */
     private final Map<UUID, Integer> failures = new ConcurrentHashMap<>();
+    /** Định danh kênh đã thử lấy tên, để không gọi lại API hồ sơ mỗi lượt khi không lấy được */
+    private final Set<UUID> nameLookups = ConcurrentHashMap.newKeySet();
 
     public AiTurnService(AiTurnStore store, CustomerChatPromptBuilder promptBuilder, ClaudeChatClient claude,
                          ReplyPolicy policy, KnowledgeBase knowledgeBase, AiProperties properties,
@@ -83,6 +85,7 @@ public class AiTurnService {
         boolean businessOpen = properties.businessHours().isOpen(now);
         boolean windowOpen = isWindowOpen(s);
         ChannelSender sender = senders.get(s.channel());
+        s = withChannelName(s, sender);
 
         ClaudeChatClient.ChatRequest request = promptBuilder.build(s, now, businessOpen).orElse(null);
         if (request == null) {
@@ -123,6 +126,19 @@ public class AiTurnService {
                     run.getCacheWriteTokens());
         }
         deliver(s, sender, commit.outgoing());
+    }
+
+    /** Lấy tên Facebook của khách một lần (để AI chọn anh / chị theo core/voice), lưu vào dinh_danh_kenh. */
+    private TurnSnapshot withChannelName(TurnSnapshot s, ChannelSender sender) {
+        if (sender == null || s.identity().getDisplayName() != null || !nameLookups.add(s.identity().getId())) {
+            return s;
+        }
+        String name = sender.fetchDisplayName(s.identity()).orElse(null);
+        if (name == null) {
+            return s;
+        }
+        store.saveDisplayName(s.identity().getId(), name);
+        return s.customerName() == null ? s.withCustomerName(name) : s;
     }
 
     private void onCallFailed(TurnSnapshot s, AiRun run, RuntimeException e, boolean businessOpen,

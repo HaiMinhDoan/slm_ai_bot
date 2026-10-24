@@ -54,4 +54,11 @@ public record TurnSnapshot(
     public List<UUID> pendingInboundIds() {
         return pendingInbound.stream().map(Message::getId).toList();
     }
+
+    /** Bản sao có tên khách (vừa lấy từ kênh) */
+    public TurnSnapshot withCustomerName(String name) {
+        return new TurnSnapshot(conversationId, customerId, channel, identity, leaseUntil, inboundCount, history,
+                pendingInbound, replyMode, firstTurnAfterHandback, lastCustomerMessageAt, profile, customerPhone, name,
+                salutation);
+    }
 }

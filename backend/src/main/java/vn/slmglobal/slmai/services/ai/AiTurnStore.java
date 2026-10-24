@@ -223,6 +223,16 @@ public class AiTurnStore {
         return new Commit(true, null, List.copyOf(outgoing));
     }
 
+    /** Tên hiển thị của khách lấy từ kênh (Messenger User Profile API) */
+    @Transactional
+    public void saveDisplayName(UUID channelIdentityId, String displayName) {
+        channelIdentityRepository.findById(channelIdentityId).ifPresent(i -> {
+            if (i.getDisplayName() == null) {
+                i.setDisplayName(displayName);
+            }
+        });
+    }
+
     @Transactional
     public void markSent(UUID messageId, String externalMessageId) {
         messageRepository.findById(messageId).ifPresent(m -> {

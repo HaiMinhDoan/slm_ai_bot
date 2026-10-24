@@ -48,7 +48,7 @@ public class CustomerChatPromptBuilder {
 
     public CustomerChatPromptBuilder(AiProperties properties, KnowledgeBase knowledgeBase) {
         this.properties = properties;
-        String instructions = KnowledgeBase.readClasspathText(PROMPT_LOCATION, properties.companyName()).strip();
+        String instructions = KnowledgeBase.readClasspathText(PROMPT_LOCATION, properties).strip();
         this.cachedSystem = instructions + "\n\n# Tài liệu kiến thức\n\n" + knowledgeBase.rendered();
         this.promptVersion = "customer-chat:" + HashUtil.sha256Hex(instructions).substring(0, 16);
     }
@@ -79,8 +79,9 @@ public class CustomerChatPromptBuilder {
                 .append(hours.start()).append("–").append(hours.end()).append(", ").append(dayList(hours.days()))
                 .append(").\n");
         sb.append("Kênh: ").append(channelName(s.channel())).append(".\n");
-        sb.append("Tên khách: ").append(s.customerName() == null ? "chưa biết" : s.customerName())
-                .append(". Danh xưng: ").append(salutation(s.salutation())).append(".\n");
+        sb.append("Tên khách (khách tự giới thiệu hoặc tên Facebook): ")
+                .append(s.customerName() == null ? "chưa biết" : s.customerName()).append(".\n");
+        sb.append("Cách gọi khách đã xác định: ").append(salutation(s.salutation())).append(".\n");
         sb.append("Khách đã cho số điện thoại: ").append(s.hasPhone() ? "có" : "chưa").append(".\n");
         sb.append("Hồ sơ tư vấn đã thu: ").append(p == null ? "chưa có" : slots(p.getSlots())).append(".\n");
         List<String> missing = p == null ? ConsultSlots.REQUIRED : List.of(p.getMissingSlots());
@@ -187,7 +188,7 @@ public class CustomerChatPromptBuilder {
         if ("ANH".equals(s)) {
             return "anh";
         }
-        return "CHI".equals(s) ? "chị" : "chưa rõ (dùng anh/chị hoặc mình)";
+        return "CHI".equals(s) ? "chị" : "chưa xác định (đoán từ tên theo core/voice; không chắc thì dùng anh/chị)";
     }
 
     private static String channelName(ChannelCode channel) {

@@ -27,6 +27,7 @@ import java.util.List;
  * @param turnLease          giữ lượt trong lúc gọi Claude; tiến trình chết giữa chừng thì hết hạn này lượt được chạy lại
  * @param typingIndicator    gửi "đang soạn tin" trước khi gọi Claude
  * @param companyName        tên công ty AI dùng khi tự giới thiệu
+ * @param personaName        tên tư vấn viên AI dùng khi tự giới thiệu (core/identity); khách hỏi thẳng thì vẫn nói là AI
  * @param autoIntents        loại câu hỏi được gửi tự động (mục 35)
  * @param handoffIntents     loại câu hỏi luôn chuyển nhân viên (mục 35)
  */
@@ -47,6 +48,7 @@ public record AiProperties(
         Duration turnLease,
         boolean typingIndicator,
         String companyName,
+        String personaName,
         List<String> autoIntents,
         List<String> handoffIntents,
         BusinessHours businessHours,

@@ -74,6 +74,35 @@ public class MessengerClient {
         return new SendResult(response.path("message_id").asText(), response.path("recipient_id").asText(null));
     }
 
+    /**
+     * Tên Facebook của khách qua User Profile API (GET /{psid}?fields=name). Chỉ gọi được sau khi khách đã nhắn
+     * cho Trang; trả null khi không lấy được.
+     */
+    public String fetchUserName(String psid) {
+        if (!properties.hasPageAccessToken()) {
+            throw new MessengerApiException("Chưa cấu hình FB_PAGE_ACCESS_TOKEN");
+        }
+        JsonNode profile = restClient.get()
+                .uri(b -> b.path("/{version}/{psid}")
+                        .queryParam("fields", "name,first_name,last_name")
+                        .queryParam("access_token", properties.pageAccessToken())
+                        .build(properties.graphApiVersion(), psid))
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, (request, resp) -> {
+                    throw new MessengerApiException("User Profile API lỗi HTTP " + resp.getStatusCode().value()
+                            + ": " + MessengerApiException.describeGraphError(resp.getBody().readAllBytes()));
+                })
+                .body(JsonNode.class);
+        if (profile == null) {
+            return null;
+        }
+        String name = profile.path("name").asText("").strip();
+        if (name.isEmpty()) {
+            name = (profile.path("last_name").asText("") + " " + profile.path("first_name").asText("")).strip();
+        }
+        return name.isEmpty() ? null : name;
+    }
+
     /** Hành động người gửi: {@code mark_seen}, {@code typing_on}, {@code typing_off}. */
     public void senderAction(String psid, String action) {
         if (!properties.hasPageAccessToken()) {

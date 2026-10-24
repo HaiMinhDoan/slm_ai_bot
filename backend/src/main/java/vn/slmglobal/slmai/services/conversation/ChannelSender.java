@@ -3,6 +3,8 @@ package vn.slmglobal.slmai.services.conversation;
 import vn.slmglobal.slmai.services.conversation.entity.ChannelCode;
 import vn.slmglobal.slmai.services.customer.entity.ChannelIdentity;
 
+import java.util.Optional;
+
 /**
  * Gửi tin ra một kênh (mục 33: Policy → Channel Adapter → Send). Mỗi adapter kênh cài đặt một bean.
  * Kiểm tra cửa sổ nhắn tin và Policy đã làm ở tầng trên; ở đây chỉ gọi API của nền tảng.
@@ -19,5 +21,10 @@ public interface ChannelSender {
 
     /** Báo "đang soạn tin". Không bắt buộc; lỗi bị bỏ qua. */
     default void typing(ChannelIdentity recipient) {
+    }
+
+    /** Tên hiển thị của khách trên kênh, để AI chọn cách xưng hô. Không lấy được thì rỗng. */
+    default Optional<String> fetchDisplayName(ChannelIdentity recipient) {
+        return Optional.empty();
     }
 }

@@ -105,6 +105,8 @@ app:
     turn-lease: 3m
     typing-indicator: true
     company-name: ${AI_COMPANY_NAME:SolarMax}
+    # Tên tư vấn viên khi tự giới thiệu; khách hỏi thẳng có phải bot không thì AI vẫn nói thật (core/identity)
+    persona-name: ${AI_PERSONA_NAME:Huyền}
     auto-intents: CHAO_HOI,TU_VAN_LAP_MOI,HOI_GIA,GIAI_THICH,CHINH_SACH
     handoff-intents: KY_THUAT_SU_CO,KHIEU_NAI
     business-hours:

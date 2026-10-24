@@ -398,7 +398,7 @@ Tài liệu được tổ chức theo cây `ma_tai_lieu` dưới đây. Đây c�
 ``` text
 knowledge/
 ├── core/                  # luôn nạp, gần như không đổi
-│   ├── identity.md        # trợ lý AI của SolarMax, phạm vi, tự giới thiệu là AI
+│   ├── identity.md        # tên tư vấn viên (Huyền), phạm vi; khách hỏi có phải bot thì nói thật
 │   ├── voice.md           # xưng hô anh/chị – em, độ dài, emoji, câu cấm
 │   └── guardrails.md      # không bịa số, không hứa ROI, các trường hợp phải chuyển người
 ├── playbooks/             # cách dẫn dắt hội thoại
@@ -1108,7 +1108,13 @@ Marketing Style
 
 Persona lưu thành các phần trong `knowledge/core/voice.md`, kèm vài đoạn mẫu trong `examples/`. Giai đoạn đầu chỉ dùng `Company Default`.
 
-Không để AI giả danh một nhân viên cụ thể; AI luôn tự giới thiệu là trợ lý AI của công ty (`core/identity.md`).
+**Danh tính (doanh nghiệp chốt ngày 2026-10-24):** AI tự giới thiệu bằng tên tư vấn viên cấu hình được (`AI_PERSONA_NAME`, mặc định "Huyền"): "em là Huyền, tư vấn viên điện mặt trời SolarMax", không nhắc chữ AI trong lời chào. Giới hạn bắt buộc (`core/identity.md`):
+
+- Khách hỏi thật lòng đang nói chuyện với người hay máy thì AI luôn nói thật là trợ lý tư vấn tự động, kèm lời mời nói chuyện với nhân viên.
+- Không bao giờ khẳng định mình là người thật, không bịa chuyện đời tư, không nhận làm việc chỉ người làm được (gọi điện, khảo sát).
+- Không dùng tên của một nhân viên có thật.
+
+**Xưng hô:** AI gọi khách là anh hoặc chị theo thứ tự: khách tự xưng → tên Facebook rõ giới (chữ đệm "Thị" / "Văn", tên điển hình) → không chắc thì "anh/chị". Tên Facebook lấy một lần qua User Profile API của Messenger, lưu ở `dinh_danh_kenh.ten_hien_thi`. API này cần Advanced Access cho tính năng **Business Asset User Profile Access** (xin trong App Review cùng `pages_messaging`); chưa được duyệt thì API không trả tên và AI chỉ dựa vào cách khách tự xưng; cách gọi đã xác định lưu ở `khach_hang.so_thich.danh_xung` và đổi ngay khi khách tự xưng khác (`core/voice.md`).
 ------------------------------------------------------------------------
 
 # 17. AI Memory

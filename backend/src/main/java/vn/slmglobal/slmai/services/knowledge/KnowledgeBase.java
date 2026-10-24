@@ -24,8 +24,9 @@ import java.util.List;
 @Component
 public class KnowledgeBase {
 
-    /** Chỗ thay tên công ty trong tài liệu và prompt */
+    /** Chỗ thay tên công ty và tên tư vấn viên trong tài liệu và prompt */
     public static final String COMPANY_PLACEHOLDER = "{{ten_cong_ty}}";
+    public static final String PERSONA_PLACEHOLDER = "{{ten_tu_van_vien}}";
 
     public record Document(String key, String content) {
     }
@@ -35,7 +36,7 @@ public class KnowledgeBase {
     private final String version;
 
     public KnowledgeBase(AiProperties properties) {
-        this.documents = load(properties.companyName());
+        this.documents = load(properties);
         StringBuilder sb = new StringBuilder();
         for (Document d : documents) {
             sb.append("<tai_lieu ma=\"").append(d.key()).append("\">\n")
@@ -61,24 +62,24 @@ public class KnowledgeBase {
         return version;
     }
 
-    /** Đọc một tài nguyên văn bản trong classpath, thay tên công ty. */
-    public static String readClasspathText(String location, String companyName) {
+    /** Đọc một tài nguyên văn bản trong classpath, thay tên công ty và tên tư vấn viên. */
+    public static String readClasspathText(String location, AiProperties properties) {
         try {
             Resource resource = new PathMatchingResourcePatternResolver().getResource("classpath:" + location);
-            return substitute(resource.getContentAsString(StandardCharsets.UTF_8), companyName);
+            return substitute(resource.getContentAsString(StandardCharsets.UTF_8), properties);
         } catch (IOException e) {
             throw new UncheckedIOException("Không đọc được " + location, e);
         }
     }
 
-    private static List<Document> load(String companyName) {
+    private static List<Document> load(AiProperties properties) {
         try {
             Resource[] resources = new PathMatchingResourcePatternResolver().getResources("classpath*:knowledge/**/*.md");
             List<Document> out = new ArrayList<>();
             for (Resource r : resources) {
                 String key = keyOf(r);
                 if (key != null) {
-                    out.add(new Document(key, substitute(r.getContentAsString(StandardCharsets.UTF_8), companyName)));
+                    out.add(new Document(key, substitute(r.getContentAsString(StandardCharsets.UTF_8), properties)));
                 }
             }
             out.sort(Comparator.comparing(Document::key));
@@ -98,8 +99,12 @@ public class KnowledgeBase {
         return url.substring(i + "/knowledge/".length(), url.length() - ".md".length());
     }
 
-    private static String substitute(String text, String companyName) {
-        String name = companyName == null || companyName.isBlank() ? "công ty" : companyName.strip();
-        return text.replace(COMPANY_PLACEHOLDER, name);
+    private static String substitute(String text, AiProperties properties) {
+        return text.replace(COMPANY_PLACEHOLDER, orDefault(properties.companyName(), "công ty"))
+                .replace(PERSONA_PLACEHOLDER, orDefault(properties.personaName(), "em"));
+    }
+
+    private static String orDefault(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.strip();
     }
 }
