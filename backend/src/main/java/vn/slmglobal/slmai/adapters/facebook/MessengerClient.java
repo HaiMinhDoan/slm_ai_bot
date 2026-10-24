@@ -3,10 +3,12 @@ package vn.slmglobal.slmai.adapters.facebook;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -24,7 +26,16 @@ public class MessengerClient {
 
     public MessengerClient(RestClient.Builder builder, FacebookProperties properties) {
         this.properties = properties;
-        this.restClient = builder.baseUrl(properties.graphApiBaseUrl()).build();
+        this.restClient = builder.baseUrl(properties.graphApiBaseUrl())
+                .messageConverters(converters -> converters.add(0, graphJsonConverter()))
+                .build();
+    }
+
+    /** Graph API trả JSON nhưng nhiều endpoint ghi Content-Type là text/javascript */
+    private static MappingJackson2HttpMessageConverter graphJsonConverter() {
+        MappingJackson2HttpMessageConverter converter = new MappingJackson2HttpMessageConverter();
+        converter.setSupportedMediaTypes(List.of(MediaType.APPLICATION_JSON, new MediaType("text", "javascript")));
+        return converter;
     }
 
     public record SendResult(String messageId, String recipientId) {

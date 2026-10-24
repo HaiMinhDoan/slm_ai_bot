@@ -49,6 +49,16 @@ class MessengerClientTest {
         server.verify();
     }
 
+    /** Graph API thật trả Content-Type text/javascript; trước đây đọc lỗi nên tin đã gửi bị ghi FAILED */
+    @Test
+    void acceptsGraphJsonServedAsTextJavascript() {
+        server.expect(requestTo(startsWith(BASE + "/v26.0/me/messages")))
+                .andRespond(withSuccess("{\"recipient_id\":\"PSID_1\",\"message_id\":\"m_js\"}",
+                        MediaType.parseMediaType("text/javascript;charset=UTF-8")));
+
+        assertThat(client.sendText("PSID_1", "Xin chào", false).messageId()).isEqualTo("m_js");
+    }
+
     @Test
     void humanAgentTagUsesMessageTag() {
         server.expect(requestTo(startsWith(BASE + "/v26.0/me/messages")))
