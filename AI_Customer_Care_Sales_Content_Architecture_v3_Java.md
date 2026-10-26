@@ -5060,14 +5060,34 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 ## 60.2 Tiếp theo
 
 1. **Inbox admin** (doanh nghiệp yêu cầu ghi lại để làm sau): danh sách hội thoại, xem tin; duyệt / sửa / gửi nháp AI ngay trên trang (thay việc sao chép sang Meta Business Suite); nút "Trả lại AI"; chấm GOOD / BAD / EDIT; danh sách lead; công tắc dừng trên web; gán nhân viên phụ trách (để thông báo `HANDBACK_REPLY` gửi đúng người).
-2. **Mốc báo giá** (bot báo giá **tất cả gói đang bán trong slm_v2**, doanh nghiệp chốt 2026-10-26): đồng bộ catalog (mục 4.2), tool `tim_goi_phu_hop`, SizingService. Cần doanh nghiệp quyết định trước:
-   1. Sửa dữ liệu slm_v2: gói 134 / 140 / 175 là 39 hay 40 tấm (bảng combo ghi 40 tấm / 25 kWp, slm_v2 39 tấm / 24,375 kWp); gói 101 `cong_suat_he_thong = 9` (đúng là 8750); gói 101 / 102 lệch giá 600 nghìn giữa HN và HCM; gói 180 dùng ảnh của hệ 11,5 kWp / 14,34 kWh và không có gói ở HCM.
-   2. Hệ số PV out miền Nam / theo tỉnh (hiện chỉ có Hà Nội 79,58 kWh/kWp/tháng) và danh sách tỉnh Bắc / Nam (mục 4.2.9).
-   3. Quy đổi hoá đơn → kWh: giá phẳng 3.500 đ/kWh (bảng công thức) hay biểu giá bậc thang EVN.
-   4. Công thức chọn dung lượng pin theo lượng điện dùng ban đêm.
-   5. Ý nghĩa `san_luong_toi_thieu / toi_da` trong slm_v2 (gói 5 kWp: 500–700 kWh/tháng, không khớp PV out; có thể là mức tiêu thụ phù hợp) và quy tắc chọn gói từ hoá đơn.
-   6. Điều kiện báo giá (mục 4.2.8): "giá tháng 9" còn hiệu lực không, đã gồm VAT chưa, mái bằng (`gia_khung_sat` đang 0), phí vận chuyển.
+2. **Mốc báo giá** (bot báo giá **tất cả gói đang bán trong slm_v2**, doanh nghiệp chốt 2026-10-26): đồng bộ catalog (mục 4.2), tool `tim_goi_phu_hop`, SizingService. Quyết định của doanh nghiệp (2026-10-26):
+   1. **Hoá đơn → kWh:** giá phẳng **3.500 đ/kWh** (bảng công thức), không dùng biểu giá bậc thang.
+   2. **Giá:** theo `tong_gia` trong slm_v2, cơ sở theo miền của khách (HN = miền Bắc, HCM = miền Nam). Mái bằng: `gia_khung_sat` đang 0 nên AI nói "phát sinh phần khung, nhân viên báo sau khảo sát".
+   3. **`san_luong_toi_thieu / toi_da`:** là sản lượng điện (kWh/tháng) tối thiểu và tối đa gói có thể đạt. Lưu ý dữ liệu: quy ra kWh/kWp/tháng dao động 52–140 giữa các gói, có cặp gói cùng số tấm nhưng khoảng sản lượng đảo nhau giữa HN và HCM (98/99 so với 97/100), và cao hơn mức PV out tối đa của tháng nắng nhất (ví dụ 5 kWp ở Hà Nội tối đa khoảng 550 kWh/tháng theo EVN, slm_v2 ghi 700).
+   4. **Bot được gửi link:** khách miền Nam → `slmsolar.com.vn`, miền Bắc → ngẫu nhiên `slmsolar.vn` hoặc `slmsolar.com`. Khớp bảng `mien` của slm_v2 (`ten_mien` → `co_so_id`; `thong_tin_ten_mien` có hotline, email theo tên miền). Link sản phẩm: `https://<tên miền>/products/<tron_goi.id của cơ sở đó>`; đồng bộ thêm view `ai_v_mien`.
+   5. **Công thức pin:** chưa có, dùng tạm công thức chung (đề xuất ở 60.3).
+   6. **Đã chốt thêm (2026-10-26):** miền giá chia tại Đà Nẵng (Đà Nẵng trở vào là Nam); sản lượng và tiền tiết kiệm tính theo PV out EVN của tỉnh khách, kể cả sản lượng của từng gói (không đọc `san_luong_toi_thieu / toi_da` cho tới khi slm_v2 rà lại); công thức chọn gói tạm ở 60.3.
+   7. **Doanh nghiệp tự sửa trong slm_v2:** gói 134 / 135, 140 / 141, 175 / 176 là **40 tấm** (25 kWp), slm_v2 đang ghi 39 tấm / 24,375 kWp; gói 101 `cong_suat_he_thong = 9` (đúng 8750); gói 101 / 102 lệch giá 600 nghìn giữa HN và HCM; gói 180 (HN) và 181 (HCM) cùng dòng nhưng cấu hình khác, ảnh của 180 là ảnh hệ 181.
 3. **Media cho AI:** admin viết `tom_tat` / `dung_khi` và duyệt ảnh combo; quyết định bot có được gửi link Facebook / slmsolar.vn không (Policy hiện chặn mọi link); gửi ảnh qua Messenger (Attachment Upload API, không cần MinIO công khai).
 4. **App Review + xác minh doanh nghiệp** (3–6 tuần): `pages_messaging`, Business Asset User Profile Access (lấy tên khách để xưng anh / chị); trang chính sách quyền riêng tư và xoá dữ liệu; chuyển webhook sang tên miền công ty.
 5. **Token:** chuyển Page token sang System User (token hiện gắn với tài khoản cá nhân của người quản trị Trang).
+
+## 60.3 Số liệu và công thức tính (doanh nghiệp chốt 2026-10-26)
+
+**Hệ số PV out theo tỉnh:** dùng bảng chính thức **"Hệ số PVout lý thuyết của các tháng trong năm 2026"** của EVN (công văn 364/EVN-KDMBĐ ngày 20/1/2026, nguồn Viện Khoa học Khí tượng Thủy văn và Biến đổi khí hậu, văn bản 637/VKTTVBĐKH-KHTC ngày 14/11/2025), đủ 34 tỉnh sau sáp nhập, theo từng tháng (kWh/kWp). Cả năm: thấp nhất Hưng Yên 901, Hải Phòng 902, Hà Nội 912; TP Hồ Chí Minh 1.426; cao nhất Lâm Đồng 1.583. Bảng công thức của doanh nghiệp dùng 79,58 kWh/kWp/tháng cho Hà Nội (≈ 955/năm, cao hơn EVN 4,7%). Đã chốt: thay hệ số cố định 2,7 kWh/kWp/ngày bằng `PVout năm của tỉnh / 365` (Hà Nội 2,50; TP HCM 3,91; Lâm Đồng 4,34); sản lượng tháng nói với khách = kWp × PVout tháng đó.
+
+**Miền giá (34 tỉnh sau sáp nhập, Nghị quyết 202/2025/QH15), đã chốt:**
+- Bắc (giá HN, link `slmsolar.vn` / `slmsolar.com`): 15 tỉnh Bắc Bộ (Tuyên Quang, Cao Bằng, Lai Châu, Lào Cai, Thái Nguyên, Điện Biên, Lạng Sơn, Sơn La, Phú Thọ, Bắc Ninh, Quảng Ninh, Hà Nội, Hải Phòng, Hưng Yên, Ninh Bình) và 5 tỉnh Bắc Trung Bộ (Thanh Hóa, Nghệ An, Hà Tĩnh, Quảng Trị, Huế).
+- Nam (giá HCM, link `slmsolar.com.vn`): Đà Nẵng trở vào (Đà Nẵng, Quảng Ngãi, Gia Lai, Đắk Lắk, Khánh Hòa, Lâm Đồng, Đồng Nai, Tây Ninh, TP Hồ Chí Minh, Đồng Tháp, An Giang, Vĩnh Long, Cần Thơ, Cà Mau).
+- Khách hay nói tên tỉnh cũ: backend đổi 63 tỉnh cũ sang 34 tỉnh mới (ví dụ Bình Dương, Bà Rịa - Vũng Tàu → TP Hồ Chí Minh; Quảng Nam → Đà Nẵng; Hà Nam, Nam Định → Ninh Bình).
+
+**Công thức chọn gói tạm (doanh nghiệp đồng ý "dùng tạm công thức chung"):**
+1. Điện dùng mỗi ngày `E = hoá đơn tháng / 3.500 / 30` (kWh).
+2. Tỷ lệ dùng đêm theo `ty_le_ngay_dem`: ban ngày nhiều 30%, cân bằng 50%, buổi tối nhiều 70%.
+3. Pin cần `= E × tỷ lệ đêm / 0,9` (xả sâu 90%); chọn gói có dung lượng lưu trữ nhỏ nhất ≥ con số này, không có thì lấy lớn nhất và ghi chú.
+4. Công suất cần `kWp = E / (PVout năm của tỉnh / 365)`; chọn gói có kWp nhỏ nhất ≥ 90% công suất cần; biết diện tích mái thì giới hạn `kWp ≤ S / 5`.
+5. Loại hệ: dùng đêm ≥ 50% hoặc khách cần dự phòng mất điện → Hybrid; ban ngày nhiều → On-Grid (rẻ hơn), kèm phương án Hybrid pin nhỏ.
+6. Ví dụ: Hà Nội, hoá đơn 2 triệu, dùng tối nhiều → E ≈ 19 kWh/ngày; pin ≈ 14,8 kWh → 16 kWh; kWp ≈ 7,6 → gói 8,75 kWp 1 pha Hybrid 16 kWh (gói 105, 144,2 triệu).
+
+**Sản lượng nói với khách (đã chốt):** tính theo PV out EVN của tỉnh (nhất quán, có nguồn chính thức), kể cả sản lượng của từng gói = kWp của gói × PV out; không đọc `san_luong_toi_thieu / toi_da` của slm_v2 cho tới khi được rà lại.
 
