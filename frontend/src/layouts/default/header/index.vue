@@ -39,7 +39,10 @@
 
       <ErrorAction v-if="getUseErrorHandle" :class="`${prefixCls}-action__item error-action`" />
 
-      <Notify v-if="getShowNotice" :class="`${prefixCls}-action__item notify-item`" />
+      <Notify
+        v-if="getShowNotice && canReceiveNotifications"
+        :class="`${prefixCls}-action__item notify-item`"
+      />
 
       <FullScreen v-if="getShowFullScreen" :class="`${prefixCls}-action__item fullscreen-item`" />
 
@@ -76,6 +79,8 @@
   import LayoutMenu from '../menu/index.vue';
   import LayoutTrigger from '../trigger/index.vue';
   import { ErrorAction, FullScreen, LayoutBreadcrumb, Notify, UserDropDown } from './components';
+  import { useUserStore } from '@/store/modules/user';
+  import { NOTIFICATION_ROLES } from '@/store/modules/notification';
 
   const SettingDrawer = createAsyncComponent(() => import('@/layouts/default/setting/index.vue'), {
     loading: true,
@@ -110,6 +115,12 @@
   const { getShowLocalePicker } = useLocale();
 
   const { getIsMobile } = useAppInject();
+
+  // Chuông thông báo chỉ cho vai trò nhận thông báo (STAFF, SYSTEM_ADMIN)
+  const userStore = useUserStore();
+  const canReceiveNotifications = computed(() =>
+    userStore.getRoleList.some((r) => NOTIFICATION_ROLES.includes(r)),
+  );
 
   const getHeaderClass = computed(() => {
     const theme = unref(getHeaderTheme);

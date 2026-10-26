@@ -14,7 +14,7 @@
 </template>
 
 <script lang="ts" setup>
-  import { computed, unref } from 'vue';
+  import { computed, onMounted, unref } from 'vue';
   import { Layout } from 'ant-design-vue';
   import { createAsyncComponent } from '@/utils/factory/createAsyncComponent';
 
@@ -31,6 +31,8 @@
   import { useAppInject } from '@/hooks/web/useAppInject';
 
   import { useMultipleTabSetting } from '@/hooks/setting/useMultipleTabSetting';
+  import { useUserStore } from '@/store/modules/user';
+  import { useNotificationStore } from '@/store/modules/notification';
 
   const LayoutFeatures = createAsyncComponent(() => import('@/layouts/default/feature/index.vue'));
   const LayoutFooter = createAsyncComponent(() => import('@/layouts/default/footer/index.vue'));
@@ -45,6 +47,11 @@
 
   // Create a lock screen monitor
   const lockEvents = useLockPage();
+
+  // Thông báo nhân viên thời gian thực (chuông, âm thanh, thông báo trình duyệt); dừng khi đăng xuất
+  const userStore = useUserStore();
+  const notificationStore = useNotificationStore();
+  onMounted(() => notificationStore.start(userStore.getRoleList));
 
   const layoutClass = computed(() => {
     let cls: string[] = ['ant-layout'];

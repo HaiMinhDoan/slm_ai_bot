@@ -1,53 +1,84 @@
 <template>
   <div :class="prefixCls">
-    <Popover title="" trigger="click" :overlayClassName="`${prefixCls}__overlay`">
-      <Badge :count="count" dot :numberStyle="numberStyle">
+    <Popover
+      v-model:open="open"
+      title=""
+      trigger="click"
+      :overlayClassName="`${prefixCls}__overlay`"
+    >
+      <Badge :count="notificationStore.unreadCount" :overflowCount="99" :numberStyle="numberStyle">
         <BellOutlined />
       </Badge>
       <template #content>
-        <Tabs>
-          <template v-for="item in listData" :key="item.key">
-            <Tabs.TabPane>
-              <template #tab>
-                {{ item.name }}
-                <span v-if="item.list.length !== 0">({{ item.list.length }})</span>
-              </template>
-              <!-- 绑定title-click事件的通知列表中标题是“可点击”的-->
-              <NoticeList :list="item.list" v-if="item.key === '1'" @title-click="onNoticeClick" />
-              <NoticeList :list="item.list" v-else />
-            </Tabs.TabPane>
-          </template>
-        </Tabs>
+        <div :class="`${prefixCls}__head`">
+          <span>Thông báo</span>
+          <span :class="`${prefixCls}__status`" :title="statusTitle">
+            <Badge :status="notificationStore.connected ? 'success' : 'default'" />
+          </span>
+        </div>
+        <NoticeList v-if="items.length" :list="items" @title-click="onNoticeClick" />
+        <Empty v-else :image="Empty.PRESENTED_IMAGE_SIMPLE" description="Chưa có thông báo" />
+        <div :class="`${prefixCls}__actions`">
+          <Button type="link" size="small" @click="markAll" :disabled="!notificationStore.unreadCount">
+            Đọc hết
+          </Button>
+          <Button type="link" size="small" @click="viewAll">Xem tất cả</Button>
+        </div>
       </template>
     </Popover>
   </div>
 </template>
 <script lang="ts" setup>
   import { computed, ref } from 'vue';
-  import { Popover, Tabs, Badge } from 'ant-design-vue';
+  import { Popover, Badge, Button, Empty } from 'ant-design-vue';
   import { BellOutlined } from '@ant-design/icons-vue';
-  import { tabListData, ListItem } from './data';
+  import type { ListItem } from './data';
   import NoticeList from './NoticeList.vue';
   import { useDesign } from '@/hooks/web/useDesign';
-  import { useMessage } from '@/hooks/web/useMessage';
+  import { useRouter } from 'vue-router';
+  import { useNotificationStore } from '@/store/modules/notification';
+  import { formatToDateTime } from '@/utils/dateUtil';
+  import { SEVERITY_COLORS, TYPE_LABELS } from '@/views/notification/labels';
 
   const { prefixCls } = useDesign('header-notify');
-  const { createMessage } = useMessage();
-  const listData = ref(tabListData);
+  const notificationStore = useNotificationStore();
+  const router = useRouter();
+  const open = ref(false);
   const numberStyle = {};
 
-  const count = computed(() => {
-    let count = 0;
-    for (let i = 0; i < tabListData.length; i++) {
-      count += tabListData[i].list.length;
-    }
-    return count;
-  });
+  const statusTitle = computed(() =>
+    notificationStore.connected ? 'Đang nhận thông báo' : 'Mất kết nối, đang thử lại',
+  );
 
-  function onNoticeClick(record: ListItem) {
-    createMessage.success('Bạn đã bấm vào thông báo, ID=' + record.id);
-    // 可以直接将其标记为已读（为标题添加删除线）,此处演示的代码会切换删除线状态
-    record.titleDelete = !record.titleDelete;
+  const items = computed<ListItem[]>(() =>
+    notificationStore.latest.map((n) => ({
+      id: String(n.id),
+      avatar: '',
+      title: n.title,
+      titleDelete: n.read,
+      read: n.read,
+      datetime: formatToDateTime(n.createdAt),
+      type: n.type,
+      description: n.body ?? '',
+      extra: TYPE_LABELS[n.type],
+      color: SEVERITY_COLORS[n.severity],
+    })),
+  );
+
+  async function onNoticeClick(record: ListItem) {
+    open.value = false;
+    const id = Number(record.id);
+    await notificationStore.markRead(id).catch(() => undefined);
+    router.push({ path: '/notifications/index', query: { id: record.id } });
+  }
+
+  async function markAll() {
+    await notificationStore.markAllRead();
+  }
+
+  function viewAll() {
+    open.value = false;
+    router.push('/notifications/index');
   }
 </script>
 <style lang="less">
@@ -57,11 +88,22 @@
     padding-bottom: 1px;
 
     &__overlay {
-      max-width: 360px;
+      width: 360px;
+      max-width: calc(100vw - 32px);
     }
 
-    .ant-tabs-content {
-      width: 300px;
+    &__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    &__actions {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
     }
 
     .ant-badge {

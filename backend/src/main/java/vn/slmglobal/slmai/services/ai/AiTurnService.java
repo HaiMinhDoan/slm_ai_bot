@@ -228,7 +228,7 @@ public class AiTurnService {
                 sent++;
             } catch (RuntimeException e) {
                 log.warn("Gửi tin {} của hội thoại {} thất bại: {}", o.messageId(), s.conversationId(), e.getMessage());
-                store.markFailed(o.messageId());
+                store.markFailed(o.messageId(), e.getMessage());
             }
         }
         return sent;

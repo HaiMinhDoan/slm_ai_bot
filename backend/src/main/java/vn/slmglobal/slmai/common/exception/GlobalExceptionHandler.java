@@ -14,6 +14,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
@@ -116,6 +118,15 @@ public class GlobalExceptionHandler {
         log.warn("Vi phạm ràng buộc dữ liệu tại {}: {}", request.getRequestURI(), ex.getMostSpecificCause().getMessage());
         return build(HttpStatus.CONFLICT, "DATA_INTEGRITY_VIOLATION",
                 "Dữ liệu bị trùng hoặc vi phạm ràng buộc", null, request);
+    }
+
+    /**
+     * Kết nối SSE hết hạn hoặc trình duyệt đã đóng: chuyện bình thường của kết nối dài hạn. Không ghi JSON vào
+     * event stream (response đã gửi header) và không log ERROR.
+     */
+    @ExceptionHandler({AsyncRequestTimeoutException.class, AsyncRequestNotUsableException.class})
+    public void handleAsyncDisconnect(Exception ex) {
+        log.debug("Kết nối async kết thúc: {}", ex.toString());
     }
 
     @ExceptionHandler(Exception.class)

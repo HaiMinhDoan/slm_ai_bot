@@ -1,11 +1,12 @@
 package vn.slmglobal.slmai.common.security;
 
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
-import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.AsyncHandlerInterceptor;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -15,10 +16,18 @@ import java.util.Optional;
  * Đọc access token (nếu có) và gán người dùng vào {@link RequestContext}.
  * Không có header: request đi tiếp như khách; API cần đăng nhập sẽ bị {@code @RequireAuth} chặn.
  * Có header nhưng sai, hết hạn hoặc đã đăng xuất: trả 401 ngay để frontend làm mới token hoặc đăng nhập lại.
+ *
+ * <p>Request bất đồng bộ (SSE): Spring gọi {@link #afterConcurrentHandlingStarted} thay cho {@code afterCompletion}
+ * ở lượt đầu, nên phải xoá {@link RequestContext} ở đó để luồng Tomcat không mang người dùng cũ sang request khác.
+ * Lượt dispatch ASYNC sau đó không kiểm tra lại token (response đã gửi header, không ghi 401 được nữa); kết nối
+ * dài hạn tự kiểm tra hạn và thu hồi token theo {@link #VERIFIED_TOKEN_ATTRIBUTE}.
  */
 @Component
 @RequiredArgsConstructor
-public class AuthInterceptor implements HandlerInterceptor {
+public class AuthInterceptor implements AsyncHandlerInterceptor {
+
+    /** Request attribute chứa {@link JwtService.VerifiedToken} của request đã đăng nhập */
+    public static final String VERIFIED_TOKEN_ATTRIBUTE = "slm.verifiedToken";
 
     private final JwtService jwtService;
     private final TokenBlacklist tokenBlacklist;
@@ -26,6 +35,9 @@ public class AuthInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response,
                              @NonNull Object handler) throws IOException {
+        if (request.getDispatcherType() == DispatcherType.ASYNC) {
+            return true;
+        }
         String lang = Optional.ofNullable(request.getHeader("lang")).orElse("vi");
         String authHeader = request.getHeader("Authorization");
 
@@ -48,7 +60,14 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
 
         RequestContext.set(request.getRequestURI(), lang, verified.get().authInfo());
+        request.setAttribute(VERIFIED_TOKEN_ATTRIBUTE, verified.get());
         return true;
+    }
+
+    @Override
+    public void afterConcurrentHandlingStarted(@NonNull HttpServletRequest request,
+                                               @NonNull HttpServletResponse response, @NonNull Object handler) {
+        RequestContext.clear();
     }
 
     @Override

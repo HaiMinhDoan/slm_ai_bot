@@ -10,11 +10,17 @@ import vn.slmglobal.slmai.services.lead.entity.Lead;
 import vn.slmglobal.slmai.services.lead.entity.LeadLevel;
 import vn.slmglobal.slmai.services.lead.entity.LeadStatus;
 import vn.slmglobal.slmai.services.lead.repository.LeadRepository;
+import vn.slmglobal.slmai.services.notification.NotificationDraft;
+import vn.slmglobal.slmai.services.notification.NotificationService;
+import vn.slmglobal.slmai.services.notification.NotificationSeverity;
+import vn.slmglobal.slmai.services.notification.NotificationType;
 
 import java.text.NumberFormat;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Khách cho số điện thoại thì luôn tạo lead (mục 23, 58.5). Khoá chống trùng hoi_thoai_id + sdt nên chạy lại lượt
@@ -26,6 +32,7 @@ import java.util.Locale;
 public class LeadService {
 
     private final LeadRepository repository;
+    private final NotificationService notifications;
 
     public Lead upsert(Conversation conversation, String phone, ConsultProfile profile) {
         String key = conversation.getId() + ":" + phone;
@@ -43,6 +50,7 @@ public class LeadService {
             // Đã gửi Sales API: cập nhật lead đã gửi thuộc mốc Sales API
             return lead;
         }
+        boolean becameHot = profile.getLeadLevel() == LeadLevel.HOT && lead.getLeadLevel() != LeadLevel.HOT;
         JsonNode slots = profile.getSlots();
         lead.setProvince(slots.hasNonNull(ConsultSlots.KHU_VUC) ? slots.get(ConsultSlots.KHU_VUC).asText() : null);
         // Miền (BAC / NAM) chờ danh sách tỉnh của doanh nghiệp (mục 4.2.9)
@@ -51,11 +59,33 @@ public class LeadService {
         lead.setLeadLevelReason(profile.getLeadLevelReason());
         lead.setQualification(profile.getQualification().deepCopy());
         lead.setRecommendedPackageIds(profile.getRecommendedPackageIds());
-        if (profile.getLeadLevel() == LeadLevel.HOT) {
-            // Báo sales ngay (mục 58.5): thông báo cho nhân viên làm cùng inbox admin
+        Lead saved = repository.save(lead);
+        if (becameHot) {
+            // Báo sales ngay (mục 58.5), chỉ lúc vừa chuyển sang HOT
             log.info("Lead HOT ở hội thoại {}: {}", conversation.getId(), profile.getLeadLevelReason());
+            notifyHot(conversation, saved);
         }
-        return repository.save(lead);
+        return saved;
+    }
+
+    private void notifyHot(Conversation conversation, Lead lead) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("leadId", lead.getId());
+        data.put("phone", lead.getPhone());
+        data.put("province", lead.getProvince());
+        data.put("needSummary", lead.getNeedSummary());
+        data.put("leadLevelReason", lead.getLeadLevelReason());
+        String need = lead.getNeedSummary() == null ? "" : " Nhu cầu: " + lead.getNeedSummary() + ".";
+        notifications.notify(NotificationDraft.builder()
+                .type(NotificationType.LEAD_HOT)
+                .severity(NotificationSeverity.URGENT)
+                .title("Khách HOT" + (lead.getProvince() == null ? "" : " ở " + lead.getProvince()))
+                .body("Khách đã để lại số điện thoại, nên liên hệ ngay." + need)
+                .data(data)
+                .conversationId(conversation.getId())
+                .customerId(conversation.getCustomerId())
+                .dedupeKey("LEAD_HOT:" + lead.getId())
+                .build());
     }
 
     /** Tóm tắt nhu cầu cho sales, ví dụ "Hà Nội; 1 pha; tiền điện 2.000.000đ/tháng; dùng ban ngày nhiều; mái tôn" */

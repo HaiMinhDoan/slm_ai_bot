@@ -1,6 +1,7 @@
 package vn.slmglobal.slmai.common.storage;
 
 import io.minio.BucketExistsArgs;
+import io.minio.GetObjectArgs;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
@@ -49,6 +50,25 @@ public class StorageService {
 
     public String bucket() {
         return appProperties.minio().bucket();
+    }
+
+    /** MinIO vào được, bucket đã có và đã cấu hình khoá truy cập: kiểm tra trước khi tải file về rồi mới lưu. */
+    public boolean isAvailable() {
+        AppProperties.Minio minio = appProperties.minio();
+        if (minio.accessKey() == null || minio.accessKey().isBlank()) {
+            return false;
+        }
+        try {
+            return minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucket()).build());
+        } catch (Exception e) {
+            log.warn("MinIO chưa sẵn sàng ({}): {}", minio.endpoint(), e.getMessage());
+            return false;
+        }
+    }
+
+    /** Đọc object (người gọi phải đóng stream). */
+    public InputStream get(String objectKey) throws Exception {
+        return minioClient.getObject(GetObjectArgs.builder().bucket(bucket()).object(objectKey).build());
     }
 
     public void put(String objectKey, InputStream stream, long size, String contentType) throws Exception {

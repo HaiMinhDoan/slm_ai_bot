@@ -8,6 +8,7 @@ import { ROLES_KEY, TOKEN_KEY, REFRESH_TOKEN_KEY, USER_INFO_KEY } from '@/enums/
 import { getAuthCache, setAuthCache } from '@/utils/auth';
 import type { LoginParams } from '@/api/auth/model/authModel';
 import { loginApi, logoutApi, getUserProfileApi } from '@/api/auth';
+import { useNotificationStoreWithOut } from '@/store/modules/notification';
 import { useI18n } from '@/hooks/web/useI18n';
 import { useMessage } from '@/hooks/web/useMessage';
 import { router } from '@/router';
@@ -163,6 +164,8 @@ export const useUserStore = defineStore({
           console.log('Gọi API đăng xuất thất bại');
         }
       }
+      // Đóng stream thông báo trước khi xoá token (cũng chạy khi API trả 401)
+      useNotificationStoreWithOut().stop();
       this.setToken(undefined);
       this.setRefreshToken(undefined);
       this.setSessionTimeout(false);

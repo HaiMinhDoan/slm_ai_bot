@@ -738,6 +738,16 @@ Schema chi tiết ở mục 29.
 - Loại này chỉ đọc, cập nhật theo đợt đồng bộ.
 - Sync tự điền `tom_tat` (tên gói/vật tư) và `dung_khi` ("gửi kèm khi giới thiệu gói/vật tư này"). Các mục này được gắn tự động (mục 7.2), không nằm trong danh mục media.
 
+**D. Nhập ảnh combo từ Google Drive (đã làm 2026-10-26)**
+
+- Nguồn: bảng combo của doanh nghiệp (link Drive, link Facebook, link web theo `tron_goi.id`). Bảng **không commit** lên repo công khai (`.gitignore`: `*.xlsx`, `local-data/`); admin dán danh sách JSON tạo từ bảng vào trang **Thư viện media → Nhập combo từ Drive** (`POST /api/v1/admin/media/imports/package-images`, tối đa 10 mục mỗi lần, có chạy thử).
+- Ảnh Drive được tải về MinIO và lưu như `UPLOAD`: `url_nguon` = link Drive gốc, `id_ngoai = gdrive:<file_id>`, key theo nội dung `media/images/<2 ký tự đầu sha256>/<sha256>.<đuôi>`. Không thêm loại nguồn mới vì bản trong MinIO mới là bản dùng.
+- An toàn khi tải: chỉ lấy file id rồi tự dựng URL tải; chỉ đi theo chuyển hướng HTTPS tới `drive.google.com` / `drive.usercontent.google.com` (tối đa 5 lần); tối đa 15 MB; kiểm tra magic bytes JPEG/PNG/WebP (Drive trả trang HTML đăng nhập với mã 200 khi file chưa chia sẻ công khai).
+- Link Facebook (`/share/r/…` reel, `/share/v/…` video) lưu là `FACEBOOK`, `LINK_ONLY`, `id_ngoai = share-r:<mã>` / `share-v:<mã>`; server chưa tải gì về.
+- Liên kết `PACKAGE` với **cả gói HN và gói HCM cùng tên** (`MAIN_IMAGE` cho ảnh, `RELATED` cho video). Mỗi gói chỉ một ảnh chính (unique index); gói đã có ảnh chính khác thì giữ nguyên và báo lại. Ảnh `SLM_V2` khi đồng bộ catalog vào sau sẽ là `GALLERY`.
+- Media nhập vào ở trạng thái `DRAFT`, quyền `OWNED` (ảnh của công ty): AI chưa dùng cho tới khi admin viết `tom_tat`, `dung_khi` và duyệt.
+- Chạy lại nhiều lần an toàn: trùng `gdrive:` id hoặc sha256 thì báo `EXISTS`, chỉ bổ sung liên kết còn thiếu.
+
 ## 6.4 Gửi media qua kênh
 
 Backend chọn nguồn theo kênh. Thứ tự mặc định cho Messenger (cấu hình được):
@@ -2312,6 +2322,9 @@ CREATE TABLE media_lien_ket (
     PRIMARY KEY (media_id, loai_doi_tuong, ma_doi_tuong, vai_tro)
 );
 CREATE INDEX idx_media_lien_ket_loai_doi_tuong_ma_doi_tuong ON media_lien_ket (loai_doi_tuong, ma_doi_tuong);
+-- Mỗi gói / vật tư chỉ một ảnh chính; ảnh thêm (kể cả ảnh slm_v2 khi đồng bộ catalog) là GALLERY
+CREATE UNIQUE INDEX uq_media_lien_ket_anh_chinh ON media_lien_ket (loai_doi_tuong, ma_doi_tuong)
+    WHERE vai_tro = 'MAIN_IMAGE';
 
 -- EN: media_channel_refs — cached platform attachment ids per channel account
 CREATE TABLE media_tham_chieu_kenh (
@@ -2563,6 +2576,38 @@ CREATE TABLE ho_so_tu_van (                        -- thông tin tư vấn đã 
     tron_goi_de_xuat_ids INT[]  NOT NULL DEFAULT '{}',  -- [EN: recommended_package_ids]
     cau_hoi_cuoi         VARCHAR(50),  -- [EN: last_question_asked] câu AI vừa hỏi ở tin đã gửi; tin sau của khách trả lời đúng câu này thì so_cau_da_tra_loi tăng
     sua_luc              TIMESTAMPTZ NOT NULL DEFAULT now()  -- [EN: updated_at]
+);
+```
+
+## Thông báo nhân viên
+
+Mục 34 "Thông báo cho nhân viên". Migration V5.
+
+``` sql
+-- EN: notifications — staff notifications (AI handoff, AI draft, HOT lead, send failure...)
+CREATE TABLE thong_bao (
+    id                BIGSERIAL PRIMARY KEY,
+    loai              VARCHAR(32)  NOT NULL                                     -- [EN: type]
+                      CHECK (loai IN ('AI_HANDOFF','AI_DRAFT','HANDBACK_REPLY','LEAD_HOT','SEND_FAILED','DUPLICATE_PHONE')),
+    muc_do            VARCHAR(10)  NOT NULL DEFAULT 'INFO'                      -- [EN: severity]
+                      CHECK (muc_do IN ('INFO','WARNING','URGENT')),
+    tieu_de           VARCHAR(300) NOT NULL,                                    -- [EN: title]
+    noi_dung          TEXT,                                                     -- [EN: body] không chứa số điện thoại
+    du_lieu           JSONB NOT NULL DEFAULT '{}',                              -- [EN: payload] lý do, nháp AI, sđt (chỉ trả qua REST)
+    nguoi_nhan_id     UUID REFERENCES nguoi_dung(id) ON DELETE CASCADE,         -- [EN: recipient_id] NULL = mọi STAFF và SYSTEM_ADMIN
+    hoi_thoai_id      UUID,                                                     -- [EN: conversation_id]
+    khach_hang_id     UUID,                                                     -- [EN: customer_id]
+    khoa_chong_trung  VARCHAR(200) NOT NULL UNIQUE,                             -- [EN: dedupe_key] ví dụ AI_DRAFT:{tin_nhan_id}
+    tao_luc           TIMESTAMPTZ  NOT NULL DEFAULT now()                       -- [EN: created_at]
+);
+CREATE INDEX idx_thong_bao_nguoi_nhan_id_id ON thong_bao (nguoi_nhan_id, id DESC);
+
+-- EN: notification_reads — per-user read state
+CREATE TABLE thong_bao_da_doc (
+    nguoi_dung_id  UUID   NOT NULL REFERENCES nguoi_dung(id) ON DELETE CASCADE,  -- [EN: user_id]
+    thong_bao_id   BIGINT NOT NULL REFERENCES thong_bao(id) ON DELETE CASCADE,   -- [EN: notification_id]
+    doc_luc        TIMESTAMPTZ NOT NULL DEFAULT now(),                           -- [EN: read_at]
+    PRIMARY KEY (nguoi_dung_id, thong_bao_id)
 );
 ```
 
@@ -2822,6 +2867,25 @@ Vben Admin
 ├── Audit Logs
 └── System Settings / Roles / Permissions
 ```
+
+## Thông báo cho nhân viên (đã làm 2026-10-26)
+
+Trước khi có inbox admin, nhân viên vẫn trả lời khách trong Meta Business Suite; trang admin báo cho nhân viên biết lúc nào cần vào. Chỉ khi tab admin đang mở (doanh nghiệp chọn không làm Web Push).
+
+| Loại | Khi nào | Mức |
+|---|---|---|
+| `AI_HANDOFF` | AI chuyển hội thoại cho nhân viên (sự cố, khiếu nại, khách muốn gặp người, AI lỗi 3 lần) | URGENT |
+| `AI_DRAFT` | Lượt AI chỉ lưu nháp (loại câu hỏi không tự động, con số chưa có nguồn, quá 24 giờ…) | WARNING |
+| `HANDBACK_REPLY` | Khách nhắn lại sau khi hội thoại tự trả lại AI (lượt đầu là nháp, mục 19) | WARNING |
+| `LEAD_HOT` | Lead vừa chuyển sang HOT (chỉ lúc chuyển, không lặp mỗi lượt) | URGENT |
+| `SEND_FAILED` | Gửi tin AI / tin báo nhận ra kênh thất bại | WARNING |
+| `DUPLICATE_PHONE` | Khách gửi số đã thuộc khách khác: cần gộp khách | INFO |
+
+- **Ghi:** `NotificationService.notify()` chạy trong transaction của nghiệp vụ (lượt AI, lead), `INSERT … ON CONFLICT (khoa_chong_trung) DO NOTHING`; transaction rollback thì không có thông báo. Nội dung ngắn (hiện cả ở thông báo hệ điều hành) không chứa số điện thoại; chi tiết (nháp AI, lý do, tin cuối của khách, số điện thoại) trong `du_lieu`, chỉ trả qua REST.
+- **Đẩy:** sau khi commit, `NotificationSseHub` đẩy qua Server-Sent Events `GET /api/v1/notifications/stream` (xác thực bằng header `Authorization`, frontend đọc bằng `fetch`). Ping mỗi 20 giây; token bị thu hồi (đăng xuất) hoặc hết hạn thì gửi `auth-expired` và đóng. Header `X-Accel-Buffering: no` + location riêng trong `nginx-cms.conf` để nginx không gom buffer. Một instance; chạy nhiều instance thì cần kênh phát chung (Redis / PostgreSQL `NOTIFY`).
+- **REST:** danh sách (lọc chưa đọc / loại), số chưa đọc, chi tiết, đánh dấu đã đọc, đọc hết tới `maxId`. Trạng thái đọc theo từng người; chỉ hiện thông báo 14 ngày gần nhất.
+- **Trình duyệt:** chuông trên thanh tiêu đề có số chưa đọc; trang **Thông báo** có bảng, drawer chi tiết (nháp AI có nút sao chép, nút "Mở hộp thư Meta"), thẻ cài đặt. Âm thanh phát bằng Web Audio (không cần file), mở khoá ở lần bấm đầu tiên, nhiều tab chỉ một tab kêu; thông báo hệ điều hành khi tab đang ẩn (chỉ chạy trên HTTPS, xin quyền khi người dùng bật).
+- **Người nhận:** vai trò STAFF và SYSTEM_ADMIN.
 
 ## Frontend folder suggestion
 
@@ -4979,3 +5043,31 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 | ~~Inbox làm việc của nhân viên (59.3 mục 11)~~ Đã chốt: inbox admin | Doanh nghiệp | Inbox admin, dữ liệu sửa nháp |
 | KPI mục tiêu và tiêu chí qua phase (38) | Doanh nghiệp | Quyết định mở rộng |
 | MVP rút gọn và các phần hoãn (59.6, 59.7) | Người phụ trách dự án | Lộ trình |
+
+------------------------------------------------------------------------
+
+# 60. Việc cần làm (cập nhật 2026-10-26)
+
+## 60.1 Đã chạy
+
+| Phần | Trạng thái |
+|---|---|
+| Webhook Messenger, lưu khách / hội thoại / tin | Chạy thật trên Trang Solarmax (app ở chế độ Development, chỉ tài khoản có vai trò trong app) |
+| AI trả lời (Sonnet 5.5, effort `low`), Policy, hồ sơ tư vấn, lead | Chạy thật |
+| Thông báo nhân viên (mục 34) | Đã viết, chờ triển khai trang admin ở `https://fs-wms.io.vn` |
+| Thư viện media: bảng, nhập ảnh combo từ Drive (mục 6.3 D) | Đã viết, chờ MinIO và nhập 24 combo |
+
+## 60.2 Tiếp theo
+
+1. **Inbox admin** (doanh nghiệp yêu cầu ghi lại để làm sau): danh sách hội thoại, xem tin; duyệt / sửa / gửi nháp AI ngay trên trang (thay việc sao chép sang Meta Business Suite); nút "Trả lại AI"; chấm GOOD / BAD / EDIT; danh sách lead; công tắc dừng trên web; gán nhân viên phụ trách (để thông báo `HANDBACK_REPLY` gửi đúng người).
+2. **Mốc báo giá** (bot báo giá **tất cả gói đang bán trong slm_v2**, doanh nghiệp chốt 2026-10-26): đồng bộ catalog (mục 4.2), tool `tim_goi_phu_hop`, SizingService. Cần doanh nghiệp quyết định trước:
+   1. Sửa dữ liệu slm_v2: gói 134 / 140 / 175 là 39 hay 40 tấm (bảng combo ghi 40 tấm / 25 kWp, slm_v2 39 tấm / 24,375 kWp); gói 101 `cong_suat_he_thong = 9` (đúng là 8750); gói 101 / 102 lệch giá 600 nghìn giữa HN và HCM; gói 180 dùng ảnh của hệ 11,5 kWp / 14,34 kWh và không có gói ở HCM.
+   2. Hệ số PV out miền Nam / theo tỉnh (hiện chỉ có Hà Nội 79,58 kWh/kWp/tháng) và danh sách tỉnh Bắc / Nam (mục 4.2.9).
+   3. Quy đổi hoá đơn → kWh: giá phẳng 3.500 đ/kWh (bảng công thức) hay biểu giá bậc thang EVN.
+   4. Công thức chọn dung lượng pin theo lượng điện dùng ban đêm.
+   5. Ý nghĩa `san_luong_toi_thieu / toi_da` trong slm_v2 (gói 5 kWp: 500–700 kWh/tháng, không khớp PV out; có thể là mức tiêu thụ phù hợp) và quy tắc chọn gói từ hoá đơn.
+   6. Điều kiện báo giá (mục 4.2.8): "giá tháng 9" còn hiệu lực không, đã gồm VAT chưa, mái bằng (`gia_khung_sat` đang 0), phí vận chuyển.
+3. **Media cho AI:** admin viết `tom_tat` / `dung_khi` và duyệt ảnh combo; quyết định bot có được gửi link Facebook / slmsolar.vn không (Policy hiện chặn mọi link); gửi ảnh qua Messenger (Attachment Upload API, không cần MinIO công khai).
+4. **App Review + xác minh doanh nghiệp** (3–6 tuần): `pages_messaging`, Business Asset User Profile Access (lấy tên khách để xưng anh / chị); trang chính sách quyền riêng tư và xoá dữ liệu; chuyển webhook sang tên miền công ty.
+5. **Token:** chuyển Page token sang System User (token hiện gắn với tài khoản cá nhân của người quản trị Trang).
+

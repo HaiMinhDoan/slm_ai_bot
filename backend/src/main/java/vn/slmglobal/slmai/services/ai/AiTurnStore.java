@@ -57,6 +57,7 @@ public class AiTurnStore {
     private final AiRunRepository aiRunRepository;
     private final ConsultProfileService consultProfileService;
     private final LeadService leadService;
+    private final TurnNotifier notifier;
     private final AiProperties properties;
 
     /** Tin cần gửi ra kênh sau khi chốt */
@@ -168,6 +169,7 @@ public class AiTurnStore {
                 // sdt là UNIQUE: số đã thuộc khách khác thì không gán, chờ nhân viên gộp khách
                 // (khach_hang_lich_su_gop, mục 29); lead vẫn được tạo với số này
                 log.info("Hội thoại {}: số điện thoại trùng với khách khác, cần gộp khách", c.getId());
+                notifier.duplicatePhone(s, c, phoneThisTurn);
             } else {
                 customer.setPhone(phoneThisTurn);
             }
@@ -183,9 +185,10 @@ public class AiTurnStore {
         }
 
         List<Outgoing> outgoing = new ArrayList<>();
+        Message aiMessage = null;
         if (reply != null && reply.hasReply()) {
             // Lượt AUTO cũng ghi DRAFT trước, gửi xong mới đổi SENT: tiến trình chết giữa chừng thì nhân viên vẫn thấy nháp
-            Message aiMessage = messageRepository.save(Message.builder()
+            aiMessage = messageRepository.save(Message.builder()
                     .conversationId(c.getId())
                     .direction(MessageDirection.OUT)
                     .senderType(SenderType.AI)
@@ -199,15 +202,12 @@ public class AiTurnStore {
         }
         if (decision.action() == ReplyPolicy.Action.HANDOFF) {
             c.requestHuman(now);
-            // Báo nhân viên: thông báo trên inbox admin (mốc inbox admin)
             log.info("Hội thoại {} chuyển nhân viên: {}", c.getId(), decision.reasons());
         } else if (decision.action() == ReplyPolicy.Action.DRAFT) {
             log.info("Hội thoại {} có nháp AI chờ duyệt: {}", c.getId(), decision.reasons());
         }
-        if (s.firstTurnAfterHandback() && c.getOwnerStaffId() != null) {
-            log.info("Khách nhắn lại sau khi tự trả AI, báo nhân viên phụ trách {} (hội thoại {})",
-                    c.getOwnerStaffId(), c.getId());
-        }
+        // Báo nhân viên trên trang admin (chuông, âm thanh, thông báo trình duyệt)
+        notifier.turnOutcome(s, c, run, reply, decision, aiMessage);
 
         String ack = ackText(decision.action(), businessOpen);
         if (ack != null && windowOpen && channelSupported && !recentlyAcked(c.getId(), now)) {
@@ -243,8 +243,11 @@ public class AiTurnStore {
     }
 
     @Transactional
-    public void markFailed(UUID messageId) {
-        messageRepository.findById(messageId).ifPresent(m -> m.setStatus(MessageStatus.FAILED));
+    public void markFailed(UUID messageId, String error) {
+        messageRepository.findById(messageId).ifPresent(m -> {
+            m.setStatus(MessageStatus.FAILED);
+            notifier.sendFailed(m, error);
+        });
     }
 
     private boolean holdsLease(Conversation c, TurnSnapshot s) {

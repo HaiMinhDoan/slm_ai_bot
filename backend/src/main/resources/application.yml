@@ -119,6 +119,13 @@ app:
       handoff-ack: "Dạ em đã chuyển thông tin cho nhân viên phụ trách, anh/chị chờ em một chút nhé."
       ack-cooldown: 12h
 
+  # Thông báo cho nhân viên trên trang admin (chuông, âm thanh, thông báo trình duyệt qua SSE)
+  notification:
+    window: 14d
+    heartbeat: 20s
+    stream-timeout: 30m
+    max-connections-per-user: 5
+
 springdoc:
   api-docs:
     path: /v3/api-docs
