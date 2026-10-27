@@ -298,6 +298,8 @@ GRANT SELECT ON ai_v_nganh_hang, ai_v_co_so, ai_v_thuong_hieu, ai_v_nhom_vat_tu,
 
 Phần SELECT của các view đã được chạy thử (chỉ đọc) trên `slm_v2` ngày 2026-10-20.
 
+**Đã tạo trên `slm_v2` ngày 2026-10-27** bằng [deploy/slm_v2/ai_views.sql](deploy/slm_v2/ai_views.sql) (một transaction, có thêm `ai_v_mien`: tên miền web theo cơ sở, mục 60.2). Đã kiểm tra bằng `ai_sync`: đọc view được; đọc bảng gốc, đọc `gm_tong`, ghi dữ liệu đều bị từ chối; view giá không còn `giaNhap`. Thông tin kết nối ở `.env`: `SLM_V2_DB_URL`, `SLM_V2_DB_USERNAME`, `SLM_V2_DB_PASSWORD`.
+
 Đi kèm: đổi mật khẩu tài khoản `postgres`, và giới hạn IP trong `pg_hba.conf` để chỉ máy chủ bot dùng được `ai_sync`.
 
 ### 4.2.6 AI dùng catalog thế nào
