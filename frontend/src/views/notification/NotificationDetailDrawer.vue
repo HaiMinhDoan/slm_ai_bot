@@ -12,6 +12,8 @@
             <Tag :color="SEVERITY_COLORS[item.severity]">{{ TYPE_LABELS[item.type] }}</Tag>
           </DescriptionsItem>
           <DescriptionsItem label="Thời điểm">{{ formatToDateTime(item.createdAt) }}</DescriptionsItem>
+          <DescriptionsItem v-if="isCatalog && item.body" label="Nội dung">{{ item.body }}</DescriptionsItem>
+          <DescriptionsItem v-if="isCatalog && data.error" label="Lỗi">{{ data.error }}</DescriptionsItem>
           <DescriptionsItem v-if="data.customerName" label="Khách">{{ data.customerName }}</DescriptionsItem>
           <DescriptionsItem v-if="data.phone" label="Số điện thoại">
             <TypographyText :copyable="{ text: data.phone }">{{ data.phone }}</TypographyText>
@@ -53,6 +55,7 @@
           <Button v-if="inboxUrl" type="primary" :href="inboxUrl" target="_blank" rel="noopener noreferrer">
             Mở hộp thư Meta
           </Button>
+          <Button v-if="isCatalog" type="primary" @click="openCatalog">Mở trang Catalog &amp; báo giá</Button>
         </div>
       </template>
     </Spin>
@@ -61,6 +64,7 @@
 
 <script lang="ts" setup>
   import { computed, ref, watch } from 'vue';
+  import { useRouter } from 'vue-router';
   import {
     Alert,
     Button,
@@ -75,7 +79,7 @@
   import type { NotificationModel } from '@/api/notification/model/notificationModel';
   import { useNotificationStore } from '@/store/modules/notification';
   import { formatToDateTime } from '@/utils/dateUtil';
-  import { SEVERITY_COLORS, TYPE_LABELS, metaInboxUrl } from './labels';
+  import { CATALOG_TYPES, SEVERITY_COLORS, TYPE_LABELS, metaInboxUrl } from './labels';
 
   const DescriptionsItem = Descriptions.Item;
   const TypographyParagraph = Typography.Paragraph;
@@ -91,6 +95,13 @@
   const data = computed<Recordable>(() => item.value?.data ?? {});
   const reasonLabels = computed<string[]>(() => data.value.reasonLabels ?? []);
   const inboxUrl = computed(() => metaInboxUrl(data.value.pageId));
+  const isCatalog = computed(() => !!item.value && CATALOG_TYPES.includes(item.value.type));
+
+  const router = useRouter();
+  function openCatalog() {
+    emit('update:open', false);
+    router.push({ path: '/catalog/index', query: data.value.kind === 'PVOUT' ? { tab: 'pvout' } : {} });
+  }
 
   watch(
     () => [props.open, props.notificationId] as const,

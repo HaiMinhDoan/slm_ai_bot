@@ -33,6 +33,12 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
+  # Nhiều job theo lịch (đồng bộ catalog, tự trả hội thoại, nhắc PV out): không để job này chờ job kia
+  task:
+    scheduling:
+      pool:
+        size: 4
+
   servlet:
     multipart:
       max-file-size: 100MB
@@ -114,10 +120,44 @@ app:
       start: "08:00"
       end: "17:30"
       days: MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY,SATURDAY
+    # Số vòng gọi tool tối đa của một lượt (báo giá); sau đó Claude phải trả lời
+    max-tool-rounds: 3
     templates:
       out-of-hours-ack: "Dạ em đã ghi nhận thông tin của mình ạ. Nhân viên tư vấn sẽ phản hồi mình trong giờ làm việc sớm nhất nhé."
       handoff-ack: "Dạ em đã chuyển thông tin cho nhân viên phụ trách, anh/chị chờ em một chút nhé."
       ack-cooldown: 12h
+
+  # DB slm_v2, tài khoản chỉ đọc ai_sync chỉ thấy view ai_v_* (mục 4.2.5). Để trống = không đồng bộ catalog.
+  slm-v2:
+    url: ${SLM_V2_DB_URL:}
+    username: ${SLM_V2_DB_USERNAME:}
+    password: ${SLM_V2_DB_PASSWORD:}
+    connect-timeout: 10s
+    socket-timeout: 120s
+
+  # Đồng bộ catalog từ slm_v2 (mục 4.2.3)
+  catalog:
+    sync-enabled: ${CATALOG_SYNC_ENABLED:true}
+    sync-interval-ms: 600000
+    initial-delay-ms: 30000
+
+  # Báo giá: số liệu và công thức chọn gói tạm (doanh nghiệp chốt 2026-10-26, mục 60.2, 60.3)
+  pricing:
+    price-per-kwh: 3500
+    night-share:
+      NGAY_NHIEU: 0.3
+      CAN_BANG: 0.5
+      DEM_NHIEU: 0.7
+    battery-depth: 0.9
+    capacity-tolerance: 0.9
+    roof-area-per-kwp: 5
+    large-system-kwp: 30
+    # Link sản phẩm theo miền khách: https://<tên miền>/products/<id gói của cơ sở giá miền đó>
+    product-link-domains:
+      BAC: slmsolar.vn
+      NAM: slmsolar.com.vn
+    quote-conditions: "Đây là giá niêm yết của gói trọn gói (thiết bị, nhân công lắp đặt và vận chuyển); giá cuối cùng nhân viên báo sau khi khảo sát thực tế."
+    flat-roof-note: "Mái bằng cần thêm phần khung, chi phí khung nhân viên báo sau khi khảo sát."
 
   # Thông báo cho nhân viên trên trang admin (chuông, âm thanh, thông báo trình duyệt qua SSE)
   notification:

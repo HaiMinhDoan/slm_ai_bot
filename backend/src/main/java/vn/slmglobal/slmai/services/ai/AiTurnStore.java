@@ -64,6 +64,10 @@ public class AiTurnStore {
     public record Outgoing(UUID messageId, String text) {
     }
 
+    /** Kết quả báo giá của lượt (tool tim_goi_phu_hop): gói đề xuất và giá thấp nhất */
+    public record Quote(List<Integer> packageIds, Long cheapestVnd) {
+    }
+
     public record Commit(boolean applied, String discardReason, List<Outgoing> outgoing) {
 
         static Commit discarded(String reason) {
@@ -130,9 +134,10 @@ public class AiTurnStore {
      * luot_goi_ai, tin_nhan (OUT), ho_so_tu_van, khach_tiem_nang và trạng thái hội thoại.
      *
      * @param reply null khi lượt không dùng được kết quả AI (lỗi, từ chối); khi đó decision là HANDOFF
+     * @param quote kết quả báo giá của lượt; null khi không gọi tool
      */
     @Transactional
-    public Commit commit(TurnSnapshot s, AiRun run, AiReply reply, ReplyPolicy.Decision decision,
+    public Commit commit(TurnSnapshot s, AiRun run, AiReply reply, ReplyPolicy.Decision decision, Quote quote,
                          boolean businessOpen, boolean windowOpen, boolean channelSupported) {
         Conversation c = conversationRepository.findByIdForUpdate(s.conversationId()).orElseThrow();
         String discard = null;
@@ -179,7 +184,8 @@ public class AiTurnStore {
 
         ConsultProfile profile = consultProfileService.apply(c.getId(), c.getCustomerId(),
                 new ConsultProfileService.Update(reply, phoneThisTurn != null, phone != null,
-                        decision.action() == ReplyPolicy.Action.AUTO));
+                        decision.action() == ReplyPolicy.Action.AUTO,
+                        quote == null ? List.of() : quote.packageIds(), quote == null ? null : quote.cheapestVnd()));
         if (phone != null) {
             leadService.upsert(c, phone, profile);
         }

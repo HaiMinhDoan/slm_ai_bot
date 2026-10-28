@@ -17,8 +17,8 @@ public final class LeadScoring {
     static final double LOW_BUDGET_RATIO = 0.8;
 
     /**
-     * @param cheapestMatchVnd giá gói rẻ nhất phù hợp mà khách đã được báo (tool tim_goi_phu_hop); null khi chưa
-     *                         báo giá. Chưa có catalog nên hiện luôn null: OFF_SEGMENT và cờ ngân sách thấp chưa xảy ra.
+     * @param cheapestMatchVnd giá gói rẻ nhất phù hợp mà khách đã được báo (tool tim_goi_phu_hop, tin đã gửi);
+     *                         null khi chưa báo giá theo hoá đơn của khách
      */
     public record Signals(boolean hasPhone, String timeline, boolean minimumInfoComplete, int answeredQuestions,
                           Long budgetMaxVnd, Long cheapestMatchVnd) {

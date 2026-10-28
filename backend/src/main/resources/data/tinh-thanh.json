@@ -1,0 +1,43 @@
+{
+  "nguon": "34 tỉnh, thành phố theo Nghị quyết 202/2025/QH15 (hiệu lực 12/6/2025). Miền giá chia tại Đà Nẵng: Đà Nẵng trở vào là miền Nam (doanh nghiệp chốt 2026-10-26, kế hoạch mục 60.3).",
+  "mien": {
+    "BAC": { "ten": "miền Bắc", "co_so": "HN" },
+    "NAM": { "ten": "miền Nam", "co_so": "HCM" }
+  },
+  "tinh": [
+    { "ma": "TUYEN_QUANG", "ten": "Tuyên Quang", "mien": "BAC", "tinh_cu": ["Tuyên Quang", "Hà Giang"], "ten_khac": [] },
+    { "ma": "CAO_BANG", "ten": "Cao Bằng", "mien": "BAC", "tinh_cu": ["Cao Bằng"], "ten_khac": [] },
+    { "ma": "LAI_CHAU", "ten": "Lai Châu", "mien": "BAC", "tinh_cu": ["Lai Châu"], "ten_khac": [] },
+    { "ma": "LAO_CAI", "ten": "Lào Cai", "mien": "BAC", "tinh_cu": ["Lào Cai", "Yên Bái"], "ten_khac": ["Sa Pa", "Sapa"] },
+    { "ma": "THAI_NGUYEN", "ten": "Thái Nguyên", "mien": "BAC", "tinh_cu": ["Thái Nguyên", "Bắc Kạn"], "ten_khac": ["Bắc Cạn"] },
+    { "ma": "DIEN_BIEN", "ten": "Điện Biên", "mien": "BAC", "tinh_cu": ["Điện Biên"], "ten_khac": ["Điện Biên Phủ"] },
+    { "ma": "LANG_SON", "ten": "Lạng Sơn", "mien": "BAC", "tinh_cu": ["Lạng Sơn"], "ten_khac": [] },
+    { "ma": "SON_LA", "ten": "Sơn La", "mien": "BAC", "tinh_cu": ["Sơn La"], "ten_khac": [] },
+    { "ma": "PHU_THO", "ten": "Phú Thọ", "mien": "BAC", "tinh_cu": ["Phú Thọ", "Vĩnh Phúc", "Hòa Bình"], "ten_khac": ["Hoà Bình", "Việt Trì", "Vĩnh Yên"] },
+    { "ma": "BAC_NINH", "ten": "Bắc Ninh", "mien": "BAC", "tinh_cu": ["Bắc Ninh", "Bắc Giang"], "ten_khac": [] },
+    { "ma": "QUANG_NINH", "ten": "Quảng Ninh", "mien": "BAC", "tinh_cu": ["Quảng Ninh"], "ten_khac": ["Hạ Long", "Móng Cái", "Cẩm Phả", "Uông Bí"] },
+    { "ma": "HA_NOI", "ten": "Hà Nội", "mien": "BAC", "tinh_cu": ["Hà Nội"], "ten_khac": ["HN", "Hanoi", "Hà Tây", "Thủ đô"] },
+    { "ma": "HAI_PHONG", "ten": "Hải Phòng", "mien": "BAC", "tinh_cu": ["Hải Phòng", "Hải Dương"], "ten_khac": ["HP"] },
+    { "ma": "HUNG_YEN", "ten": "Hưng Yên", "mien": "BAC", "tinh_cu": ["Hưng Yên", "Thái Bình"], "ten_khac": [] },
+    { "ma": "NINH_BINH", "ten": "Ninh Bình", "mien": "BAC", "tinh_cu": ["Ninh Bình", "Hà Nam", "Nam Định"], "ten_khac": ["Phủ Lý"] },
+    { "ma": "THANH_HOA", "ten": "Thanh Hóa", "mien": "BAC", "tinh_cu": ["Thanh Hóa"], "ten_khac": ["Thanh Hoá", "Sầm Sơn"] },
+    { "ma": "NGHE_AN", "ten": "Nghệ An", "mien": "BAC", "tinh_cu": ["Nghệ An"], "ten_khac": ["Vinh", "Cửa Lò"] },
+    { "ma": "HA_TINH", "ten": "Hà Tĩnh", "mien": "BAC", "tinh_cu": ["Hà Tĩnh"], "ten_khac": [] },
+    { "ma": "QUANG_TRI", "ten": "Quảng Trị", "mien": "BAC", "tinh_cu": ["Quảng Trị", "Quảng Bình"], "ten_khac": ["Đồng Hới", "Đông Hà"] },
+    { "ma": "HUE", "ten": "Huế", "mien": "BAC", "tinh_cu": ["Thừa Thiên Huế"], "ten_khac": ["TP Huế", "TT Huế", "TTH"] },
+    { "ma": "DA_NANG", "ten": "Đà Nẵng", "mien": "NAM", "tinh_cu": ["Đà Nẵng", "Quảng Nam"], "ten_khac": ["Hội An", "Tam Kỳ"] },
+    { "ma": "QUANG_NGAI", "ten": "Quảng Ngãi", "mien": "NAM", "tinh_cu": ["Quảng Ngãi", "Kon Tum"], "ten_khac": ["Kontum"] },
+    { "ma": "GIA_LAI", "ten": "Gia Lai", "mien": "NAM", "tinh_cu": ["Gia Lai", "Bình Định"], "ten_khac": ["Pleiku", "Quy Nhơn", "Qui Nhơn"] },
+    { "ma": "DAK_LAK", "ten": "Đắk Lắk", "mien": "NAM", "tinh_cu": ["Đắk Lắk", "Phú Yên"], "ten_khac": ["Đắc Lắc", "Daklak", "Buôn Ma Thuột", "Buôn Mê Thuột", "BMT", "Tuy Hòa", "Tuy Hoà"] },
+    { "ma": "KHANH_HOA", "ten": "Khánh Hòa", "mien": "NAM", "tinh_cu": ["Khánh Hòa", "Ninh Thuận"], "ten_khac": ["Khánh Hoà", "Nha Trang", "Cam Ranh", "Phan Rang"] },
+    { "ma": "LAM_DONG", "ten": "Lâm Đồng", "mien": "NAM", "tinh_cu": ["Lâm Đồng", "Đắk Nông", "Bình Thuận"], "ten_khac": ["Đắc Nông", "Đà Lạt", "Bảo Lộc", "Gia Nghĩa", "Phan Thiết", "Mũi Né"] },
+    { "ma": "DONG_NAI", "ten": "Đồng Nai", "mien": "NAM", "tinh_cu": ["Đồng Nai", "Bình Phước"], "ten_khac": ["Biên Hòa", "Biên Hoà", "Long Khánh", "Đồng Xoài"] },
+    { "ma": "TAY_NINH", "ten": "Tây Ninh", "mien": "NAM", "tinh_cu": ["Tây Ninh", "Long An"], "ten_khac": ["Tân An"] },
+    { "ma": "HO_CHI_MINH", "ten": "TP Hồ Chí Minh", "mien": "NAM", "tinh_cu": ["TP Hồ Chí Minh", "Bình Dương", "Bà Rịa - Vũng Tàu"], "ten_khac": ["Hồ Chí Minh", "HCM", "TPHCM", "Sài Gòn", "SG", "Saigon", "Thủ Đức", "Vũng Tàu", "Bà Rịa", "BRVT", "Thủ Dầu Một", "Dĩ An", "Thuận An"] },
+    { "ma": "DONG_THAP", "ten": "Đồng Tháp", "mien": "NAM", "tinh_cu": ["Đồng Tháp", "Tiền Giang"], "ten_khac": ["Mỹ Tho", "Cao Lãnh", "Sa Đéc"] },
+    { "ma": "AN_GIANG", "ten": "An Giang", "mien": "NAM", "tinh_cu": ["An Giang", "Kiên Giang"], "ten_khac": ["Long Xuyên", "Châu Đốc", "Rạch Giá", "Phú Quốc", "Hà Tiên"] },
+    { "ma": "VINH_LONG", "ten": "Vĩnh Long", "mien": "NAM", "tinh_cu": ["Vĩnh Long", "Bến Tre", "Trà Vinh"], "ten_khac": [] },
+    { "ma": "CAN_THO", "ten": "Cần Thơ", "mien": "NAM", "tinh_cu": ["Cần Thơ", "Sóc Trăng", "Hậu Giang"], "ten_khac": ["Vị Thanh"] },
+    { "ma": "CA_MAU", "ten": "Cà Mau", "mien": "NAM", "tinh_cu": ["Cà Mau", "Bạc Liêu"], "ten_khac": [] }
+  ]
+}

@@ -30,6 +30,8 @@ import java.util.List;
  * @param personaName        tên tư vấn viên AI dùng khi tự giới thiệu (core/identity); khách hỏi thẳng thì vẫn nói là AI
  * @param autoIntents        loại câu hỏi được gửi tự động (mục 35)
  * @param handoffIntents     loại câu hỏi luôn chuyển nhân viên (mục 35)
+ * @param maxToolRounds      số vòng gọi tool tối đa của một lượt (báo giá); vòng sau đó tắt tool, Claude phải trả lời
+ * @param baseUrl            địa chỉ API khác mặc định (chỉ dùng trong test); để trống = api.anthropic.com
  */
 @ConfigurationProperties(prefix = "app.ai")
 public record AiProperties(
@@ -52,8 +54,16 @@ public record AiProperties(
         List<String> autoIntents,
         List<String> handoffIntents,
         BusinessHours businessHours,
-        Templates templates
+        Templates templates,
+        Integer maxToolRounds,
+        String baseUrl
 ) {
+
+    public AiProperties {
+        if (maxToolRounds == null || maxToolRounds < 0) {
+            maxToolRounds = 3;
+        }
+    }
 
     public boolean hasApiKey() {
         return apiKey != null && !apiKey.isBlank();

@@ -6,6 +6,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import vn.slmglobal.slmai.common.security.RoleCode;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -33,6 +34,18 @@ public class NotificationService {
             events.publishEvent(new NotificationCreated(row.id(), row.type(), row.severity(), row.title(),
                     row.body(), row.recipientId(), row.conversationId(), row.createdAt()));
         });
+    }
+
+    /**
+     * Gửi riêng cho từng quản trị hệ thống (SYSTEM_ADMIN) đang hoạt động: việc của quản trị (đồng bộ lỗi, nạp dữ
+     * liệu năm mới) không làm chuông của nhân viên trực chat kêu. Khoá chống trùng thêm id người nhận.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void notifyAdmins(NotificationDraft draft) {
+        for (UUID adminId : repository.activeUserIdsWithRole(RoleCode.SYSTEM_ADMIN)) {
+            notify(new NotificationDraft(draft.type(), draft.severity(), draft.title(), draft.body(), draft.data(),
+                    adminId, draft.conversationId(), draft.customerId(), draft.dedupeKey() + ":" + adminId));
+        }
     }
 
     @Transactional(readOnly = true)

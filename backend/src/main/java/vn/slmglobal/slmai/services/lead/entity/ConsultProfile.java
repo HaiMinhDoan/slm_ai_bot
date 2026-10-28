@@ -72,6 +72,10 @@ public class ConsultProfile {
     @Builder.Default
     private Integer[] recommendedPackageIds = new Integer[0];
 
+    /** Giá gói rẻ nhất phù hợp đã báo cho khách (tool tim_goi_phu_hop, lượt đã gửi; V7): xét OFF_SEGMENT */
+    @Column(name = "gia_thap_nhat_da_bao")
+    private Long cheapestQuotedPrice;
+
     /** Câu AI vừa hỏi ở tin đã gửi (V4) */
     @Column(name = "cau_hoi_cuoi")
     private String lastQuestionAsked;

@@ -58,17 +58,22 @@ public class CustomerChatPromptBuilder {
         return promptVersion;
     }
 
-    /** Rỗng khi không có tin nào của khách cần trả lời (tin cuối thuộc về trang). */
-    public Optional<ClaudeChatClient.ChatRequest> build(TurnSnapshot s, ZonedDateTime now, boolean businessOpen) {
+    /**
+     * Rỗng khi không có tin nào của khách cần trả lời (tin cuối thuộc về trang).
+     *
+     * @param pricingTools có công cụ báo giá (catalog đã đồng bộ); tool do AiTurnService gắn vào request
+     */
+    public Optional<ClaudeChatClient.ChatRequest> build(TurnSnapshot s, ZonedDateTime now, boolean businessOpen,
+                                                        boolean pricingTools) {
         List<ClaudeChatClient.ChatTurn> turns = turns(s.history());
         if (turns.isEmpty() || !turns.get(turns.size() - 1).customer()) {
             return Optional.empty();
         }
-        return Optional.of(new ClaudeChatClient.ChatRequest(cachedSystem, turnContext(s, now, businessOpen), turns,
-                AiReplySchema.schema()));
+        return Optional.of(new ClaudeChatClient.ChatRequest(cachedSystem,
+                turnContext(s, now, businessOpen, pricingTools), turns, AiReplySchema.schema()));
     }
 
-    String turnContext(TurnSnapshot s, ZonedDateTime now, boolean businessOpen) {
+    String turnContext(TurnSnapshot s, ZonedDateTime now, boolean businessOpen, boolean pricingTools) {
         AiProperties.BusinessHours hours = properties.businessHours();
         ZonedDateTime local = now.withZoneSameInstant(hours.zoneId());
         ConsultProfile p = s.profile();
@@ -98,7 +103,14 @@ public class CustomerChatPromptBuilder {
             sb.append("Hội thoại vừa được trả lại cho bạn sau khi nhân viên theo: đọc kỹ các tin nhân viên đã nhắn, ")
                     .append("không lặp lại hoặc nói trái với nhân viên.\n");
         }
-        sb.append("Bảng giá và công cụ tính công suất: chưa có, không đưa con số giá (playbooks/khach-hoi-gia).\n");
+        if (pricingTools) {
+            sb.append("Công cụ báo giá: có (tim_goi_phu_hop, chi_tiet_goi). Khách hỏi giá, chi phí, nên lắp hệ nào, ")
+                    .append("hoặc vừa cho thêm thông tin tư vấn thì gọi tim_goi_phu_hop trước khi trả lời; chỉ dùng ")
+                    .append("con số và link trong kết quả công cụ (playbooks/khach-hoi-gia).\n");
+        } else {
+            sb.append("Công cụ báo giá: chưa có (bảng giá chưa đồng bộ). Không đưa con số giá, công suất, sản lượng; ")
+                    .append("mời khách để lại số điện thoại để nhân viên gửi báo giá.\n");
+        }
         sb.append("</ngu_canh_luot>");
         return sb.toString();
     }

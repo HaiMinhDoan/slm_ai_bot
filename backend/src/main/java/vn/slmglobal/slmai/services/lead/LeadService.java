@@ -12,6 +12,7 @@ import vn.slmglobal.slmai.services.lead.entity.LeadStatus;
 import vn.slmglobal.slmai.services.lead.repository.LeadRepository;
 import vn.slmglobal.slmai.services.notification.NotificationDraft;
 import vn.slmglobal.slmai.services.notification.NotificationService;
+import vn.slmglobal.slmai.services.sizing.ProvinceDirectory;
 import vn.slmglobal.slmai.services.notification.NotificationSeverity;
 import vn.slmglobal.slmai.services.notification.NotificationType;
 
@@ -33,6 +34,7 @@ public class LeadService {
 
     private final LeadRepository repository;
     private final NotificationService notifications;
+    private final ProvinceDirectory provinces;
 
     public Lead upsert(Conversation conversation, String phone, ConsultProfile profile) {
         String key = conversation.getId() + ":" + phone;
@@ -52,8 +54,11 @@ public class LeadService {
         }
         boolean becameHot = profile.getLeadLevel() == LeadLevel.HOT && lead.getLeadLevel() != LeadLevel.HOT;
         JsonNode slots = profile.getSlots();
-        lead.setProvince(slots.hasNonNull(ConsultSlots.KHU_VUC) ? slots.get(ConsultSlots.KHU_VUC).asText() : null);
-        // Miền (BAC / NAM) chờ danh sách tỉnh của doanh nghiệp (mục 4.2.9)
+        String province = slots.hasNonNull(ConsultSlots.KHU_VUC) ? slots.get(ConsultSlots.KHU_VUC).asText() : null;
+        lead.setProvince(province);
+        // Miền giá theo danh mục 34 tỉnh (mục 4.2.9): tỉnh không nhận ra thì để trống
+        lead.setRegion(province == null ? null : provinces.resolve(province)
+                .map(r -> r.province().region().name()).orElse(null));
         lead.setNeedSummary(needSummary(slots));
         lead.setLeadLevel(profile.getLeadLevel());
         lead.setLeadLevelReason(profile.getLeadLevelReason());

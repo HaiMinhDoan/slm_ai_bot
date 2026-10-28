@@ -109,6 +109,16 @@ public class NotificationRepository {
                 + " ON CONFLICT DO NOTHING", p);
     }
 
+    /** Người dùng đang hoạt động có vai trò này (ví dụ SYSTEM_ADMIN), để gửi thông báo riêng */
+    public List<UUID> activeUserIdsWithRole(String roleCode) {
+        return jdbc.queryForList("""
+                SELECT u.id FROM nguoi_dung u
+                JOIN nguoi_dung_vai_tro ur ON ur.nguoi_dung_id = u.id
+                JOIN vai_tro r ON r.id = ur.vai_tro_id
+                WHERE r.ma = :ma AND u.trang_thai = 'ACTIVE'
+                ORDER BY u.tao_luc""", Map.of("ma", roleCode), UUID.class);
+    }
+
     private static MapSqlParameterSource visibility(UUID userId, OffsetDateTime since) {
         return new MapSqlParameterSource().addValue("uid", userId).addValue("since", since);
     }

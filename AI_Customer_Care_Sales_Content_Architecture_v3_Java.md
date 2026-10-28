@@ -222,15 +222,21 @@ Cảnh báo hiện trên admin. Với loại **chặn**, gói hoặc vật tư k
 
 | Mã | Điều kiện | Mức |
 |---|---|---|
-| `CAPACITY_SUSPICIOUS` | `cong_suat_he_thong < 1000` W | Chặn |
+| `CAPACITY_SUSPICIOUS` | `cong_suat_he_thong < 1000` W và không tính được từ tấm pin | Chặn |
+| `CAPACITY_FROM_PANELS` | `cong_suat_he_thong < 1000` W: dùng số tấm × công suất tấm (gói 101 ghi 9 → 8,75 kWp) | Cảnh báo |
+| `CAPACITY_MISMATCH` | `cong_suat_he_thong` lệch quá 3% so với số tấm × công suất tấm | Cảnh báo |
 | `UNKNOWN_SYSTEM_TYPE` / `UNKNOWN_PHASE` | Giá trị ngoài danh sách chuẩn hóa | Chặn |
 | `MISSING_PRICE` | `tong_gia` rỗng hoặc bằng 0 | Chặn |
-| `OUTPUT_RANGE_INVALID` | Sản lượng min/max rỗng hoặc min > max | Chặn |
-| `INACTIVE_MATERIAL_IN_PACKAGE` | Gói đang dùng chứa vật tư đã ngừng | Chặn |
+| `INACTIVE_MATERIAL_IN_PACKAGE` | Thành phần hiển thị cho khách (`duoc_xem`) là vật tư đã ngừng | Chặn |
+| `INACTIVE_ACCESSORY_IN_PACKAGE` | Phụ kiện không hiển thị cho khách là vật tư đã ngừng (gói 105, 106, 214, 215: dây AC, bộ chống phát ngược) | Cảnh báo |
+| `MISSING_BATTERY` | Hệ Hybrid không có pin lưu trữ có dung lượng | Chặn |
+| `NAME_PHASE_MISMATCH` | Tên gói ghi "1 pha" nhưng `loai_pha` là 3 pha hoặc ngược lại (gói 172) | Cảnh báo |
 | `MISSING_BRANCH_PRICE` | Giá lẻ vật tư thiếu một cơ sở | Cảnh báo; không báo giá lẻ ở cơ sở thiếu |
 | `DUPLICATE_BRANCH_PRICE` | Một cơ sở xuất hiện 2 lần trong `ds_gia` | Cảnh báo |
 | `SPEC_PLACEHOLDER` | Thông số là giá trị giữ chỗ | Cảnh báo |
 | `MISSING_IMAGE` | Gói không có ảnh | Cảnh báo |
+
+Sản lượng min / max của `slm_v2` chỉ lưu để đối chiếu, không xét cảnh báo: sản lượng nói với khách tính theo PV out EVN (mục 60.3). Lần đồng bộ thử với dữ liệu thật (2026-10-28): 74 / 74 gói đang bán được gợi ý; cảnh báo `CAPACITY_FROM_PANELS` (101), `INACTIVE_ACCESSORY_IN_PACKAGE` (105, 106, 214, 215), `NAME_PHASE_MISMATCH` (172).
 
 ### 4.2.5 View và tài khoản phía slm_v2
 
@@ -2005,6 +2011,8 @@ CREATE TABLE khach_hang_lich_su_gop (
 ## Catalog (đồng bộ từ slm_v2)
 
 Bản chỉ đọc, do `CatalogSyncJob` ghi (mục 4.2). `id_nguon` là id bên `slm_v2`.
+
+Migration V7 (2026-10-28) tạo các bảng dưới đây, khác bản thiết kế ở: `dm_tron_goi` thêm `nhom_tron_goi_id`, `so_tam_pin`, `cong_suat_tam_wp`, `cong_suat_inverter_kw`, `luu_tru_kwh`, `tep_tin_id`; `dm_vat_tu_tron_goi` thêm `ma_bam`, `dong_bo_luc`; `dm_vat_tu.ma` không UNIQUE; thêm `dm_ten_mien` (tên miền website theo cơ sở), `nl_bang_pvout`, `nl_pvout_tinh` (PV out EVN theo năm), `ho_so_tu_van.gia_thap_nhat_da_bao`; chưa tạo `dm_gia_vat_tu` (mục 60.4).
 
 ``` sql
 -- EN: catalog_brands — brands synced from slm_v2
@@ -5058,6 +5066,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 | AI trả lời (Sonnet 5.5, effort `low`), Policy, hồ sơ tư vấn, lead | Chạy thật |
 | Thông báo nhân viên (mục 34) | Đã viết, chờ triển khai trang admin ở `https://fs-wms.io.vn` |
 | Thư viện media: bảng, nhập ảnh combo từ Drive (mục 6.3 D) | Đã viết, chờ MinIO và nhập 24 combo |
+| Mốc báo giá: đồng bộ catalog, PV out, công cụ báo giá (mục 60.4) | Đã viết 2026-10-28, chờ triển khai |
 
 ## 60.2 Tiếp theo
 
@@ -5066,7 +5075,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
    1. **Hoá đơn → kWh:** giá phẳng **3.500 đ/kWh** (bảng công thức), không dùng biểu giá bậc thang.
    2. **Giá:** theo `tong_gia` trong slm_v2, cơ sở theo miền của khách (HN = miền Bắc, HCM = miền Nam). Mái bằng: `gia_khung_sat` đang 0 nên AI nói "phát sinh phần khung, nhân viên báo sau khảo sát".
    3. **`san_luong_toi_thieu / toi_da`:** là sản lượng điện (kWh/tháng) tối thiểu và tối đa gói có thể đạt. Lưu ý dữ liệu: quy ra kWh/kWp/tháng dao động 52–140 giữa các gói, có cặp gói cùng số tấm nhưng khoảng sản lượng đảo nhau giữa HN và HCM (98/99 so với 97/100), và cao hơn mức PV out tối đa của tháng nắng nhất (ví dụ 5 kWp ở Hà Nội tối đa khoảng 550 kWh/tháng theo EVN, slm_v2 ghi 700).
-   4. **Bot được gửi link:** khách miền Nam → `slmsolar.com.vn`, miền Bắc → ngẫu nhiên `slmsolar.vn` hoặc `slmsolar.com`. Khớp bảng `mien` của slm_v2 (`ten_mien` → `co_so_id`; `thong_tin_ten_mien` có hotline, email theo tên miền). Link sản phẩm: `https://<tên miền>/products/<tron_goi.id của cơ sở đó>`; đồng bộ thêm view `ai_v_mien`.
+   4. **Bot được gửi link:** khách miền Nam → `slmsolar.com.vn`, miền Bắc → **chỉ `slmsolar.vn`** (doanh nghiệp đổi ngày 2026-10-28, bỏ phương án ngẫu nhiên với `slmsolar.com`), ví dụ `https://slmsolar.vn/products/158`. Khớp bảng `mien` của slm_v2 (`ten_mien` → `co_so_id`; `thong_tin_ten_mien` có hotline, email theo tên miền). Link sản phẩm: `https://<tên miền>/products/<tron_goi.id của cơ sở đó>`; đồng bộ thêm view `ai_v_mien`.
    5. **Công thức pin:** chưa có, dùng tạm công thức chung (đề xuất ở 60.3).
    6. **Đã chốt thêm (2026-10-26):** miền giá chia tại Đà Nẵng (Đà Nẵng trở vào là Nam); sản lượng và tiền tiết kiệm tính theo PV out EVN của tỉnh khách, kể cả sản lượng của từng gói (không đọc `san_luong_toi_thieu / toi_da` cho tới khi slm_v2 rà lại); công thức chọn gói tạm ở 60.3.
    7. **Doanh nghiệp tự sửa trong slm_v2:** gói 134 / 135, 140 / 141, 175 / 176 là **40 tấm** (25 kWp), slm_v2 đang ghi 39 tấm / 24,375 kWp; gói 101 `cong_suat_he_thong = 9` (đúng 8750); gói 101 / 102 lệch giá 600 nghìn giữa HN và HCM; gói 180 (HN) và 181 (HCM) cùng dòng nhưng cấu hình khác, ảnh của 180 là ảnh hệ 181.
@@ -5079,7 +5088,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 **Hệ số PV out theo tỉnh:** dùng bảng chính thức **"Hệ số PVout lý thuyết của các tháng trong năm 2026"** của EVN (công văn 364/EVN-KDMBĐ ngày 20/1/2026, nguồn Viện Khoa học Khí tượng Thủy văn và Biến đổi khí hậu, văn bản 637/VKTTVBĐKH-KHTC ngày 14/11/2025), đủ 34 tỉnh sau sáp nhập, theo từng tháng (kWh/kWp). Cả năm: thấp nhất Hưng Yên 901, Hải Phòng 902, Hà Nội 912; TP Hồ Chí Minh 1.426; cao nhất Lâm Đồng 1.583. Bảng công thức của doanh nghiệp dùng 79,58 kWh/kWp/tháng cho Hà Nội (≈ 955/năm, cao hơn EVN 4,7%). Đã chốt: thay hệ số cố định 2,7 kWh/kWp/ngày bằng `PVout năm của tỉnh / 365` (Hà Nội 2,50; TP HCM 3,91; Lâm Đồng 4,34); sản lượng tháng nói với khách = kWp × PVout tháng đó.
 
 **Miền giá (34 tỉnh sau sáp nhập, Nghị quyết 202/2025/QH15), đã chốt:**
-- Bắc (giá HN, link `slmsolar.vn` / `slmsolar.com`): 15 tỉnh Bắc Bộ (Tuyên Quang, Cao Bằng, Lai Châu, Lào Cai, Thái Nguyên, Điện Biên, Lạng Sơn, Sơn La, Phú Thọ, Bắc Ninh, Quảng Ninh, Hà Nội, Hải Phòng, Hưng Yên, Ninh Bình) và 5 tỉnh Bắc Trung Bộ (Thanh Hóa, Nghệ An, Hà Tĩnh, Quảng Trị, Huế).
+- Bắc (giá HN, link `slmsolar.vn`): 15 tỉnh Bắc Bộ (Tuyên Quang, Cao Bằng, Lai Châu, Lào Cai, Thái Nguyên, Điện Biên, Lạng Sơn, Sơn La, Phú Thọ, Bắc Ninh, Quảng Ninh, Hà Nội, Hải Phòng, Hưng Yên, Ninh Bình) và 5 tỉnh Bắc Trung Bộ (Thanh Hóa, Nghệ An, Hà Tĩnh, Quảng Trị, Huế).
 - Nam (giá HCM, link `slmsolar.com.vn`): Đà Nẵng trở vào (Đà Nẵng, Quảng Ngãi, Gia Lai, Đắk Lắk, Khánh Hòa, Lâm Đồng, Đồng Nai, Tây Ninh, TP Hồ Chí Minh, Đồng Tháp, An Giang, Vĩnh Long, Cần Thơ, Cà Mau).
 - Khách hay nói tên tỉnh cũ: backend đổi 63 tỉnh cũ sang 34 tỉnh mới (ví dụ Bình Dương, Bà Rịa - Vũng Tàu → TP Hồ Chí Minh; Quảng Nam → Đà Nẵng; Hà Nam, Nam Định → Ninh Bình).
 
@@ -5093,3 +5102,28 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 
 **Sản lượng nói với khách (đã chốt):** tính theo PV out EVN của tỉnh (nhất quán, có nguồn chính thức), kể cả sản lượng của từng gói = kWp của gói × PV out; không đọc `san_luong_toi_thieu / toi_da` của slm_v2 cho tới khi được rà lại.
 
+
+
+## 60.4 Mốc báo giá (đã viết 2026-10-28)
+
+**Đồng bộ catalog** (`services/catalog`, `adapters/slmv2`, migration V7):
+- `CatalogSyncJob` mỗi 10 phút (lần đầu 30 giây sau khởi động) và nút "Đồng bộ ngay" trên trang *Catalog & báo giá*. Đọc 12 view `ai_v_*` bằng `ai_sync` trong một transaction REPEATABLE READ, READ ONLY; mỗi lần mở một kết nối rồi đóng.
+- Ghi `dm_thuong_hieu`, `dm_co_so`, `dm_vat_tu`, `dm_tron_goi`, `dm_vat_tu_tron_goi`, `dm_ten_mien`, lịch sử ở `dm_lich_su_dong_bo`. Upsert theo `id_nguon`, bỏ qua dòng có `ma_bam` không đổi; dòng biến mất ở nguồn thì ngừng, không xoá.
+- `dm_tron_goi` có thêm cột tính từ thành phần: `so_tam_pin`, `cong_suat_tam_wp`, `cong_suat_inverter_kw`, `luu_tru_kwh` (cộng `dung_luong` của nhóm `PIN_LUU_TRU`).
+- `dm_gia_vat_tu` (giá lẻ vật tư) và tool `tra_cuu_vat_tu` để sau: chưa có nhu cầu.
+- An toàn: lỗi thì rollback, giữ bản cũ, báo quản trị (`CATALOG_SYNC_FAILED`, tối đa một lần mỗi ngày). Không ghi khi slm_v2 trả 0 gói đang bán hoặc số gói giảm quá một nửa.
+
+**Tỉnh và PV out** (`services/sizing`):
+- `data/tinh-thanh.json`: 34 tỉnh, 63 tỉnh cũ, tên thường gọi (Sài Gòn, Vũng Tàu, Nha Trang, Đà Lạt...), miền và cơ sở giá. Tìm tỉnh trong địa chỉ dài, ưu tiên tên đứng sau cùng; không nhận ra thì không đoán.
+- `nl_bang_pvout` + `nl_pvout_tinh`: bảng PV out theo năm, đã nạp bảng EVN 2026. Năm chưa có bảng thì dùng bảng gần nhất trước đó.
+- **Nạp lại mỗi năm** (doanh nghiệp yêu cầu 2026-10-28): tab *PV out EVN* cho dán bảng của công văn mới, kiểm tra đủ 34 tỉnh × 12 tháng, so với năm trước rồi mới lưu, ghi nhật ký thao tác. `PvoutReminderJob` báo quản trị (`DATA_UPDATE_DUE`): từ 1/12 nhắc chuẩn bị bảng năm sau; từ 1/2 năm mới vẫn chưa có thì cảnh báo bot đang dùng bảng năm trước.
+
+**Tool cho Claude** (`CustomerChatTools`, `PackageAdvisor`), schema strict, vòng lặp tối đa 3 lần gọi tool mỗi lượt (vòng sau tắt tool):
+- `tim_goi_phu_hop`: chưa có tiền điện → giá khởi điểm theo loại hệ / số pha của miền khách và gói bán chạy; có tiền điện → gói rẻ nhất đáp ứng công thức 60.3, chưa biết tỉnh hoặc ngày / đêm thì trả khoảng (gói nhỏ nhất và lớn nhất). Kèm sản lượng theo PV out tháng của tỉnh, tiền tiết kiệm và hoàn vốn ước tính (điện tự dùng × 3.500 đ/kWh, không tính bán điện dư), link theo miền, điều kiện báo giá, thông tin còn thiếu. Trường null được điền từ hồ sơ tư vấn.
+- `chi_tiet_goi`: thành phần hiển thị cho khách, hãng, bảo hành, giá, link, sản lượng; gói của miền kia thì đổi sang gói cùng tên ở miền của khách.
+- Mọi con số trả về kèm chuỗi viết sẵn ("144,2 triệu đồng", "8,75 kWp") để AI chép nguyên văn. Policy coi kết quả tool, tin trang đã gửi là nguồn con số. Link chỉ được gửi khi có trong kết quả tool, tin trang đã gửi, hoặc là trang chủ theo miền; link khác thì DRAFT (`LINK_NOT_ALLOWED`).
+- Lượt có gửi báo giá ghi `ho_so_tu_van.tron_goi_de_xuat_ids` và `gia_thap_nhat_da_bao`, để tính `OFF_SEGMENT` và cờ ngân sách thấp (mục 58.5). Lead có thêm miền (`khach_tiem_nang.mien`).
+- Catalog chưa đồng bộ lần nào thì không đưa tool vào prompt; ngữ cảnh lượt báo "chưa có công cụ báo giá", AI xin số điện thoại như trước.
+- Playbook `khach-hoi-gia`: báo giá sớm rồi hỏi đúng một câu, ví dụ "Không biết hoá đơn tiền điện nhà mình khoảng bao nhiêu một tháng để em tư vấn thêm ạ?".
+
+**Còn chờ doanh nghiệp:** VAT đã gồm trong `tong_gia` chưa (câu điều kiện báo giá hiện chỉ nói "giá niêm yết trọn gói, giá cuối sau khảo sát"); tỉnh nào ngoài vùng phục vụ (hiện coi cả 34 tỉnh đều phục vụ).

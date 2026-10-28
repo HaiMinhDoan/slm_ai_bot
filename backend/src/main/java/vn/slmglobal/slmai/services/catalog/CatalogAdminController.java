@@ -1,0 +1,94 @@
+package vn.slmglobal.slmai.services.catalog;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import vn.slmglobal.slmai.common.security.AuthInfo;
+import vn.slmglobal.slmai.common.security.RequestContext;
+import vn.slmglobal.slmai.common.security.RequireAuth;
+import vn.slmglobal.slmai.common.security.RoleCode;
+import vn.slmglobal.slmai.common.web.ApiResponses;
+import vn.slmglobal.slmai.common.web.ResponseData;
+import vn.slmglobal.slmai.services.sizing.PackageAdvisor;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Catalog đồng bộ từ slm_v2 và thử báo giá (mục 4.2, 34). Xem và thử báo giá: nhân viên trực chat cũng dùng được;
+ * bấm đồng bộ: quản trị hệ thống, quản trị nội dung.
+ */
+@Tag(name = "Quản trị - Catalog & báo giá", description = "Đồng bộ gói từ slm_v2, danh sách gói, thử công cụ báo giá")
+@RestController
+@RequestMapping("/api/v1/admin/catalog")
+@RequiredArgsConstructor
+public class CatalogAdminController {
+
+    private final CatalogSyncService syncService;
+    private final CatalogRepository repository;
+    private final PackageAdvisor advisor;
+
+    public record StatusResponse(boolean configured, String version, CatalogRepository.SyncRun lastSuccess,
+                                 List<CatalogRepository.SyncRun> runs) {
+    }
+
+    @Operation(summary = "Trạng thái đồng bộ: cấu hình, phiên bản catalog, các lần đồng bộ gần nhất")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN, RoleCode.STAFF})
+    @GetMapping("/status")
+    public ResponseEntity<ResponseData<StatusResponse>> status(@RequestParam(defaultValue = "20") int limit) {
+        return ApiResponses.ok(new StatusResponse(syncService.isConfigured(), syncService.currentVersion(),
+                repository.lastSuccess().orElse(null), syncService.runs(Math.min(Math.max(1, limit), 100))),
+                "CATALOG_STATUS_SUCCESS");
+    }
+
+    @Operation(summary = "Đồng bộ ngay từ slm_v2 (chờ tới khi xong, thường vài giây)")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN})
+    @PostMapping("/sync")
+    public ResponseEntity<ResponseData<CatalogRepository.SyncRun>> sync() {
+        AuthInfo actor = RequestContext.requireAuthInfo();
+        return ApiResponses.ok(syncService.sync(CatalogSyncService.TRIGGER_MANUAL, actor.email()),
+                "CATALOG_SYNC_DONE");
+    }
+
+    @Operation(summary = "Mọi gói đã đồng bộ (cả gói ngừng, gói bị chặn gợi ý) kèm cảnh báo dữ liệu")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN, RoleCode.STAFF})
+    @GetMapping("/packages")
+    public ResponseEntity<ResponseData<List<CatalogRepository.CatalogPackage>>> packages() {
+        return ApiResponses.ok(repository.allPackages(), "CATALOG_PACKAGES_SUCCESS");
+    }
+
+    @Operation(summary = "Nhãn tiếng Việt của mã cảnh báo dữ liệu")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN, RoleCode.STAFF})
+    @GetMapping("/warning-labels")
+    public ResponseEntity<ResponseData<Map<String, Object>>> warningLabels() {
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        for (CatalogWarning w : CatalogWarning.values()) {
+            out.put(w.name(), Map.of("label", w.label(), "blocking", w.blocking()));
+        }
+        return ApiResponses.ok(out, "CATALOG_WARNING_LABELS_SUCCESS");
+    }
+
+    @Operation(summary = "Thử tool tim_goi_phu_hop: đúng kết quả AI nhận được khi tư vấn khách")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN, RoleCode.STAFF})
+    @PostMapping("/advise")
+    public ResponseEntity<ResponseData<JsonNode>> advise(@RequestBody PackageAdvisor.AdviceRequest request) {
+        return ApiResponses.ok(advisor.advise(request).result(), "CATALOG_ADVISE_SUCCESS");
+    }
+
+    @Operation(summary = "Thử tool chi_tiet_goi")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN, RoleCode.STAFF})
+    @GetMapping("/packages/{id}/detail")
+    public ResponseEntity<ResponseData<JsonNode>> detail(@PathVariable int id,
+                                                         @RequestParam(name = "khuVuc", required = false) String province) {
+        return ApiResponses.ok(advisor.packageDetail(id, province), "CATALOG_PACKAGE_DETAIL_SUCCESS");
+    }
+}

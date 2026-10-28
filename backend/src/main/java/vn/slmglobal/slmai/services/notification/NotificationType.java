@@ -13,5 +13,9 @@ public enum NotificationType {
     /** Gửi tin AI / tin hệ thống ra kênh thất bại */
     SEND_FAILED,
     /** Số điện thoại khách vừa gửi đã thuộc khách khác: cần gộp khách */
-    DUPLICATE_PHONE
+    DUPLICATE_PHONE,
+    /** Đồng bộ catalog từ slm_v2 lỗi: bot vẫn dùng bản catalog trước đó (gửi quản trị hệ thống) */
+    CATALOG_SYNC_FAILED,
+    /** Đến hạn nạp dữ liệu định kỳ, ví dụ bảng PV out EVN năm mới (gửi quản trị hệ thống) */
+    DATA_UPDATE_DUE
 }

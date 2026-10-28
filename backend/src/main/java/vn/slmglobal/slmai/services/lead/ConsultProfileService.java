@@ -26,8 +26,15 @@ public class ConsultProfileService {
      * @param phoneGivenThisTurn khách vừa gửi số điện thoại trong các tin của lượt này
      * @param hasPhone           khách đã có số điện thoại (lượt này hoặc trước đó)
      * @param questionDelivered  câu hỏi trong reply thật sự được gửi khách (AUTO); nháp chưa tính
+     * @param quotedPackageIds   gói tool đề xuất trong lượt (theo hoá đơn của khách); chỉ ghi khi tin được gửi
+     * @param cheapestQuotedVnd  giá thấp nhất trong các gói đề xuất; chỉ ghi khi tin được gửi
      */
-    public record Update(AiReply reply, boolean phoneGivenThisTurn, boolean hasPhone, boolean questionDelivered) {
+    public record Update(AiReply reply, boolean phoneGivenThisTurn, boolean hasPhone, boolean questionDelivered,
+                         List<Integer> quotedPackageIds, Long cheapestQuotedVnd) {
+
+        public Update(AiReply reply, boolean phoneGivenThisTurn, boolean hasPhone, boolean questionDelivered) {
+            this(reply, phoneGivenThisTurn, hasPhone, questionDelivered, List.of(), null);
+        }
     }
 
     public ConsultProfile get(UUID conversationId) {
@@ -67,6 +74,11 @@ public class ConsultProfileService {
         if (reply != null) {
             profile.setLastQuestionAsked(u.questionDelivered() ? reply.questionAsked() : null);
         }
+        // Lần báo giá mới nhất thay lần trước: khách có thể vừa sửa hoá đơn, số pha, tỉnh
+        if (u.questionDelivered() && u.quotedPackageIds() != null && !u.quotedPackageIds().isEmpty()) {
+            profile.setRecommendedPackageIds(u.quotedPackageIds().toArray(Integer[]::new));
+            profile.setCheapestQuotedPrice(u.cheapestQuotedVnd());
+        }
 
         LeadScoring.Score score = LeadScoring.score(new LeadScoring.Signals(
                 u.hasPhone(),
@@ -74,7 +86,7 @@ public class ConsultProfileService {
                 missing.isEmpty(),
                 profile.getAnsweredQuestions(),
                 budgetMax(qualification),
-                null));
+                profile.getCheapestQuotedPrice()));
         profile.setLeadLevel(score.level());
         profile.setLeadLevelReason(score.reason());
         return repository.save(profile);

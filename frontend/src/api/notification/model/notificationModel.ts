@@ -5,7 +5,9 @@ export type NotificationType =
   | 'HANDBACK_REPLY'
   | 'LEAD_HOT'
   | 'SEND_FAILED'
-  | 'DUPLICATE_PHONE';
+  | 'DUPLICATE_PHONE'
+  | 'CATALOG_SYNC_FAILED'
+  | 'DATA_UPDATE_DUE';
 
 export type NotificationSeverity = 'INFO' | 'WARNING' | 'URGENT';
 
