@@ -304,7 +304,7 @@ GRANT SELECT ON ai_v_nganh_hang, ai_v_co_so, ai_v_thuong_hieu, ai_v_nhom_vat_tu,
 
 Phần SELECT của các view đã được chạy thử (chỉ đọc) trên `slm_v2` ngày 2026-10-20.
 
-**Đã tạo trên `slm_v2` ngày 2026-10-27** bằng [deploy/slm_v2/ai_views.sql](deploy/slm_v2/ai_views.sql) (một transaction, có thêm `ai_v_mien`: tên miền web theo cơ sở, mục 60.2). Đã kiểm tra bằng `ai_sync`: đọc view được; đọc bảng gốc, đọc `gm_tong`, ghi dữ liệu đều bị từ chối; view giá không còn `giaNhap`. Thông tin kết nối ở `.env`: `SLM_V2_DB_URL`, `SLM_V2_DB_USERNAME`, `SLM_V2_DB_PASSWORD`.
+**Đã tạo trên `slm_v2` ngày 2026-10-27** bằng [deploy/slm_v2/ai_views.sql](deploy/slm_v2/ai_views.sql) (một transaction, có thêm `ai_v_mien`: tên miền web theo cơ sở, mục 60.4). Đã kiểm tra bằng `ai_sync`: đọc view được; đọc bảng gốc, đọc `gm_tong`, ghi dữ liệu đều bị từ chối; view giá không còn `giaNhap`. Thông tin kết nối ở `.env`: `SLM_V2_DB_URL`, `SLM_V2_DB_USERNAME`, `SLM_V2_DB_PASSWORD`.
 
 Đi kèm: đổi mật khẩu tài khoản `postgres`, và giới hạn IP trong `pg_hba.conf` để chỉ máy chủ bot dùng được `ai_sync`.
 
@@ -5056,32 +5056,49 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 
 ------------------------------------------------------------------------
 
-# 60. Việc cần làm (cập nhật 2026-10-26)
+# 60. Việc cần làm (cập nhật 2026-10-29)
 
-## 60.1 Đã chạy
+## 60.1 Đã có
 
 | Phần | Trạng thái |
 |---|---|
-| Webhook Messenger, lưu khách / hội thoại / tin | Chạy thật trên Trang Solarmax (app ở chế độ Development, chỉ tài khoản có vai trò trong app) |
-| AI trả lời (Sonnet 5.5, effort `low`), Policy, hồ sơ tư vấn, lead | Chạy thật |
-| Thông báo nhân viên (mục 34) | Đã viết, chờ triển khai trang admin ở `https://fs-wms.io.vn` |
-| Thư viện media: bảng, nhập ảnh combo từ Drive (mục 6.3 D) | Đã viết, chờ MinIO và nhập 24 combo |
-| Mốc báo giá: đồng bộ catalog, PV out, công cụ báo giá (mục 60.4) | Đã viết 2026-10-28, chờ triển khai |
+| Webhook Messenger: lưu khách / hội thoại / tin, gộp tin, khoá lượt, hiện "đang soạn tin" | Chạy thật trên Trang Solarmax. App Meta ở chế độ Development: chỉ tài khoản có vai trò trong app được bot trả lời |
+| Nhân viên tiếp quản: trả lời từ hộp thư Meta thì bot nhường (nhận echo), tự trả lại AI sau thời gian chờ | Chạy thật |
+| AI trả lời (Sonnet 5.5, effort `low`), xưng "Huyền", nói thật là trợ lý tự động khi khách hỏi. Gửi tự động 5 loại (`CHAO_HOI`, `TU_VAN_LAP_MOI`, `HOI_GIA`, `GIAI_THICH`, `CHINH_SACH`), `KHAC` thành nháp, `KY_THUAT_SU_CO` / `KHIEU_NAI` chuyển nhân viên | Chạy thật |
+| Policy: kiểm tra con số, link; công tắc dừng toàn cục (mục 33) | Chạy thật. Công tắc mới là biến `AI_FORCE_DRAFT` trong `.env`, chưa có nút trên web |
+| Hồ sơ tư vấn, lead, mức tiềm năng (mục 58.5), cảnh báo trùng số điện thoại; nhật ký mỗi lượt AI (`luot_goi_ai`: token, lần gọi tool) | Chạy thật |
+| Mốc báo giá (60.4): đồng bộ catalog slm_v2 mỗi 10 phút kèm cảnh báo dữ liệu, PV out EVN theo năm và nhắc nạp năm mới, `SizingService`, tool `tim_goi_phu_hop` / `chi_tiet_goi`, link theo miền, giá đã gồm VAT | Chạy thật từ 2026-10-29 |
+| Trang admin `https://fs-wms.io.vn`: đăng nhập, người dùng và vai trò, nhật ký thao tác | Chạy thật (HTTPS qua nginx-proxy-manager) |
+| Thông báo nhân viên (mục 34): chuông, âm thanh, thông báo trình duyệt qua SSE | Chạy thật |
+| Catalog & báo giá trên admin: *Gói từ slm_v2*, *Thử báo giá*, *PV out EVN*. Dựng theo khuôn bảng của fsignai (`BasicTable` / `useTable`, form tìm kiếm, phân trang) | Đã viết 2026-10-29, chờ triển khai bản mới |
+| Thư viện media (mục 6.3 D): nhập ảnh combo từ Google Drive vào MinIO (bucket `slm-ai-media`) | Đã nạp 24 ảnh và 11 link video Facebook (2026-10-29), đang ở trạng thái `DRAFT` nên AI chưa dùng |
+| Kiến thức: `core/` (identity, voice, guardrails), playbook `khach-hoi-gia`, `tu-van-lap-moi` | Nạp từ file trong repo, chưa có trình soạn trên web |
 
-## 60.2 Tiếp theo
+## 60.2 Còn thiếu
 
+**Cho MVP (Phase 0–1, mục 38, 59.7):**
 1. **Inbox admin** (doanh nghiệp yêu cầu ghi lại để làm sau): danh sách hội thoại, xem tin; duyệt / sửa / gửi nháp AI ngay trên trang (thay việc sao chép sang Meta Business Suite); nút "Trả lại AI"; chấm GOOD / BAD / EDIT; danh sách lead; công tắc dừng trên web; gán nhân viên phụ trách (để thông báo `HANDBACK_REPLY` gửi đúng người).
-2. **Mốc báo giá** (bot báo giá **tất cả gói đang bán trong slm_v2**, doanh nghiệp chốt 2026-10-26): đồng bộ catalog (mục 4.2), tool `tim_goi_phu_hop`, SizingService. Quyết định của doanh nghiệp (2026-10-26):
-   1. **Hoá đơn → kWh:** giá phẳng **3.500 đ/kWh** (bảng công thức), không dùng biểu giá bậc thang.
-   2. **Giá:** theo `tong_gia` trong slm_v2, cơ sở theo miền của khách (HN = miền Bắc, HCM = miền Nam). Mái bằng: `gia_khung_sat` đang 0 nên AI nói "phát sinh phần khung, nhân viên báo sau khảo sát".
-   3. **`san_luong_toi_thieu / toi_da`:** là sản lượng điện (kWh/tháng) tối thiểu và tối đa gói có thể đạt. Lưu ý dữ liệu: quy ra kWh/kWp/tháng dao động 52–140 giữa các gói, có cặp gói cùng số tấm nhưng khoảng sản lượng đảo nhau giữa HN và HCM (98/99 so với 97/100), và cao hơn mức PV out tối đa của tháng nắng nhất (ví dụ 5 kWp ở Hà Nội tối đa khoảng 550 kWh/tháng theo EVN, slm_v2 ghi 700).
-   4. **Bot được gửi link:** khách miền Nam → `slmsolar.com.vn`, miền Bắc → **chỉ `slmsolar.vn`** (doanh nghiệp đổi ngày 2026-10-28, bỏ phương án ngẫu nhiên với `slmsolar.com`), ví dụ `https://slmsolar.vn/products/158`. Khớp bảng `mien` của slm_v2 (`ten_mien` → `co_so_id`; `thong_tin_ten_mien` có hotline, email theo tên miền). Link sản phẩm: `https://<tên miền>/products/<tron_goi.id của cơ sở đó>`; đồng bộ thêm view `ai_v_mien`.
-   5. **Công thức pin:** chưa có, dùng tạm công thức chung (đề xuất ở 60.3).
-   6. **Đã chốt thêm (2026-10-26):** miền giá chia tại Đà Nẵng (Đà Nẵng trở vào là Nam); sản lượng và tiền tiết kiệm tính theo PV out EVN của tỉnh khách, kể cả sản lượng của từng gói (không đọc `san_luong_toi_thieu / toi_da` cho tới khi slm_v2 rà lại); công thức chọn gói tạm ở 60.3.
-   7. **Doanh nghiệp tự sửa trong slm_v2:** gói 134 / 135, 140 / 141, 175 / 176 là **40 tấm** (25 kWp), slm_v2 đang ghi 39 tấm / 24,375 kWp; gói 101 `cong_suat_he_thong = 9` (đúng 8750); gói 101 / 102 lệch giá 600 nghìn giữa HN và HCM; gói 180 (HN) và 181 (HCM) cùng dòng nhưng cấu hình khác, ảnh của 180 là ảnh hệ 181.
-3. **Media cho AI:** admin viết `tom_tat` / `dung_khi` và duyệt ảnh combo; quyết định bot có được gửi link Facebook / slmsolar.vn không (Policy hiện chặn mọi link); gửi ảnh qua Messenger (Attachment Upload API, không cần MinIO công khai).
-4. **App Review + xác minh doanh nghiệp** (3–6 tuần): `pages_messaging`, Business Asset User Profile Access (lấy tên khách để xưng anh / chị); trang chính sách quyền riêng tư và xoá dữ liệu; chuyển webhook sang tên miền công ty.
-5. **Token:** chuyển Page token sang System User (token hiện gắn với tài khoản cá nhân của người quản trị Trang).
+2. **Lead → Sales API:** adapter `salesapi` còn trống; lead mới nằm trong CSDL của bot, chưa có trang xem lead (làm cùng Inbox admin).
+3. **Media cho AI:** admin viết `tom_tat` / `dung_khi` và duyệt ảnh combo; quyết định bot có được gửi link video Facebook không (link slmsolar.vn / slmsolar.com.vn đã cho phép ở mốc báo giá; Policy chỉ cho link có trong kết quả tool, tin trang đã gửi và trang chủ theo miền); gửi ảnh qua Messenger (Attachment Upload API, không cần MinIO công khai). 24 ảnh combo đã nạp đang chờ duyệt.
+4. **Kiến thức v1:** chính sách bảo hành, khoảng 10 FAQ, chiến lược bán hàng (mục 58.7); Knowledge Editor cơ bản: sửa, phiên bản, phát hành, rollback (mục 5.9).
+5. **Bộ test** 100–200 câu hỏi thật và kịch bản nhiều lượt (mục 35); KPI mục tiêu và số liệu nền (mục 38, Phase 0).
+6. **Dashboard:** trang *Phân tích* hiện là trang còn sót của fsignai (gọi `/api/v1/admin/dashboard`, lỗi 404). Thay bằng số liệu của bot từ `luot_goi_ai`: chi phí AI, tỷ lệ gửi tự động, tỷ lệ nhân viên sửa nháp.
+7. **Ra khách thật:**
+   - App Review + xác minh doanh nghiệp (3–6 tuần): `pages_messaging`, Business Asset User Profile Access (lấy tên khách để xưng anh / chị); trang chính sách quyền riêng tư và xoá dữ liệu; chuyển webhook sang tên miền công ty.
+   - Token: chuyển Page token sang System User (token hiện gắn với tài khoản cá nhân của người quản trị Trang).
+8. **Phía doanh nghiệp:**
+   - Pháp lý dữ liệu cá nhân (mục 59.5).
+   - Sửa dữ liệu trong slm_v2: gói 134 / 135, 140 / 141, 175 / 176 là **40 tấm** (25 kWp), slm_v2 đang ghi 39 tấm / 24,375 kWp; gói 101 `cong_suat_he_thong = 9` (đúng 8750); gói 101 / 102 lệch giá 600 nghìn giữa HN và HCM; gói 180 (HN) và 181 (HCM) cùng dòng nhưng cấu hình khác, ảnh của 180 là ảnh hệ 181.
+
+**Thứ tự đề xuất (2026-10-29):**
+1. Doanh nghiệp nộp App Review ngay, vì phải chờ 3–6 tuần.
+2. Song song: Inbox admin. Đây là việc nhân viên dùng hằng ngày; các lần chấm, sửa nháp cũng là dữ liệu cho bộ test.
+3. Sau đó: Lead → Sales API, duyệt và gửi ảnh, bộ test, dashboard của bot.
+
+**Các phase sau (chưa bắt đầu, mục 38):**
+- Phase 2: trả lời comment + private reply, Trợ lý nội dung và đăng bài, Lead Nurturing dạng việc cho sales, chạy bộ test khi phát hành kiến thức.
+- Phase 3–5: Zalo OA (chờ doanh nghiệp quyết định), năng lượng (adapter inverter, báo cáo tháng), TikTok. Các adapter `zalo`, `solar`, `tiktok`, `facebookgroups` hiện là thư mục trống.
+- CSKH khách cũ (Customer 360): chờ doanh nghiệp chốt nguồn dữ liệu khách cũ (mục 59.2).
 
 ## 60.3 Số liệu và công thức tính (doanh nghiệp chốt 2026-10-26)
 
@@ -5104,7 +5121,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 
 
 
-## 60.4 Mốc báo giá (đã viết 2026-10-28)
+## 60.4 Mốc báo giá (viết 2026-10-28, chạy thật từ 2026-10-29)
 
 **Đồng bộ catalog** (`services/catalog`, `adapters/slmv2`, migration V7):
 - `CatalogSyncJob` mỗi 10 phút (lần đầu 30 giây sau khởi động) và nút "Đồng bộ ngay" trên trang *Catalog & báo giá → Gói từ slm_v2*. Đọc 12 view `ai_v_*` (tài khoản theo `SLM_V2_DB_USERNAME`, hiện là `postgres` theo quyết định của doanh nghiệp 2026-10-29) trong một transaction REPEATABLE READ, READ ONLY; mỗi lần mở một kết nối rồi đóng.
@@ -5125,5 +5142,13 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 - Lượt có gửi báo giá ghi `ho_so_tu_van.tron_goi_de_xuat_ids` và `gia_thap_nhat_da_bao`, để tính `OFF_SEGMENT` và cờ ngân sách thấp (mục 58.5). Lead có thêm miền (`khach_tiem_nang.mien`).
 - Catalog chưa đồng bộ lần nào thì không đưa tool vào prompt; ngữ cảnh lượt báo "chưa có công cụ báo giá", AI xin số điện thoại như trước.
 - Playbook `khach-hoi-gia`: báo giá sớm rồi hỏi đúng một câu, ví dụ "Không biết hoá đơn tiền điện nhà mình khoảng bao nhiêu một tháng để em tư vấn thêm ạ?".
+
+**Quyết định của doanh nghiệp (2026-10-26, 2026-10-28), bot báo giá tất cả gói đang bán trong slm_v2:**
+1. **Hoá đơn → kWh:** giá phẳng **3.500 đ/kWh** (bảng công thức), không dùng biểu giá bậc thang.
+2. **Giá:** theo `tong_gia` trong slm_v2, cơ sở theo miền của khách (HN = miền Bắc, HCM = miền Nam). Mái bằng: `gia_khung_sat` đang 0 nên AI nói "phát sinh phần khung, nhân viên báo sau khảo sát".
+3. **`san_luong_toi_thieu / toi_da`:** là sản lượng điện (kWh/tháng) tối thiểu và tối đa gói có thể đạt. Lưu ý dữ liệu: quy ra kWh/kWp/tháng dao động 52–140 giữa các gói, có cặp gói cùng số tấm nhưng khoảng sản lượng đảo nhau giữa HN và HCM (98/99 so với 97/100), và cao hơn mức PV out tối đa của tháng nắng nhất (ví dụ 5 kWp ở Hà Nội tối đa khoảng 550 kWh/tháng theo EVN, slm_v2 ghi 700).
+4. **Bot được gửi link:** khách miền Nam → `slmsolar.com.vn`, miền Bắc → **chỉ `slmsolar.vn`** (doanh nghiệp đổi ngày 2026-10-28, bỏ phương án ngẫu nhiên với `slmsolar.com`), ví dụ `https://slmsolar.vn/products/158`. Khớp bảng `mien` của slm_v2 (`ten_mien` → `co_so_id`; `thong_tin_ten_mien` có hotline, email theo tên miền). Link sản phẩm: `https://<tên miền>/products/<tron_goi.id của cơ sở đó>`; đồng bộ thêm view `ai_v_mien`.
+5. **Công thức pin:** chưa có, dùng tạm công thức chung (đề xuất ở 60.3).
+6. **Đã chốt thêm (2026-10-26):** miền giá chia tại Đà Nẵng (Đà Nẵng trở vào là Nam); sản lượng và tiền tiết kiệm tính theo PV out EVN của tỉnh khách, kể cả sản lượng của từng gói (không đọc `san_luong_toi_thieu / toi_da` cho tới khi slm_v2 rà lại); công thức chọn gói tạm ở 60.3.
 
 **Doanh nghiệp đã chốt (2026-10-29):** `tong_gia` đã gồm VAT, câu điều kiện báo giá (`app.pricing.quote-conditions`) nói rõ "giá niêm yết đã gồm VAT"; cả 34 tỉnh đều phục vụ, nên chưa cần cờ `serviced` (mục 4.2.9).
