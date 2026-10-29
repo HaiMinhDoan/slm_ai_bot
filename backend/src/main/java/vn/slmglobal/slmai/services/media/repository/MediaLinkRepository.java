@@ -48,6 +48,33 @@ public class MediaLinkRepository {
                 UUID.class).stream().findFirst();
     }
 
+    /**
+     * Chuyển ảnh chính của đối tượng sang ảnh thêm (GALLERY), để chỗ cho ảnh chính mới. Dùng khi ảnh chính cũ
+     * đã bị xoá mềm: khôi phục lại thì ảnh cũ vẫn còn gắn với đối tượng.
+     */
+    public void demoteMainImage(UUID mediaId, LinkTargetType targetType, String targetKey) {
+        jdbc.update("""
+                WITH moved AS (
+                    DELETE FROM media_lien_ket
+                    WHERE media_id = :mediaId AND loai_doi_tuong = :type AND ma_doi_tuong = :key
+                      AND vai_tro = 'MAIN_IMAGE'
+                    RETURNING media_id, loai_doi_tuong, ma_doi_tuong, thu_tu)
+                INSERT INTO media_lien_ket (media_id, loai_doi_tuong, ma_doi_tuong, vai_tro, thu_tu)
+                SELECT media_id, loai_doi_tuong, ma_doi_tuong, 'GALLERY', thu_tu FROM moved
+                ON CONFLICT DO NOTHING""", new MapSqlParameterSource()
+                .addValue("mediaId", mediaId)
+                .addValue("type", targetType.name())
+                .addValue("key", targetKey));
+    }
+
+    /** Media gắn với một đối tượng (lọc danh sách theo gói) */
+    public List<UUID> mediaIdsOf(LinkTargetType targetType, String targetKey) {
+        return jdbc.queryForList("""
+                SELECT DISTINCT media_id FROM media_lien_ket WHERE loai_doi_tuong = :type AND ma_doi_tuong = :key""",
+                new MapSqlParameterSource().addValue("type", targetType.name()).addValue("key", targetKey),
+                UUID.class);
+    }
+
     public List<Link> findByMediaIds(Collection<UUID> mediaIds) {
         if (mediaIds.isEmpty()) {
             return List.of();

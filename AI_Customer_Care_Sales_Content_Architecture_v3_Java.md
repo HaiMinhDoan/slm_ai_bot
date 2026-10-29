@@ -770,6 +770,15 @@ Backend chọn nguồn theo kênh. Thứ tự mặc định cho Messenger (cấu
 - Zalo OA và TikTok DM: chỉ gửi loại media mà adapter khai báo trong capability (mục 54.1); mặc định ảnh gửi đính kèm nếu được hỗ trợ, video gửi dạng link.
 - Đăng lại media lên Facebook/TikTok/Zalo (mục 55) chỉ dùng nguồn `UPLOAD` có `quyen_su_dung` là `OWNED` hoặc `LICENSED`. URL YouTube/Facebook/TikTok không được coi là file nguồn để tải lên lại.
 
+## 6.5 Sửa, duyệt, xoá mềm media trên admin (V9, 2026-10-29)
+
+- Trang **Thư viện media** theo khuôn bảng của fsignai: lọc theo tiêu đề / mã, loại, trạng thái (kể cả *Đã xoá*), mã gói; mỗi dòng có nút sửa và xoá, mục đã xoá có nút khôi phục.
+- Form sửa (`BasicDrawer`): tiêu đề, trạng thái, quyền sử dụng, `tom_tat`, `dung_khi`, `tranh_khi`, mô tả, lời thoại (video). Chưa sửa `chu_de` vì chưa có `knowledge/rules/topics.yaml`.
+- Duyệt (`APPROVED`) cần `tom_tat`, `dung_khi` và quyền khác `NEEDS_REVIEW`. Lần duyệt đầu cấp mã `ma_danh_muc` M01, M02...; bỏ duyệt vẫn giữ mã để danh mục ổn định.
+- Xoá mềm: cột `xoa_luc`, `xoa_boi` (V9). File MinIO, nguồn và liên kết giữ nguyên để khôi phục. Danh sách admin mặc định ẩn mục đã xoá; `MediaIndexBuilder` và mọi chỗ AI chọn media phải bỏ qua `xoa_luc IS NOT NULL`.
+- Nhập lại ảnh / video trùng một media đã xoá: báo `EXISTS`, không gắn thêm liên kết. Ảnh mới nhập cho gói mà ảnh chính cũ đã xoá: ảnh cũ chuyển thành `GALLERY`, ảnh mới làm ảnh chính.
+- API: `GET/PUT /admin/media/{id}`, `DELETE /admin/media/{id}` (xoá mềm), `POST /admin/media/{id}/restore`; quản trị hệ thống và quản trị nội dung. Nhật ký `media.update`, `media.delete`, `media.restore`.
+
 ------------------------------------------------------------------------
 
 # 7. Media Selection
@@ -5072,6 +5081,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 | Thông báo nhân viên (mục 34): chuông, âm thanh, thông báo trình duyệt qua SSE | Chạy thật |
 | Catalog & báo giá trên admin: *Gói từ slm_v2*, *Thử báo giá*, *PV out EVN*. Dựng theo khuôn bảng của fsignai (`BasicTable` / `useTable`, form tìm kiếm, phân trang). Gói sửa, bật / tắt, xoá mềm và khôi phục được ngay trên admin (60.4) | Đã viết 2026-10-29, chờ triển khai bản mới |
 | Thư viện media (mục 6.3 D): nhập ảnh combo từ Google Drive vào MinIO (bucket `slm-ai-media`) | Đã nạp 24 ảnh và 11 link video Facebook (2026-10-29), đang ở trạng thái `DRAFT` nên AI chưa dùng |
+| Sửa, duyệt, xoá mềm và khôi phục media trên admin (mục 6.5) | Đã viết 2026-10-29, chờ triển khai bản mới |
 | Kiến thức: `core/` (identity, voice, guardrails), playbook `khach-hoi-gia`, `tu-van-lap-moi` | Nạp từ file trong repo, chưa có trình soạn trên web |
 
 ## 60.2 Còn thiếu
@@ -5079,7 +5089,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 **Cho MVP (Phase 0–1, mục 38, 59.7):**
 1. **Inbox admin** (doanh nghiệp yêu cầu ghi lại để làm sau): danh sách hội thoại, xem tin; duyệt / sửa / gửi nháp AI ngay trên trang (thay việc sao chép sang Meta Business Suite); nút "Trả lại AI"; chấm GOOD / BAD / EDIT; danh sách lead; công tắc dừng trên web; gán nhân viên phụ trách (để thông báo `HANDBACK_REPLY` gửi đúng người).
 2. **Lead → Sales API:** adapter `salesapi` còn trống; lead mới nằm trong CSDL của bot, chưa có trang xem lead (làm cùng Inbox admin).
-3. **Media cho AI:** admin viết `tom_tat` / `dung_khi` và duyệt ảnh combo; quyết định bot có được gửi link video Facebook không (link slmsolar.vn / slmsolar.com.vn đã cho phép ở mốc báo giá; Policy chỉ cho link có trong kết quả tool, tin trang đã gửi và trang chủ theo miền); gửi ảnh qua Messenger (Attachment Upload API, không cần MinIO công khai). 24 ảnh combo đã nạp đang chờ duyệt.
+3. **Media cho AI:** admin viết `tom_tat` / `dung_khi` và duyệt ảnh combo (form sửa đã có, mục 6.5); `MediaIndexBuilder` dựng danh mục từ mục đã duyệt, chưa xoá; quyết định bot có được gửi link video Facebook không (link slmsolar.vn / slmsolar.com.vn đã cho phép ở mốc báo giá; Policy chỉ cho link có trong kết quả tool, tin trang đã gửi và trang chủ theo miền); gửi ảnh qua Messenger (Attachment Upload API, không cần MinIO công khai). 24 ảnh combo đã nạp đang chờ duyệt.
 4. **Kiến thức v1:** chính sách bảo hành, khoảng 10 FAQ, chiến lược bán hàng (mục 58.7); Knowledge Editor cơ bản: sửa, phiên bản, phát hành, rollback (mục 5.9).
 5. **Bộ test** 100–200 câu hỏi thật và kịch bản nhiều lượt (mục 35); KPI mục tiêu và số liệu nền (mục 38, Phase 0).
 6. **Dashboard:** trang *Phân tích* hiện là trang còn sót của fsignai (gọi `/api/v1/admin/dashboard`, lỗi 404). Thay bằng số liệu của bot từ `luot_goi_ai`: chi phí AI, tỷ lệ gửi tự động, tỷ lệ nhân viên sửa nháp.

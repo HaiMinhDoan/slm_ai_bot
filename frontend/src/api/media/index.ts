@@ -1,15 +1,32 @@
 import type { AxiosResponse } from 'axios';
 import { defHttp } from '@/utils/http/axios';
 import type { PageResult } from '@/api/model/baseModel';
-import type { MediaModel, PackageImportItem, PackageImportResult } from './model/mediaModel';
+import type {
+  MediaFilterModel,
+  MediaModel,
+  MediaUpdateModel,
+  PackageImportItem,
+  PackageImportResult,
+} from './model/mediaModel';
 
 const BASE = '/api/v1/admin/media';
 
 /** Backend nhận tối đa 10 mục mỗi lần (tải ảnh mất vài giây mỗi mục) */
 export const MEDIA_IMPORT_BATCH = 10;
 
-export const mediaListApi = (params: { type?: 'IMAGE' | 'VIDEO'; page?: number; size?: number }) =>
+export const mediaListApi = (params: MediaFilterModel) =>
   defHttp.get<PageResult<MediaModel>>({ url: BASE, params });
+
+export const mediaGetApi = (id: string) => defHttp.get<MediaModel>({ url: `${BASE}/${id}` });
+
+export const mediaUpdateApi = (id: string, data: MediaUpdateModel) =>
+  defHttp.put<MediaModel>({ url: `${BASE}/${id}`, data });
+
+/** Xoá mềm: file, nguồn và liên kết giữ nguyên, khôi phục được */
+export const mediaDeleteApi = (id: string) => defHttp.delete<void>({ url: `${BASE}/${id}` });
+
+export const mediaRestoreApi = (id: string) =>
+  defHttp.post<MediaModel>({ url: `${BASE}/${id}/restore` });
 
 export const mediaImportPackagesApi = (items: PackageImportItem[], dryRun: boolean) =>
   defHttp.post<PackageImportResult[]>(

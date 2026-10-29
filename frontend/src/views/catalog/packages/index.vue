@@ -72,7 +72,6 @@
             v-for="w in record.warnings"
             :key="w"
             :color="labels[w]?.blocking ? 'red' : 'orange'"
-            class="mb-1"
           >
             {{ labels[w]?.label ?? w }}
           </Tag>

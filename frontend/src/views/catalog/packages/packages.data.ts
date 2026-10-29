@@ -135,6 +135,7 @@ export const columns: BasicColumn[] = [
     title: 'Cảnh báo dữ liệu',
     dataIndex: 'warnings',
     key: 'warnings',
+    width: 220,
     align: 'left',
     ellipsis: false,
   },

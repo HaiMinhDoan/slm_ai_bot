@@ -134,10 +134,8 @@ public class PackageMediaImportService {
         String externalId = "gdrive:" + fileId;
         Optional<MediaSource> existing = sources.findFirstBySourceTypeAndExternalId(SourceType.UPLOAD, externalId);
         if (existing.isPresent()) {
-            if (!dryRun) {
-                linkPackages(existing.get().getMediaId(), item, LinkRole.MAIN_IMAGE, warnings);
-            }
-            return PartResult.of(Outcome.EXISTS, existing.get().getMediaId(), "Ảnh đã nhập trước đó");
+            return exists(existing.get().getMediaId(), item, LinkRole.MAIN_IMAGE, dryRun, warnings,
+                    "Ảnh đã nhập trước đó");
         }
 
         DriveImageFetcher.Image img;
@@ -148,10 +146,8 @@ public class PackageMediaImportService {
         }
         Optional<MediaSource> sameFile = sources.findFirstBySha256(img.sha256());
         if (sameFile.isPresent()) {
-            if (!dryRun) {
-                linkPackages(sameFile.get().getMediaId(), item, LinkRole.MAIN_IMAGE, warnings);
-            }
-            return PartResult.of(Outcome.EXISTS, sameFile.get().getMediaId(), "Ảnh trùng nội dung với media đã có");
+            return exists(sameFile.get().getMediaId(), item, LinkRole.MAIN_IMAGE, dryRun, warnings,
+                    "Ảnh trùng nội dung với media đã có");
         }
         String summary = img.mimeType() + ", " + (img.bytes().length / 1024) + " KB"
                 + (img.width() == null ? "" : ", " + img.width() + "x" + img.height());
@@ -222,10 +218,8 @@ public class PackageMediaImportService {
         String url = "https://www.facebook.com/share/" + kind + "/" + m.group(2) + "/";
         Optional<MediaSource> existing = sources.findFirstBySourceTypeAndExternalId(SourceType.FACEBOOK, externalId);
         if (existing.isPresent()) {
-            if (!dryRun) {
-                linkPackages(existing.get().getMediaId(), item, LinkRole.RELATED, warnings);
-            }
-            return PartResult.of(Outcome.EXISTS, existing.get().getMediaId(), "Video đã nhập trước đó");
+            return exists(existing.get().getMediaId(), item, LinkRole.RELATED, dryRun, warnings,
+                    "Video đã nhập trước đó");
         }
         String note = "r".equals(kind) ? "Reel Facebook (chỉ lưu link)" : "Video Facebook (chỉ lưu link)";
         if (dryRun) {
@@ -263,7 +257,23 @@ public class PackageMediaImportService {
 
     // ---------- tiện ích ----------
 
-    /** Liên kết media với gói HN và gói HCM; gói đã có ảnh chính khác thì giữ nguyên và báo lại. */
+    /** Media đã có: bổ sung liên kết còn thiếu, trừ khi media đó đã bị xoá mềm (giữ nguyên, báo lại). */
+    private PartResult exists(UUID mediaId, Item item, LinkRole role, boolean dryRun, List<String> warnings,
+                              String note) {
+        if (items.findById(mediaId).map(MediaItem::isDeleted).orElse(false)) {
+            return PartResult.of(Outcome.EXISTS, mediaId,
+                    note + ", nhưng đã bị xoá trong Thư viện media: khôi phục (lọc Đã xoá) nếu muốn dùng lại");
+        }
+        if (!dryRun) {
+            linkPackages(mediaId, item, role, warnings);
+        }
+        return PartResult.of(Outcome.EXISTS, mediaId, note);
+    }
+
+    /**
+     * Liên kết media với gói HN và gói HCM. Gói đã có ảnh chính khác thì giữ nguyên và báo lại; riêng ảnh chính cũ
+     * đã bị xoá mềm thì chuyển nó thành ảnh thêm (GALLERY) để ảnh mới làm ảnh chính.
+     */
     private void linkPackages(UUID mediaId, Item item, LinkRole role, List<String> warnings) {
         tx.executeWithoutResult(st -> {
             for (Integer packageId : new Integer[]{item.tronGoiId(), item.tronGoiIdHcm()}) {
@@ -271,6 +281,12 @@ public class PackageMediaImportService {
                     continue;
                 }
                 String key = String.valueOf(packageId);
+                if (role == LinkRole.MAIN_IMAGE) {
+                    links.mainImageOf(LinkTargetType.PACKAGE, key)
+                            .filter(other -> !other.equals(mediaId))
+                            .filter(other -> items.findById(other).map(MediaItem::isDeleted).orElse(false))
+                            .ifPresent(deleted -> links.demoteMainImage(deleted, LinkTargetType.PACKAGE, key));
+                }
                 boolean inserted = links.insertIfAbsent(mediaId, LinkTargetType.PACKAGE, key, role, 0);
                 if (!inserted && role == LinkRole.MAIN_IMAGE) {
                     links.mainImageOf(LinkTargetType.PACKAGE, key)

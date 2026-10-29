@@ -100,4 +100,19 @@ public class MediaItem {
     /** Do trigger dat_sua_luc (V1) cập nhật */
     @Column(name = "sua_luc", insertable = false, updatable = false)
     private OffsetDateTime updatedAt;
+
+    /** Email người sửa gần nhất trên admin (V9) */
+    @Column(name = "sua_boi")
+    private String updatedBy;
+
+    /** Xoá mềm (V9): ẩn khỏi danh sách và AI, file và liên kết giữ nguyên để khôi phục */
+    @Column(name = "xoa_luc")
+    private OffsetDateTime deletedAt;
+
+    @Column(name = "xoa_boi")
+    private String deletedBy;
+
+    public boolean isDeleted() {
+        return deletedAt != null;
+    }
 }

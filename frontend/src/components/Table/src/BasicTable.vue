@@ -359,8 +359,12 @@
     }
 
     .ant-table-cell {
+      // Tag không rộng hơn ô (chữ dài xuống dòng trong tag) để không tràn sang cột bên cạnh, nhất là cột
+      // Thao tác cố định bên phải; lề đều 2 bên giữ tag đứng giữa ô và chừa khoảng cách khi có nhiều tag
       .ant-tag {
-        margin-right: 0;
+        max-width: 100%;
+        margin: 2px;
+        white-space: normal;
       }
     }
 
