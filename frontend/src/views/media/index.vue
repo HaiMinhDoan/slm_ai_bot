@@ -2,7 +2,7 @@
   <PageWrapper dense contentFullHeight fixedHeight>
     <BasicTable @register="registerTable">
       <template #toolbar>
-        <Button type="primary" @click="importOpen = true">Nhập combo từ Drive</Button>
+        <Button type="primary" @click="openImportModal(true, {})">Nhập combo từ Drive</Button>
       </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'preview'">
@@ -48,16 +48,16 @@
       </template>
     </BasicTable>
 
-    <ImportModal v-model:open="importOpen" @imported="reload()" />
+    <ImportModal @register="registerImportModal" @success="reload" />
   </PageWrapper>
 </template>
 
 <script lang="ts" setup>
-  import { ref } from 'vue';
   import { Tag } from 'ant-design-vue';
   import { Button } from '@/components/Button';
   import { BasicTable, useTable, type BasicColumn, type FormSchema } from '@/components/Table';
   import { PageWrapper } from '@/components/Page';
+  import { useModal } from '@/components/Modal';
   import { mediaListApi } from '@/api/media';
   import type { MediaModel, MediaSourceModel } from '@/api/media/model/mediaModel';
   import { formatToDateTime } from '@/utils/dateUtil';
@@ -84,7 +84,7 @@
     SLM_V2: 'slm_v2',
   };
 
-  const importOpen = ref(false);
+  const [registerImportModal, { openModal: openImportModal }] = useModal();
 
   const columns: BasicColumn[] = [
     { title: 'Xem', key: 'preview', dataIndex: 'preview', width: 90 },

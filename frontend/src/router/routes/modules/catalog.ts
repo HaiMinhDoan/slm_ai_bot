@@ -8,9 +8,8 @@ const catalog: AppRouteModule = {
   path: '/catalog',
   name: 'Catalog',
   component: LAYOUT,
-  redirect: '/catalog/index',
+  redirect: '/catalog/packages',
   meta: {
-    hideChildrenInMenu: true,
     orderNo: 35,
     icon: 'ant-design:shopping-outlined',
     title: 'Catalog & báo giá',
@@ -18,13 +17,30 @@ const catalog: AppRouteModule = {
   },
   children: [
     {
-      path: 'index',
-      name: 'CatalogPricing',
-      component: () => import('@/views/catalog/index.vue'),
+      path: 'packages',
+      name: 'CatalogPackages',
+      component: () => import('@/views/catalog/packages/index.vue'),
       meta: {
-        title: 'Catalog & báo giá',
-        icon: 'ant-design:shopping-outlined',
-        hideMenu: true,
+        title: 'Gói từ slm_v2',
+        icon: 'ant-design:appstore-outlined',
+      },
+    },
+    {
+      path: 'advise',
+      name: 'CatalogAdvise',
+      component: () => import('@/views/catalog/advise/index.vue'),
+      meta: {
+        title: 'Thử báo giá',
+        icon: 'ant-design:calculator-outlined',
+      },
+    },
+    {
+      path: 'pvout',
+      name: 'CatalogPvout',
+      component: () => import('@/views/catalog/pvout/index.vue'),
+      meta: {
+        title: 'PV out EVN',
+        icon: 'ant-design:line-chart-outlined',
       },
     },
   ],

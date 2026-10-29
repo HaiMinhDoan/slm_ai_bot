@@ -5107,7 +5107,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 ## 60.4 Mốc báo giá (đã viết 2026-10-28)
 
 **Đồng bộ catalog** (`services/catalog`, `adapters/slmv2`, migration V7):
-- `CatalogSyncJob` mỗi 10 phút (lần đầu 30 giây sau khởi động) và nút "Đồng bộ ngay" trên trang *Catalog & báo giá*. Đọc 12 view `ai_v_*` bằng `ai_sync` trong một transaction REPEATABLE READ, READ ONLY; mỗi lần mở một kết nối rồi đóng.
+- `CatalogSyncJob` mỗi 10 phút (lần đầu 30 giây sau khởi động) và nút "Đồng bộ ngay" trên trang *Catalog & báo giá → Gói từ slm_v2*. Đọc 12 view `ai_v_*` (tài khoản theo `SLM_V2_DB_USERNAME`, hiện là `postgres` theo quyết định của doanh nghiệp 2026-10-29) trong một transaction REPEATABLE READ, READ ONLY; mỗi lần mở một kết nối rồi đóng.
 - Ghi `dm_thuong_hieu`, `dm_co_so`, `dm_vat_tu`, `dm_tron_goi`, `dm_vat_tu_tron_goi`, `dm_ten_mien`, lịch sử ở `dm_lich_su_dong_bo`. Upsert theo `id_nguon`, bỏ qua dòng có `ma_bam` không đổi; dòng biến mất ở nguồn thì ngừng, không xoá.
 - `dm_tron_goi` có thêm cột tính từ thành phần: `so_tam_pin`, `cong_suat_tam_wp`, `cong_suat_inverter_kw`, `luu_tru_kwh` (cộng `dung_luong` của nhóm `PIN_LUU_TRU`).
 - `dm_gia_vat_tu` (giá lẻ vật tư) và tool `tra_cuu_vat_tu` để sau: chưa có nhu cầu.
@@ -5116,7 +5116,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 **Tỉnh và PV out** (`services/sizing`):
 - `data/tinh-thanh.json`: 34 tỉnh, 63 tỉnh cũ, tên thường gọi (Sài Gòn, Vũng Tàu, Nha Trang, Đà Lạt...), miền và cơ sở giá. Tìm tỉnh trong địa chỉ dài, ưu tiên tên đứng sau cùng; không nhận ra thì không đoán.
 - `nl_bang_pvout` + `nl_pvout_tinh`: bảng PV out theo năm, đã nạp bảng EVN 2026. Năm chưa có bảng thì dùng bảng gần nhất trước đó.
-- **Nạp lại mỗi năm** (doanh nghiệp yêu cầu 2026-10-28): tab *PV out EVN* cho dán bảng của công văn mới, kiểm tra đủ 34 tỉnh × 12 tháng, so với năm trước rồi mới lưu, ghi nhật ký thao tác. `PvoutReminderJob` báo quản trị (`DATA_UPDATE_DUE`): từ 1/12 nhắc chuẩn bị bảng năm sau; từ 1/2 năm mới vẫn chưa có thì cảnh báo bot đang dùng bảng năm trước.
+- **Nạp lại mỗi năm** (doanh nghiệp yêu cầu 2026-10-28): trang *Catalog & báo giá → PV out EVN* cho dán bảng của công văn mới, kiểm tra đủ 34 tỉnh × 12 tháng, so với năm trước rồi mới lưu, ghi nhật ký thao tác. `PvoutReminderJob` báo quản trị (`DATA_UPDATE_DUE`): từ 1/12 nhắc chuẩn bị bảng năm sau; từ 1/2 năm mới vẫn chưa có thì cảnh báo bot đang dùng bảng năm trước.
 
 **Tool cho Claude** (`CustomerChatTools`, `PackageAdvisor`), schema strict, vòng lặp tối đa 3 lần gọi tool mỗi lượt (vòng sau tắt tool):
 - `tim_goi_phu_hop`: chưa có tiền điện → giá khởi điểm theo loại hệ / số pha của miền khách và gói bán chạy; có tiền điện → gói rẻ nhất đáp ứng công thức 60.3, chưa biết tỉnh hoặc ngày / đêm thì trả khoảng (gói nhỏ nhất và lớn nhất). Kèm sản lượng theo PV out tháng của tỉnh, tiền tiết kiệm và hoàn vốn ước tính (điện tự dùng × 3.500 đ/kWh, không tính bán điện dư), link theo miền, điều kiện báo giá, thông tin còn thiếu. Trường null được điền từ hồ sơ tư vấn.

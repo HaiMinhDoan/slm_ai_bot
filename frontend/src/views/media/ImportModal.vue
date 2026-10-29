@@ -1,12 +1,18 @@
 <template>
-  <Modal
-    :open="open"
+  <BasicModal
+    v-bind="$attrs"
+    @register="registerModal"
     title="Nhập ảnh / video combo"
-    width="920px"
-    :footer="null"
-    :maskClosable="false"
-    @cancel="close"
+    width="960px"
+    okText="Nhập thật"
+    :okButtonProps="{ disabled: !canRun }"
+    :closeFunc="handleClose"
+    @ok="run(false)"
   >
+    <template #insertFooter>
+      <Button :loading="running && dryRun" :disabled="!canRun" @click="run(true)">Chạy thử</Button>
+    </template>
+
     <Alert
       type="info"
       show-icon
@@ -21,30 +27,18 @@
     <div class="actions">
       <span v-if="parsed.error" class="error">{{ parsed.error }}</span>
       <span v-else-if="parsed.items.length">{{ parsed.items.length }} combo</span>
-      <Space>
-        <Button :loading="running && dryRun" :disabled="!canRun" @click="run(true)"
-          >Chạy thử</Button
-        >
-        <Button
-          type="primary"
-          :loading="running && !dryRun"
-          :disabled="!canRun"
-          @click="run(false)"
-        >
-          Nhập thật
-        </Button>
-      </Space>
     </div>
     <Progress v-if="running" :percent="progress" size="small" class="mb-2" />
 
     <Table
       v-if="results.length"
-      :dataSource="results"
       :columns="columns"
+      :data-source="results"
       :pagination="false"
-      size="small"
-      rowKey="tronGoiId"
       :scroll="{ y: 360 }"
+      rowKey="tronGoiId"
+      size="small"
+      bordered
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'image' || column.key === 'video'">
@@ -59,12 +53,14 @@
       </template>
     </Table>
     <div v-if="results.length" class="summary">{{ summary }}</div>
-  </Modal>
+  </BasicModal>
 </template>
 
 <script lang="ts" setup>
   import { computed, ref } from 'vue';
-  import { Alert, Button, Input, Modal, Progress, Space, Table, Tag } from 'ant-design-vue';
+  // Dự án không đăng ký sẵn component Ant Design: import ngay trong file dùng nó
+  import { Alert, Button, Input, Progress, Table, Tag } from 'ant-design-vue';
+  import { BasicModal, useModalInner } from '@/components/Modal';
   import { MEDIA_IMPORT_BATCH, mediaImportPackagesApi } from '@/api/media';
   import type {
     ImportOutcome,
@@ -74,8 +70,9 @@
 
   const Textarea = Input.TextArea;
 
-  defineProps<{ open: boolean }>();
-  const emit = defineEmits<{ (e: 'update:open', v: boolean): void; (e: 'imported'): void }>();
+  defineOptions({ name: 'MediaImportModal' });
+
+  const emit = defineEmits(['success', 'register']);
 
   const OUTCOME_LABELS: Record<ImportOutcome, string> = {
     CREATED: 'Đã nhập',
@@ -104,6 +101,12 @@
   const dryRun = ref(true);
   const progress = ref(0);
   const results = ref<PackageImportResult[]>([]);
+
+  const [registerModal, { changeOkLoading }] = useModalInner(() => {
+    raw.value = '';
+    progress.value = 0;
+    results.value = [];
+  });
 
   const parsed = computed<{ items: PackageImportItem[]; error?: string }>(() => {
     if (!raw.value.trim()) return { items: [] };
@@ -138,6 +141,7 @@
     const items = parsed.value.items;
     running.value = true;
     dryRun.value = isDryRun;
+    if (!isDryRun) changeOkLoading(true);
     progress.value = 0;
     results.value = [];
     try {
@@ -147,15 +151,16 @@
         results.value = [...results.value, ...res];
         progress.value = Math.round(((i + batch.length) / items.length) * 100);
       }
-      if (!isDryRun) emit('imported');
+      if (!isDryRun) emit('success');
     } finally {
       running.value = false;
+      changeOkLoading(false);
     }
   }
 
-  function close() {
-    if (running.value) return;
-    emit('update:open', false);
+  /** Đang nhập dở thì không cho đóng, tránh tưởng đã xong */
+  async function handleClose() {
+    return !running.value;
   }
 </script>
 

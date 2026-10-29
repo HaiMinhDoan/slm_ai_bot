@@ -9,12 +9,15 @@
     <div v-if="pkg.tam_pin" class="line">Tấm pin: {{ pkg.tam_pin }}</div>
     <div v-if="pkg.inverter" class="line">Inverter: {{ pkg.inverter }}</div>
     <div v-if="pkg.luu_tru" class="line">
-      Pin lưu trữ: {{ pkg.luu_tru }}<span v-if="pkg.hang_pin_luu_tru"> {{ pkg.hang_pin_luu_tru }}</span>
+      Pin lưu trữ: {{ pkg.luu_tru
+      }}<span v-if="pkg.hang_pin_luu_tru"> {{ pkg.hang_pin_luu_tru }}</span>
     </div>
     <template v-if="pkg.san_luong_uoc_tinh">
       <div class="line">
-        Sản lượng: {{ pkg.san_luong_uoc_tinh.trung_binh }} ({{ pkg.san_luong_uoc_tinh.thang_thap_nhat }} đến
-        {{ pkg.san_luong_uoc_tinh.thang_cao_nhat }})
+        Sản lượng: {{ pkg.san_luong_uoc_tinh.trung_binh }} ({{
+          pkg.san_luong_uoc_tinh.thang_thap_nhat
+        }}
+        đến {{ pkg.san_luong_uoc_tinh.thang_cao_nhat }})
       </div>
     </template>
     <div v-if="pkg.tiet_kiem_uoc_tinh" class="line">

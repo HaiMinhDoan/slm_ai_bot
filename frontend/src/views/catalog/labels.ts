@@ -22,6 +22,11 @@ export const BRANCH_LABELS: Record<string, string> = {
   HCM: 'HCM (miền Nam)',
 };
 
+export const PHASE_OPTIONS = [
+  { label: '1 pha', value: 1 },
+  { label: '3 pha', value: 3 },
+];
+
 export function options<T extends string>(labels: Record<T, string>) {
   return (Object.keys(labels) as T[]).map((value) => ({ value, label: labels[value] }));
 }

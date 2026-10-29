@@ -17,7 +17,9 @@
         </div>
         <div class="setting">
           <Badge :status="notificationStore.connected ? 'success' : 'error'" />
-          <span>{{ notificationStore.connected ? 'Đang nhận thông báo' : 'Mất kết nối, đang thử lại' }}</span>
+          <span>{{
+            notificationStore.connected ? 'Đang nhận thông báo' : 'Mất kết nối, đang thử lại'
+          }}</span>
         </div>
       </div>
       <Alert
@@ -53,24 +55,22 @@
       </template>
     </BasicTable>
 
-    <NotificationDetailDrawer v-model:open="detailOpen" :notificationId="detailId" @read="onRead" />
+    <NotificationDetailDrawer @register="registerDrawer" @read="onRead" />
   </PageWrapper>
 </template>
 
 <script lang="ts" setup>
-  import { computed, onMounted, ref, watch } from 'vue';
+  import { computed, onMounted, watch } from 'vue';
   import { useRoute } from 'vue-router';
   import { Alert, Badge, Card, Switch, Tag } from 'ant-design-vue';
   import { Button } from '@/components/Button';
   import { BasicTable, useTable, type BasicColumn, type FormSchema } from '@/components/Table';
   import { PageWrapper } from '@/components/Page';
+  import { useDrawer } from '@/components/Drawer';
   import { useMessage } from '@/hooks/web/useMessage';
   import { notificationListApi } from '@/api/notification';
   import type { NotificationModel } from '@/api/notification/model/notificationModel';
-  import {
-    desktopNotificationSupported,
-    useNotificationStore,
-  } from '@/store/modules/notification';
+  import { desktopNotificationSupported, useNotificationStore } from '@/store/modules/notification';
   import { playNotificationSound } from '@/utils/notifySound';
   import { formatToDateTime } from '@/utils/dateUtil';
   import NotificationDetailDrawer from './NotificationDetailDrawer.vue';
@@ -81,11 +81,13 @@
   const notificationStore = useNotificationStore();
   const { createMessage } = useMessage();
   const route = useRoute();
-  const detailOpen = ref(false);
-  const detailId = ref<number>();
+  const [registerDrawer, { openDrawer }] = useDrawer();
   const desktopSupported = desktopNotificationSupported();
   const permissionDenied = computed(
-    () => desktopSupported && typeof Notification !== 'undefined' && Notification.permission === 'denied',
+    () =>
+      desktopSupported &&
+      typeof Notification !== 'undefined' &&
+      Notification.permission === 'denied',
   );
 
   const columns: BasicColumn[] = [
@@ -148,8 +150,7 @@
   });
 
   function openDetail(record: Recordable) {
-    detailId.value = (record as NotificationModel).id;
-    detailOpen.value = true;
+    openDrawer(true, { id: (record as NotificationModel).id });
   }
 
   function onRead() {
@@ -180,10 +181,7 @@
   // Mở từ chuông / thông báo hệ điều hành: /notifications/index?id=123
   function openFromQuery() {
     const id = Number(route.query.id);
-    if (id > 0) {
-      detailId.value = id;
-      detailOpen.value = true;
-    }
+    if (id > 0) openDrawer(true, { id });
   }
   onMounted(openFromQuery);
   watch(() => route.query.id, openFromQuery);
