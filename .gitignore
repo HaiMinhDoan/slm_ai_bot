@@ -2,6 +2,8 @@
 
 # Cấu hình triển khai chứa mật khẩu thật; chỉ commit .env.example
 .env
+.env.bak.*
+server-env.sh
 
 # Build
 backend/target/
