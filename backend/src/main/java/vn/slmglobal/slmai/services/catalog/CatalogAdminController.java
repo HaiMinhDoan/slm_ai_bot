@@ -3,13 +3,16 @@ package vn.slmglobal.slmai.services.catalog;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -42,6 +45,7 @@ public class CatalogAdminController {
     private final CatalogSyncService syncService;
     private final CatalogRepository repository;
     private final PackageAdvisor advisor;
+    private final CatalogPackageAdminService packageAdmin;
 
     public record StatusResponse(boolean configured, String version, CatalogRepository.SyncRun lastSuccess,
                                  List<CatalogRepository.SyncRun> runs) {
@@ -80,6 +84,49 @@ public class CatalogAdminController {
         Page<CatalogPackage> result = repository.findPackages(
                 new CatalogRepository.PackageFilter(keyword, branchCode, systemType, phases, status), pageable);
         return ApiResponses.ok(PageResponse.of(result, p -> p), "CATALOG_PACKAGES_SUCCESS");
+    }
+
+    @Operation(summary = "Một gói kèm số liệu slm_v2 và điều chỉnh của bot, để mở form sửa")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN, RoleCode.STAFF})
+    @GetMapping("/packages/{id}")
+    public ResponseEntity<ResponseData<CatalogPackageAdminService.PackageEdit>> packageEdit(@PathVariable int id) {
+        return ApiResponses.ok(packageAdmin.edit(id), "CATALOG_PACKAGE_SUCCESS");
+    }
+
+    @Operation(summary = "Sửa gói", description = "Chỉ áp dụng cho bot: slm_v2 không đổi, đồng bộ không đè mất. "
+            + "Trường để trống hoặc trùng số liệu slm_v2 thì bot dùng số liệu slm_v2.")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN})
+    @PutMapping("/packages/{id}")
+    public ResponseEntity<ResponseData<CatalogPackage>> updatePackage(
+            @PathVariable int id, @Valid @RequestBody CatalogPackageAdminService.UpdateRequest request) {
+        return ApiResponses.ok(packageAdmin.update(RequestContext.requireAuthInfo(), id, request),
+                "CATALOG_PACKAGE_UPDATED");
+    }
+
+    @Operation(summary = "Bật / tắt nhiều gói trong bot (gói tắt không được gợi ý, không báo giá)")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN})
+    @PostMapping("/packages/set-active")
+    public ResponseEntity<ResponseData<Map<String, Integer>>> setPackagesActive(
+            @Valid @RequestBody CatalogPackageAdminService.SetActiveRequest request) {
+        int affected = packageAdmin.setActive(RequestContext.requireAuthInfo(), request);
+        return ApiResponses.ok(Map.of("affected", affected),
+                request.active() ? "CATALOG_PACKAGES_ENABLED" : "CATALOG_PACKAGES_DISABLED");
+    }
+
+    @Operation(summary = "Xoá mềm gói: ẩn khỏi danh sách và bot, khôi phục được")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN})
+    @DeleteMapping("/packages/{id}")
+    public ResponseEntity<ResponseData<Void>> deletePackage(@PathVariable int id) {
+        packageAdmin.delete(RequestContext.requireAuthInfo(), id);
+        return ApiResponses.ok(null, "CATALOG_PACKAGE_DELETED");
+    }
+
+    @Operation(summary = "Khôi phục gói đã xoá mềm")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN})
+    @PostMapping("/packages/{id}/restore")
+    public ResponseEntity<ResponseData<CatalogPackage>> restorePackage(@PathVariable int id) {
+        return ApiResponses.ok(packageAdmin.restore(RequestContext.requireAuthInfo(), id),
+                "CATALOG_PACKAGE_RESTORED");
     }
 
     @Operation(summary = "Nhãn tiếng Việt của mã cảnh báo dữ liệu")

@@ -18,6 +18,8 @@ import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -39,12 +41,32 @@ public class CatalogRepository {
     private final NamedParameterJdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
 
-    /** Gói đọc cho tool (kèm tên thương hiệu) */
+    /**
+     * Gói đọc cho tool và admin (kèm tên thương hiệu): số liệu slm_v2 đã ghép điều chỉnh của bot (V8).
+     * warnings và recommendable tính theo số liệu sau điều chỉnh; edited là các trường đang khác slm_v2.
+     *
+     * @param active   còn bán ở slm_v2
+     * @param disabled admin tắt gói này trong bot
+     * @param deleted  admin đã xoá mềm (chỉ hiện khi lọc "Đã xoá")
+     */
     public record CatalogPackage(int id, String branchCode, Integer familyId, String familyName, String name,
                                  String systemType, Integer phases, Double kwp, Integer panelCount, Double panelWp,
                                  Double inverterKw, double storageKwh, Double totalPrice, double steelFramePrice,
                                  boolean bestSeller, boolean active, boolean recommendable, List<String> warnings,
-                                 String panelBrand, String inverterBrand, String batteryBrand) {
+                                 String panelBrand, String inverterBrand, String batteryBrand,
+                                 boolean disabled, boolean deleted, List<String> edited, String note) {
+    }
+
+    /** Số liệu gốc từ slm_v2 của các trường admin sửa được */
+    public record PackageSource(String name, String systemType, Integer phases, Double kwp, Integer panelCount,
+                                Double panelWp, double storageKwh, Double totalPrice, boolean bestSeller) {
+    }
+
+    /** Một dòng dm_tron_goi_dieu_chinh; trường số liệu null là dùng giá trị slm_v2 */
+    public record PackageOverride(String name, String systemType, Integer phases, Double kwp, Integer panelCount,
+                                  Double panelWp, Double storageKwh, Double totalPrice, Boolean bestSeller,
+                                  boolean disabled, String note, OffsetDateTime deletedAt, String deletedBy,
+                                  String updatedBy, OffsetDateTime updatedAt) {
     }
 
     /** Thành phần hiển thị cho khách của một gói */
@@ -277,22 +299,32 @@ public class CatalogRepository {
     // ------------------------------------------------------------------ đọc cho tool báo giá
 
     private static final String PACKAGE_SELECT = """
-            SELECT g.*, tp.ten AS th_tam_pin, ti.ten AS th_inverter, tl.ten AS th_pin
+            SELECT g.*, tp.ten AS th_tam_pin, ti.ten AS th_inverter, tl.ten AS th_pin,
+                   dc.ten AS dc_ten, dc.loai_he_thong AS dc_loai_he_thong, dc.so_pha AS dc_so_pha,
+                   dc.cong_suat_kwp AS dc_cong_suat_kwp, dc.so_tam_pin AS dc_so_tam_pin,
+                   dc.cong_suat_tam_wp AS dc_cong_suat_tam_wp, dc.luu_tru_kwh AS dc_luu_tru_kwh,
+                   dc.tong_gia AS dc_tong_gia, dc.ban_chay AS dc_ban_chay, COALESCE(dc.tat, false) AS dc_tat,
+                   dc.xoa_luc AS dc_xoa_luc, dc.ghi_chu AS dc_ghi_chu
             FROM dm_tron_goi g
+            LEFT JOIN dm_tron_goi_dieu_chinh dc ON dc.id_nguon = g.id_nguon
             LEFT JOIN dm_thuong_hieu tp ON tp.id_nguon = g.thuong_hieu_tam_pin_id
             LEFT JOIN dm_thuong_hieu ti ON ti.id_nguon = g.thuong_hieu_inverter_id
             LEFT JOIN dm_thuong_hieu tl ON tl.id_nguon = g.thuong_hieu_pin_luu_tru_id
             """;
 
-    /** Gói đang bán, được gợi ý, của một cơ sở giá */
+    /**
+     * Gói đang bán, được gợi ý, của một cơ sở giá. Lọc recommendable sau khi ghép điều chỉnh:
+     * admin sửa đúng trường bị cảnh báo (ví dụ công suất) thì gói được gợi ý lại, tắt hoặc xoá thì thôi.
+     */
     public List<CatalogPackage> recommendablePackages(String branchCode) {
-        return jdbc.query(PACKAGE_SELECT + " WHERE g.ma_co_so = :coSo AND g.dang_dung AND g.duoc_goi_y "
-                + "ORDER BY g.tong_gia, g.id_nguon", Map.of("coSo", branchCode), packageMapper());
+        return jdbc.query(PACKAGE_SELECT + " WHERE g.ma_co_so = :coSo AND g.dang_dung "
+                        + "ORDER BY COALESCE(dc.tong_gia, g.tong_gia), g.id_nguon", Map.of("coSo", branchCode),
+                packageMapper()).stream().filter(CatalogPackage::recommendable).toList();
     }
 
     public boolean hasRecommendablePackages() {
-        return Boolean.TRUE.equals(jdbc.queryForObject(
-                "SELECT EXISTS (SELECT 1 FROM dm_tron_goi WHERE dang_dung AND duoc_goi_y)", Map.of(), Boolean.class));
+        return jdbc.query(PACKAGE_SELECT + " WHERE g.dang_dung", Map.of(), packageMapper()).stream()
+                .anyMatch(CatalogPackage::recommendable);
     }
 
     public List<CatalogPackage> allPackages() {
@@ -303,7 +335,9 @@ public class CatalogRepository {
     /**
      * Bộ lọc danh sách gói trên admin; trường null là không lọc.
      *
-     * @param status RECOMMENDABLE, BLOCKED (đang bán nhưng bị chặn gợi ý), INACTIVE, WARNING (có cảnh báo dữ liệu)
+     * @param status RECOMMENDABLE, BLOCKED (đang bán nhưng bị chặn vì dữ liệu), DISABLED (admin tắt),
+     *               INACTIVE (ngừng bán ở slm_v2), EDITED (đã sửa), WARNING (có cảnh báo dữ liệu),
+     *               DELETED (đã xoá mềm; mọi lựa chọn khác đều bỏ gói đã xoá)
      */
     public record PackageFilter(String keyword, String branchCode, String systemType, Integer phases, String status) {
     }
@@ -325,13 +359,21 @@ public class CatalogRepository {
     }
 
     private static boolean matchesStatus(CatalogPackage p, String status) {
+        if ("DELETED".equals(status)) {
+            return p.deleted();
+        }
+        if (p.deleted()) {
+            return false;
+        }
         if (isBlank(status)) {
             return true;
         }
         return switch (status) {
-            case "RECOMMENDABLE" -> p.active() && p.recommendable();
-            case "BLOCKED" -> p.active() && !p.recommendable();
+            case "RECOMMENDABLE" -> p.recommendable();
+            case "BLOCKED" -> p.active() && !p.disabled() && !p.recommendable();
+            case "DISABLED" -> p.disabled();
             case "INACTIVE" -> !p.active();
+            case "EDITED" -> !p.edited().isEmpty();
             case "WARNING" -> !p.warnings().isEmpty();
             default -> true;
         };
@@ -346,14 +388,91 @@ public class CatalogRepository {
                 .stream().findFirst();
     }
 
-    /** Gói cùng tên, cùng nhóm ở cơ sở giá kia (mỗi gói có một bản HN và một bản HCM) */
+    /**
+     * Gói cùng tên, cùng nhóm ở cơ sở giá kia (mỗi gói có một bản HN và một bản HCM). So theo tên ở slm_v2,
+     * không theo tên admin đã sửa; bỏ gói đã tắt hoặc đã xoá.
+     */
     public Optional<CatalogPackage> findTwin(CatalogPackage p, String branchCode) {
         return jdbc.query(PACKAGE_SELECT + """
-                 WHERE g.ma_co_so = :coSo AND g.dang_dung AND lower(trim(g.ten)) = lower(trim(:ten))
+                 WHERE g.ma_co_so = :coSo AND g.dang_dung
+                   AND lower(trim(g.ten)) = (SELECT lower(trim(ten)) FROM dm_tron_goi WHERE id_nguon = :id)
                    AND g.nhom_tron_goi_id IS NOT DISTINCT FROM :nhom
+                   AND dc.xoa_luc IS NULL AND NOT COALESCE(dc.tat, false)
                  ORDER BY g.duoc_goi_y DESC, g.id_nguon LIMIT 1""",
-                new MapSqlParameterSource().addValue("coSo", branchCode).addValue("ten", p.name())
+                new MapSqlParameterSource().addValue("coSo", branchCode).addValue("id", p.id())
                         .addValue("nhom", p.familyId()), packageMapper()).stream().findFirst();
+    }
+
+    // ------------------------------------------------------------------ điều chỉnh của admin (V8)
+
+    public Optional<PackageSource> findSource(int id) {
+        return jdbc.query("SELECT * FROM dm_tron_goi WHERE id_nguon = :id", Map.of("id", id),
+                (rs, i) -> new PackageSource(rs.getString("ten"), rs.getString("loai_he_thong"),
+                        integer(rs, "so_pha"), decimal(rs, "cong_suat_kwp"), integer(rs, "so_tam_pin"),
+                        decimal(rs, "cong_suat_tam_wp"), rs.getDouble("luu_tru_kwh"), decimal(rs, "tong_gia"),
+                        rs.getBoolean("ban_chay"))).stream().findFirst();
+    }
+
+    public Optional<PackageOverride> findOverride(int id) {
+        return jdbc.query("SELECT * FROM dm_tron_goi_dieu_chinh WHERE id_nguon = :id", Map.of("id", id),
+                (rs, i) -> new PackageOverride(rs.getString("ten"), rs.getString("loai_he_thong"),
+                        integer(rs, "so_pha"), decimal(rs, "cong_suat_kwp"), integer(rs, "so_tam_pin"),
+                        decimal(rs, "cong_suat_tam_wp"), decimal(rs, "luu_tru_kwh"), decimal(rs, "tong_gia"),
+                        (Boolean) rs.getObject("ban_chay"), rs.getBoolean("tat"), rs.getString("ghi_chu"),
+                        rs.getObject("xoa_luc", OffsetDateTime.class), rs.getString("xoa_boi"),
+                        rs.getString("sua_boi"), rs.getObject("sua_luc", OffsetDateTime.class)))
+                .stream().findFirst();
+    }
+
+    /** Ghi số liệu sửa, cờ tắt, ghi chú; không đụng trạng thái xoá */
+    public void saveOverride(int id, PackageOverride o, String actor) {
+        jdbc.update("""
+                INSERT INTO dm_tron_goi_dieu_chinh (id_nguon, ten, loai_he_thong, so_pha, cong_suat_kwp, so_tam_pin,
+                                                    cong_suat_tam_wp, luu_tru_kwh, tong_gia, ban_chay, tat, ghi_chu,
+                                                    sua_boi)
+                VALUES (:id, :ten, :loai, :pha, :kwp, :soTam, :tamWp, :luuTru, :gia, :banChay, :tat, :ghiChu, :actor)
+                ON CONFLICT (id_nguon) DO UPDATE SET
+                    ten = EXCLUDED.ten, loai_he_thong = EXCLUDED.loai_he_thong, so_pha = EXCLUDED.so_pha,
+                    cong_suat_kwp = EXCLUDED.cong_suat_kwp, so_tam_pin = EXCLUDED.so_tam_pin,
+                    cong_suat_tam_wp = EXCLUDED.cong_suat_tam_wp, luu_tru_kwh = EXCLUDED.luu_tru_kwh,
+                    tong_gia = EXCLUDED.tong_gia, ban_chay = EXCLUDED.ban_chay, tat = EXCLUDED.tat,
+                    ghi_chu = EXCLUDED.ghi_chu, sua_boi = EXCLUDED.sua_boi""",
+                new MapSqlParameterSource().addValue("id", id).addValue("ten", o.name())
+                        .addValue("loai", o.systemType()).addValue("pha", o.phases()).addValue("kwp", o.kwp())
+                        .addValue("soTam", o.panelCount()).addValue("tamWp", o.panelWp())
+                        .addValue("luuTru", o.storageKwh()).addValue("gia", o.totalPrice())
+                        .addValue("banChay", o.bestSeller()).addValue("tat", o.disabled())
+                        .addValue("ghiChu", o.note()).addValue("actor", actor));
+    }
+
+    /** Bật / tắt nhiều gói; trả số gói có thật được ghi */
+    public int setDisabled(Collection<Integer> ids, boolean disabled, String actor) {
+        if (ids.isEmpty()) {
+            return 0;
+        }
+        return jdbc.update("""
+                INSERT INTO dm_tron_goi_dieu_chinh (id_nguon, tat, sua_boi)
+                SELECT id_nguon, :tat, :actor FROM dm_tron_goi WHERE id_nguon IN (:ids)
+                ON CONFLICT (id_nguon) DO UPDATE SET tat = EXCLUDED.tat, sua_boi = EXCLUDED.sua_boi""",
+                new MapSqlParameterSource().addValue("ids", ids).addValue("tat", disabled).addValue("actor", actor));
+    }
+
+    /** Xoá mềm; gói đã xoá thì không ghi lại thời điểm xoá */
+    public boolean softDelete(int id, String actor) {
+        return jdbc.update("""
+                INSERT INTO dm_tron_goi_dieu_chinh (id_nguon, xoa_luc, xoa_boi, sua_boi)
+                SELECT id_nguon, now(), :actor, :actor FROM dm_tron_goi WHERE id_nguon = :id
+                ON CONFLICT (id_nguon) DO UPDATE SET xoa_luc = now(), xoa_boi = EXCLUDED.xoa_boi,
+                    sua_boi = EXCLUDED.sua_boi
+                WHERE dm_tron_goi_dieu_chinh.xoa_luc IS NULL""",
+                new MapSqlParameterSource().addValue("id", id).addValue("actor", actor)) > 0;
+    }
+
+    public boolean restore(int id, String actor) {
+        return jdbc.update("""
+                UPDATE dm_tron_goi_dieu_chinh SET xoa_luc = NULL, xoa_boi = NULL, sua_boi = :actor
+                WHERE id_nguon = :id AND xoa_luc IS NOT NULL""",
+                new MapSqlParameterSource().addValue("id", id).addValue("actor", actor)) > 0;
     }
 
     public List<CatalogItem> visibleItems(int packageId) {
@@ -376,15 +495,81 @@ public class CatalogRepository {
                 + "ORDER BY id_nguon", Map.of("coSo", branchCode), String.class);
     }
 
+    /** Ghép số liệu slm_v2 (cột của g) với điều chỉnh của admin (cột dc_*) */
     private RowMapper<CatalogPackage> packageMapper() {
-        return (rs, i) -> new CatalogPackage(rs.getInt("id_nguon"), rs.getString("ma_co_so"),
-                integer(rs, "nhom_tron_goi_id"), rs.getString("ten_nhom_goi"), rs.getString("ten"),
-                rs.getString("loai_he_thong"), integer(rs, "so_pha"), decimal(rs, "cong_suat_kwp"),
-                integer(rs, "so_tam_pin"), decimal(rs, "cong_suat_tam_wp"), decimal(rs, "cong_suat_inverter_kw"),
-                rs.getDouble("luu_tru_kwh"), decimal(rs, "tong_gia"), rs.getDouble("gia_khung_sat"),
-                rs.getBoolean("ban_chay"), rs.getBoolean("dang_dung"), rs.getBoolean("duoc_goi_y"),
-                strings(rs.getArray("canh_bao")), rs.getString("th_tam_pin"), rs.getString("th_inverter"),
-                rs.getString("th_pin"));
+        return (rs, i) -> {
+            List<String> edited = new ArrayList<>();
+            String name = edited(rs.getString("dc_ten"), rs.getString("ten"), "name", edited);
+            String systemType = edited(rs.getString("dc_loai_he_thong"), rs.getString("loai_he_thong"),
+                    "systemType", edited);
+            Integer phases = edited(integer(rs, "dc_so_pha"), integer(rs, "so_pha"), "phases", edited);
+            Double kwp = edited(decimal(rs, "dc_cong_suat_kwp"), decimal(rs, "cong_suat_kwp"), "kwp", edited);
+            Integer panelCount = edited(integer(rs, "dc_so_tam_pin"), integer(rs, "so_tam_pin"), "panelCount",
+                    edited);
+            Double panelWp = edited(decimal(rs, "dc_cong_suat_tam_wp"), decimal(rs, "cong_suat_tam_wp"), "panelWp",
+                    edited);
+            double storage = edited(decimal(rs, "dc_luu_tru_kwh"), rs.getDouble("luu_tru_kwh"), "storageKwh",
+                    edited);
+            Double price = edited(decimal(rs, "dc_tong_gia"), decimal(rs, "tong_gia"), "totalPrice", edited);
+            boolean bestSeller = edited((Boolean) rs.getObject("dc_ban_chay"), rs.getBoolean("ban_chay"),
+                    "bestSeller", edited);
+            boolean active = rs.getBoolean("dang_dung");
+            boolean disabled = rs.getBoolean("dc_tat");
+            boolean deleted = rs.getObject("dc_xoa_luc") != null;
+            List<String> warnings = effectiveWarnings(strings(rs.getArray("canh_bao")), edited, name, systemType,
+                    phases, storage);
+            boolean recommendable = active && !disabled && !deleted
+                    && warnings.stream().noneMatch(code -> CatalogWarning.valueOf(code).blocking());
+            return new CatalogPackage(rs.getInt("id_nguon"), rs.getString("ma_co_so"), integer(rs, "nhom_tron_goi_id"),
+                    rs.getString("ten_nhom_goi"), name, systemType, phases, kwp, panelCount, panelWp,
+                    decimal(rs, "cong_suat_inverter_kw"), storage, price, rs.getDouble("gia_khung_sat"), bestSeller,
+                    active, recommendable, warnings, rs.getString("th_tam_pin"), rs.getString("th_inverter"),
+                    rs.getString("th_pin"), disabled, deleted, List.copyOf(edited), rs.getString("dc_ghi_chu"));
+        };
+    }
+
+    private static <T> T edited(T override, T source, String field, List<String> edited) {
+        if (override == null) {
+            return source;
+        }
+        edited.add(field);
+        return override;
+    }
+
+    /**
+     * Cảnh báo theo số liệu sau điều chỉnh: trường admin đã sửa thì bỏ cảnh báo về chính trường đó; thiếu pin
+     * lưu trữ và tên lệch số pha tính lại. Cảnh báo về cơ sở giá, vật tư ngừng bán giữ nguyên (không sửa ở bot).
+     */
+    private static List<String> effectiveWarnings(List<String> synced, List<String> edited, String name,
+                                                  String systemType, Integer phases, double storageKwh) {
+        EnumSet<CatalogWarning> w = EnumSet.noneOf(CatalogWarning.class);
+        for (String code : synced) {
+            w.add(CatalogWarning.valueOf(code));
+        }
+        if (edited.contains("systemType")) {
+            w.remove(CatalogWarning.UNKNOWN_SYSTEM_TYPE);
+        }
+        if (edited.contains("phases")) {
+            w.remove(CatalogWarning.UNKNOWN_PHASE);
+        }
+        if (edited.contains("kwp")) {
+            w.removeAll(EnumSet.of(CatalogWarning.CAPACITY_SUSPICIOUS, CatalogWarning.CAPACITY_FROM_PANELS,
+                    CatalogWarning.CAPACITY_MISMATCH));
+        }
+        if (edited.contains("totalPrice")) {
+            w.remove(CatalogWarning.MISSING_PRICE);
+        }
+        if (edited.contains("name") || edited.contains("phases")) {
+            w.remove(CatalogWarning.NAME_PHASE_MISMATCH);
+            if (CatalogNormalizer.namePhaseMismatch(name, phases)) {
+                w.add(CatalogWarning.NAME_PHASE_MISMATCH);
+            }
+        }
+        w.remove(CatalogWarning.MISSING_BATTERY);
+        if ("HYBRID".equals(systemType) && storageKwh <= 0) {
+            w.add(CatalogWarning.MISSING_BATTERY);
+        }
+        return w.stream().map(Enum::name).toList();
     }
 
     private RowMapper<SyncRun> runMapper() {

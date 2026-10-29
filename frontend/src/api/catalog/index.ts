@@ -5,6 +5,8 @@ import type {
   CatalogPackageFilterModel,
   CatalogPackageModel,
   CatalogStatusModel,
+  PackageEditModel,
+  PackageUpdateModel,
   PvoutImportRequestModel,
   PvoutImportResultModel,
   PvoutTableInfoModel,
@@ -27,6 +29,27 @@ export const catalogSyncApi = () =>
 
 export const catalogPackagesApi = (params: CatalogPackageFilterModel) =>
   defHttp.get<PageResult<CatalogPackageModel>>({ url: `${CATALOG}/packages`, params });
+
+/** Gói kèm số liệu slm_v2 và điều chỉnh của bot, để mở form sửa */
+export const catalogPackageEditApi = (id: number) =>
+  defHttp.get<PackageEditModel>({ url: `${CATALOG}/packages/${id}` });
+
+/** Chỉ áp dụng cho bot: slm_v2 không đổi, đồng bộ không đè mất */
+export const catalogPackageUpdateApi = (id: number, data: PackageUpdateModel) =>
+  defHttp.put<CatalogPackageModel>({ url: `${CATALOG}/packages/${id}`, data });
+
+export const catalogPackageSetActiveApi = (ids: number[], active: boolean) =>
+  defHttp.post<{ affected: number }>({
+    url: `${CATALOG}/packages/set-active`,
+    data: { ids, active },
+  });
+
+/** Xoá mềm: ẩn khỏi danh sách và bot, khôi phục được */
+export const catalogPackageDeleteApi = (id: number) =>
+  defHttp.delete<void>({ url: `${CATALOG}/packages/${id}` });
+
+export const catalogPackageRestoreApi = (id: number) =>
+  defHttp.post<CatalogPackageModel>({ url: `${CATALOG}/packages/${id}/restore` });
 
 export const catalogWarningLabelsApi = () =>
   defHttp.get<WarningLabels>({ url: `${CATALOG}/warning-labels` });

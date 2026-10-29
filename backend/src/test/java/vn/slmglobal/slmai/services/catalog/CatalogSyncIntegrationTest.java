@@ -13,6 +13,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import vn.slmglobal.slmai.common.security.AuthInfo;
 import vn.slmglobal.slmai.common.security.RoleCode;
 import vn.slmglobal.slmai.common.web.PageResponse;
 import vn.slmglobal.slmai.services.auth.UserAdminService;
@@ -25,6 +26,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,6 +68,8 @@ class CatalogSyncIntegrationTest {
     PvoutReminderJob reminderJob;
     @Autowired
     UserAdminService users;
+    @Autowired
+    CatalogPackageAdminService packageAdmin;
     @Autowired
     JdbcTemplate jdbc;
 
@@ -184,6 +188,80 @@ class CatalogSyncIntegrationTest {
                 .containsExactly(98);
         assertThat(packages(null, null, "RECOMMENDABLE", 0, 10).total()).isEqualTo(2);
         assertThat(packages(null, null, "INACTIVE", 0, 10).total()).isZero();
+    }
+
+    @Test
+    void adminEditsSurviveSyncAndDriveQuotes() {
+        syncService.sync(CatalogSyncService.TRIGGER_MANUAL, null);
+        AuthInfo actor = actor();
+
+        // Công suất nhập trùng slm_v2 (5 kWp) thì không lưu thành điều chỉnh
+        packageAdmin.update(actor, 98, new CatalogPackageAdminService.UpdateRequest("Gói Hybrid sửa tên", "HYBRID",
+                1, 5.0, null, null, null, 95_000_000.0, null, true, "Giá khuyến mãi tháng 11"));
+        CatalogRepository.CatalogPackage edited = repository.findPackage(98).orElseThrow();
+        assertThat(edited.name()).isEqualTo("Gói Hybrid sửa tên");
+        assertThat(edited.totalPrice()).isEqualTo(95_000_000.0);
+        assertThat(edited.edited()).containsExactlyInAnyOrder("name", "totalPrice");
+        assertThat(repository.findOverride(98).orElseThrow().kwp()).isNull();
+
+        // Đồng bộ lại: dm_tron_goi nhận giá mới của slm_v2, bot vẫn dùng giá admin đã sửa
+        jdbc.update("UPDATE slmv2.ai_v_tron_goi SET tong_gia = 91000000 WHERE id = 98");
+        assertThat(syncService.sync(CatalogSyncService.TRIGGER_MANUAL, null).status()).isEqualTo("SUCCESS");
+        assertThat(jdbc.queryForObject("SELECT tong_gia FROM dm_tron_goi WHERE id_nguon = 98", Long.class))
+                .isEqualTo(91_000_000L);
+        assertThat(repository.findPackage(98).orElseThrow().totalPrice()).isEqualTo(95_000_000.0);
+        JsonNode quote = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", 1, null, null, null, null,
+                "HYBRID", null)).result().path("gia_khoi_diem").get(0).path("goi_re_nhat");
+        assertThat(quote.path("goi_id").asInt()).isEqualTo(98);
+        assertThat(quote.path("ten").asText()).isEqualTo("Gói Hybrid sửa tên");
+
+        // Tắt: bot không gợi ý; bật lại thì gợi ý lại
+        assertThat(packageAdmin.setActive(actor, new CatalogPackageAdminService.SetActiveRequest(
+                List.of(98, 999_999), false))).isEqualTo(1);
+        assertThat(repository.recommendablePackages("HN")).isEmpty();
+        assertThat(packages(null, null, "DISABLED", 0, 10).items())
+                .extracting(CatalogRepository.CatalogPackage::id).containsExactly(98);
+        packageAdmin.setActive(actor, new CatalogPackageAdminService.SetActiveRequest(List.of(98), true));
+        assertThat(repository.recommendablePackages("HN")).extracting(CatalogRepository.CatalogPackage::id)
+                .containsExactly(98);
+
+        // Xoá mềm: ẩn khỏi danh sách và bot, chỉ thấy khi lọc "Đã xoá"; khôi phục giữ nguyên phần đã sửa
+        packageAdmin.delete(actor, 98);
+        assertThat(packages(null, null, null, 0, 10).items()).extracting(CatalogRepository.CatalogPackage::id)
+                .containsExactly(97);
+        assertThat(packages(null, null, "DELETED", 0, 10).items()).extracting(CatalogRepository.CatalogPackage::id)
+                .containsExactly(98);
+        assertThat(repository.recommendablePackages("HN")).isEmpty();
+        assertThat(advisor.packageDetail(98, "Hà Nội").path("dang_ban").asBoolean()).isFalse();
+        CatalogRepository.CatalogPackage restored = packageAdmin.restore(actor, 98);
+        assertThat(restored.recommendable()).isTrue();
+        assertThat(restored.totalPrice()).isEqualTo(95_000_000.0);
+
+        assertThat(jdbc.queryForList("SELECT hanh_dong FROM nhat_ky_thao_tac WHERE nguoi_thuc_hien_id = ? "
+                + "AND loai_doi_tuong = 'catalog_package'", String.class, adminId)).containsExactlyInAnyOrder(
+                "catalog.package.update", "catalog.package.disable", "catalog.package.enable",
+                "catalog.package.delete", "catalog.package.restore");
+    }
+
+    @Test
+    void fixingTheWarnedFieldMakesThePackageRecommendableAgain() {
+        jdbc.update("UPDATE slmv2.ai_v_tron_goi SET tong_gia = NULL WHERE id = 98");
+        syncService.sync(CatalogSyncService.TRIGGER_MANUAL, null);
+        assertThat(repository.findPackage(98).orElseThrow().warnings()).contains("MISSING_PRICE");
+        assertThat(repository.findPackage(98).orElseThrow().recommendable()).isFalse();
+
+        CatalogRepository.CatalogPackage fixed = packageAdmin.update(actor(), 98,
+                new CatalogPackageAdminService.UpdateRequest(null, null, null, null, null, null, null,
+                        90_800_000.0, null, true, null));
+
+        assertThat(fixed.warnings()).doesNotContain("MISSING_PRICE");
+        assertThat(fixed.recommendable()).isTrue();
+        assertThat(repository.recommendablePackages("HN")).extracting(CatalogRepository.CatalogPackage::id)
+                .containsExactly(98);
+    }
+
+    private AuthInfo actor() {
+        return new AuthInfo(adminId, "admin@test.local", "Quản trị", Set.of(RoleCode.SYSTEM_ADMIN));
     }
 
     private PageResponse<CatalogRepository.CatalogPackage> packages(String keyword, String branchCode, String status,

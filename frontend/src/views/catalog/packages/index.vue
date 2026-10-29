@@ -7,14 +7,20 @@
           <Tag :color="w.blocking ? 'red' : 'orange'">{{ w.label }}</Tag>
           gói / vật tư {{ w.ids.join(', ') }}
           <span v-if="w.blocking" class="text-red-600">
-            · không được gợi ý cho khách tới khi sửa ở slm_v2
+            · không được gợi ý cho khách tới khi sửa ở slm_v2 hoặc sửa gói ngay trên trang này
           </span>
         </div>
       </template>
     </Alert>
 
-    <BasicTable @register="registerTable">
+    <BasicTable @register="registerTable" :rowSelection="canEdit ? rowSelection : undefined">
       <template #toolbar>
+        <template v-if="canEdit">
+          <Button :disabled="!selectedRowKeys.length" @click="handleBulkActive(true)">
+            Bật ({{ selectedRowKeys.length }})
+          </Button>
+          <Button :disabled="!selectedRowKeys.length" @click="handleBulkActive(false)">Tắt</Button>
+        </template>
         <Button
           type="primary"
           :loading="syncing"
@@ -26,7 +32,42 @@
       </template>
 
       <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'warnings'">
+        <template v-if="column.key === 'action'">
+          <TableAction
+            v-if="record.deleted"
+            :actions="[
+              {
+                icon: 'ant-design:undo-outlined',
+                tooltip: 'Khôi phục gói',
+                auth: EDIT_ROLES,
+                onClick: handleRestore.bind(null, record),
+              },
+            ]"
+          />
+          <TableAction
+            v-else
+            :actions="[
+              {
+                icon: 'clarity:note-edit-line',
+                tooltip: 'Sửa gói',
+                auth: EDIT_ROLES,
+                onClick: handleEdit.bind(null, record),
+              },
+              {
+                icon: 'ant-design:delete-outlined',
+                color: 'error',
+                tooltip: 'Xoá gói',
+                auth: EDIT_ROLES,
+                popConfirm: {
+                  title: `Xoá gói ${record.id}? Bot sẽ không gợi ý gói này; khôi phục được ở bộ lọc Đã xoá.`,
+                  placement: 'left',
+                  confirm: handleDelete.bind(null, record),
+                },
+              },
+            ]"
+          />
+        </template>
+        <template v-else-if="column.key === 'warnings'">
           <Tag
             v-for="w in record.warnings"
             :key="w"
@@ -38,20 +79,29 @@
         </template>
       </template>
     </BasicTable>
+
+    <PackageDrawer @register="registerDrawer" @success="handleSuccess" />
   </PageWrapper>
 </template>
 
 <script lang="ts" setup>
-  import { computed, ref } from 'vue';
+  import { computed, ref, unref } from 'vue';
   import { Alert, Tag } from 'ant-design-vue';
   import { Button } from '@/components/Button';
-  import { BasicTable, useTable } from '@/components/Table';
+  import { BasicTable, useTable, TableAction } from '@/components/Table';
   import { PageWrapper } from '@/components/Page';
+  import { useDrawer } from '@/components/Drawer';
   import { useMessage } from '@/hooks/web/useMessage';
+  import { usePermission } from '@/hooks/web/usePermission';
+  import { RoleEnum } from '@/enums/roleEnum';
   import { formatToDateTime } from '@/utils/dateUtil';
 
+  import PackageDrawer from './PackageDrawer.vue';
   import { columns, searchFormSchema } from './packages.data';
   import {
+    catalogPackageDeleteApi,
+    catalogPackageRestoreApi,
+    catalogPackageSetActiveApi,
     catalogPackagesApi,
     catalogStatusApi,
     catalogSyncApi,
@@ -61,10 +111,28 @@
 
   defineOptions({ name: 'CatalogPackages' });
 
+  /** Nhân viên trực chat chỉ xem; sửa, tắt, xoá là việc của quản trị (khớp quyền ở backend) */
+  const EDIT_ROLES = [RoleEnum.SYSTEM_ADMIN, RoleEnum.CONTENT_ADMIN];
+
   const { createMessage } = useMessage();
+  const { hasPermission } = usePermission();
+  const canEdit = hasPermission(EDIT_ROLES);
+  const [registerDrawer, { openDrawer }] = useDrawer();
   const status = ref<CatalogStatusModel>();
   const labels = ref<WarningLabels>({});
   const syncing = ref(false);
+
+  const selectedRowKeys = ref<number[]>([]);
+  const rowSelection = computed(
+    () =>
+      ({
+        type: 'checkbox',
+        selectedRowKeys: unref(selectedRowKeys),
+        onChange: (keys: (string | number)[]) => {
+          selectedRowKeys.value = keys as number[];
+        },
+      }) as any,
+  );
 
   /**
    * vben đánh trang từ 1, Spring Data từ 0 nên phải trừ đi 1.
@@ -84,10 +152,12 @@
     return result;
   };
 
-  const [registerTable, { reload }] = useTable({
+  const [registerTable, { reload, clearSelectedRowKeys }] = useTable({
     title: 'Gói đồng bộ từ slm_v2',
-    titleHelpMessage:
-      'Đọc từ slm_v2 (chỉ đọc), tự đồng bộ 10 phút một lần. Sửa giá, thành phần, ảnh ở slm_v2.',
+    titleHelpMessage: [
+      'Đọc từ slm_v2 (chỉ đọc), tự đồng bộ 10 phút một lần.',
+      'Sửa, tắt, xoá ở đây chỉ áp dụng cho bot; slm_v2 không đổi và đồng bộ không đè mất.',
+    ],
     api: loadPackages,
     rowKey: 'id',
     columns,
@@ -102,6 +172,11 @@
     showTableSetting: true,
     bordered: true,
     striped: false,
+    // Chỉ chọn bằng ô tick: bấm nút sửa trên một dòng không được kéo dòng đó vào lệnh Bật / Tắt
+    clickToRowSelect: false,
+    actionColumn: canEdit
+      ? { width: 100, title: 'Thao tác', dataIndex: 'action', fixed: 'right' }
+      : undefined,
   });
 
   const STATUS_LABELS: Record<string, string> = {
@@ -147,6 +222,37 @@
       blocking: !!labels.value[code]?.blocking,
     })),
   );
+
+  // Slot bodyCell trả Recordable chứ không phải CatalogPackageModel, nên lấy id ở biên
+  function handleEdit(record: Recordable) {
+    openDrawer(true, { id: record.id });
+  }
+
+  async function handleDelete(record: Recordable) {
+    await catalogPackageDeleteApi(record.id);
+    createMessage.success(`Đã xoá gói ${record.id}`);
+    handleSuccess();
+  }
+
+  async function handleRestore(record: Recordable) {
+    await catalogPackageRestoreApi(record.id);
+    createMessage.success(`Đã khôi phục gói ${record.id}`);
+    handleSuccess();
+  }
+
+  async function handleBulkActive(active: boolean) {
+    const ids = unref(selectedRowKeys);
+    if (!ids.length) return;
+    const result = await catalogPackageSetActiveApi(ids, active);
+    createMessage.success(`${active ? 'Đã bật' : 'Đã tắt'} ${result.affected} gói`);
+    handleSuccess();
+  }
+
+  function handleSuccess() {
+    selectedRowKeys.value = [];
+    clearSelectedRowKeys();
+    reload();
+  }
 
   async function handleSync() {
     syncing.value = true;

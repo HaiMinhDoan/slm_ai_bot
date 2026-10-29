@@ -189,6 +189,6 @@ class PackageAdvisorTest {
                                     double storage, double price, boolean bestSeller) {
         return new CatalogPackage(id, branch, 6, "JA Solar - Solis - Dyness", name, type, phases, kwp,
                 (int) Math.round(kwp * 1000 / 625), 625.0, kwp, storage, price, 0, bestSeller, true, true, List.of(),
-                "JA Solar", "Solis", "HYBRID".equals(type) ? "Dyness" : null);
+                "JA Solar", "Solis", "HYBRID".equals(type) ? "Dyness" : null, false, false, List.of(), null);
     }
 }

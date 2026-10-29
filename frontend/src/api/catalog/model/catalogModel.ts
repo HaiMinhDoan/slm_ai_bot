@@ -49,6 +49,60 @@ export interface CatalogPackageModel {
   panelBrand?: string;
   inverterBrand?: string;
   batteryBrand?: string;
+  /** Admin tắt gói trong bot (không gợi ý, không báo giá) */
+  disabled: boolean;
+  /** Admin đã xoá mềm */
+  deleted: boolean;
+  /** Các trường bot đang dùng khác slm_v2 (name, systemType, phases, kwp, panelCount, panelWp, storageKwh, totalPrice, bestSeller) */
+  edited: string[];
+  note?: string;
+}
+
+/** Số liệu gốc từ slm_v2 của các trường sửa được */
+export interface PackageSourceModel {
+  name: string;
+  systemType?: SystemType;
+  phases?: number;
+  kwp?: number;
+  panelCount?: number;
+  panelWp?: number;
+  storageKwh: number;
+  totalPrice?: number;
+  bestSeller: boolean;
+}
+
+/** Điều chỉnh đang lưu ở bot; trường số liệu null là dùng slm_v2 */
+export interface PackageOverrideModel
+  extends Partial<Omit<PackageSourceModel, 'storageKwh' | 'bestSeller'>> {
+  storageKwh?: number;
+  bestSeller?: boolean;
+  disabled: boolean;
+  note?: string;
+  deletedAt?: string;
+  deletedBy?: string;
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
+export interface PackageEditModel {
+  current: CatalogPackageModel;
+  source: PackageSourceModel;
+  override?: PackageOverrideModel;
+}
+
+/** Giá trị mong muốn của từng trường; để trống hoặc trùng slm_v2 thì bot dùng slm_v2 */
+export interface PackageUpdateModel {
+  name?: string;
+  systemType?: SystemType;
+  phases?: number;
+  kwp?: number;
+  panelCount?: number;
+  panelWp?: number;
+  storageKwh?: number;
+  totalPrice?: number;
+  bestSeller?: boolean;
+  enabled: boolean;
+  note?: string;
 }
 
 /** Bộ lọc và phân trang của danh sách gói (page đếm từ 0 như Spring) */
@@ -57,7 +111,7 @@ export interface CatalogPackageFilterModel {
   branchCode?: string;
   systemType?: SystemType;
   phases?: number;
-  status?: 'RECOMMENDABLE' | 'BLOCKED' | 'INACTIVE' | 'WARNING';
+  status?: 'RECOMMENDABLE' | 'BLOCKED' | 'DISABLED' | 'INACTIVE' | 'EDITED' | 'WARNING' | 'DELETED';
   page?: number;
   size?: number;
 }

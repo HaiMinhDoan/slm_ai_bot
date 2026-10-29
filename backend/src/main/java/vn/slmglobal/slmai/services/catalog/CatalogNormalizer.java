@@ -164,11 +164,8 @@ public class CatalogNormalizer {
         Integer phases = phases(p.loaiPha());
         if (phases == null) {
             w.add(CatalogWarning.UNKNOWN_PHASE);
-        } else {
-            Matcher m = PHASE_IN_NAME.matcher(p.ten() == null ? "" : p.ten());
-            if (m.find() && Integer.parseInt(m.group(1)) != phases) {
-                w.add(CatalogWarning.NAME_PHASE_MISMATCH);
-            }
+        } else if (namePhaseMismatch(p.ten(), phases)) {
+            w.add(CatalogWarning.NAME_PHASE_MISMATCH);
         }
 
         int panelCount = 0;
@@ -259,6 +256,15 @@ public class CatalogNormalizer {
                         p.ten(), systemType, phases, kwp, panelCount, panelWp, inverter, storage, p.sanLuongToiThieu(),
                         p.sanLuongToiDa(), p.tongGia(), steel, p.banChay(), p.tepTinId(), p.moTa(), active,
                         recommendable, codes));
+    }
+
+    /** Tên gói ghi số pha khác số pha của gói, ví dụ tên "... 3 pha" mà loai_pha là 1 pha */
+    static boolean namePhaseMismatch(String name, Integer phases) {
+        if (name == null || phases == null) {
+            return false;
+        }
+        Matcher m = PHASE_IN_NAME.matcher(name);
+        return m.find() && Integer.parseInt(m.group(1)) != phases;
     }
 
     /** slm_v2 có tên gói thừa khoảng trắng ở cuối */

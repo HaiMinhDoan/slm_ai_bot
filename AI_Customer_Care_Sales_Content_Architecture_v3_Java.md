@@ -5070,7 +5070,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 | Mốc báo giá (60.4): đồng bộ catalog slm_v2 mỗi 10 phút kèm cảnh báo dữ liệu, PV out EVN theo năm và nhắc nạp năm mới, `SizingService`, tool `tim_goi_phu_hop` / `chi_tiet_goi`, link theo miền, giá đã gồm VAT | Chạy thật từ 2026-10-29 |
 | Trang admin `https://fs-wms.io.vn`: đăng nhập, người dùng và vai trò, nhật ký thao tác | Chạy thật (HTTPS qua nginx-proxy-manager) |
 | Thông báo nhân viên (mục 34): chuông, âm thanh, thông báo trình duyệt qua SSE | Chạy thật |
-| Catalog & báo giá trên admin: *Gói từ slm_v2*, *Thử báo giá*, *PV out EVN*. Dựng theo khuôn bảng của fsignai (`BasicTable` / `useTable`, form tìm kiếm, phân trang) | Đã viết 2026-10-29, chờ triển khai bản mới |
+| Catalog & báo giá trên admin: *Gói từ slm_v2*, *Thử báo giá*, *PV out EVN*. Dựng theo khuôn bảng của fsignai (`BasicTable` / `useTable`, form tìm kiếm, phân trang). Gói sửa, bật / tắt, xoá mềm và khôi phục được ngay trên admin (60.4) | Đã viết 2026-10-29, chờ triển khai bản mới |
 | Thư viện media (mục 6.3 D): nhập ảnh combo từ Google Drive vào MinIO (bucket `slm-ai-media`) | Đã nạp 24 ảnh và 11 link video Facebook (2026-10-29), đang ở trạng thái `DRAFT` nên AI chưa dùng |
 | Kiến thức: `core/` (identity, voice, guardrails), playbook `khach-hoi-gia`, `tu-van-lap-moi` | Nạp từ file trong repo, chưa có trình soạn trên web |
 
@@ -5142,6 +5142,12 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 - Lượt có gửi báo giá ghi `ho_so_tu_van.tron_goi_de_xuat_ids` và `gia_thap_nhat_da_bao`, để tính `OFF_SEGMENT` và cờ ngân sách thấp (mục 58.5). Lead có thêm miền (`khach_tiem_nang.mien`).
 - Catalog chưa đồng bộ lần nào thì không đưa tool vào prompt; ngữ cảnh lượt báo "chưa có công cụ báo giá", AI xin số điện thoại như trước.
 - Playbook `khach-hoi-gia`: báo giá sớm rồi hỏi đúng một câu, ví dụ "Không biết hoá đơn tiền điện nhà mình khoảng bao nhiêu một tháng để em tư vấn thêm ạ?".
+
+**Sửa, tắt, xoá mềm gói trên admin** (V8, 2026-10-29, theo khuôn trang của fsignai):
+- `dm_tron_goi` vẫn là bản sao y nguyên slm_v2 (slm_v2 chỉ đọc). Điều chỉnh của admin nằm riêng ở `dm_tron_goi_dieu_chinh` (tên, loại hệ, số pha, kWp, số tấm, Wp, kWh, giá, bán chạy, cờ `tat`, ghi chú, `xoa_luc`); `CatalogSyncJob` không ghi vào bảng này nên đồng bộ không đè mất.
+- `CatalogRepository` ghép hai bảng khi đọc: tool báo giá và trang admin cùng thấy một số liệu. Trường admin sửa thì bỏ cảnh báo về chính trường đó, thiếu pin và tên lệch số pha tính lại; gói được gợi ý khi đang bán ở slm_v2, không tắt, không xoá và không còn cảnh báo chặn.
+- Trường nhập trùng số liệu slm_v2 lưu NULL, để khi slm_v2 sửa thì bot nhận ngay. Form sửa ghi số liệu slm_v2 cạnh từng ô.
+- API: `GET/PUT /admin/catalog/packages/{id}`, `POST /packages/set-active`, `DELETE /packages/{id}` (xoá mềm), `POST /packages/{id}/restore`; quản trị hệ thống và quản trị nội dung, nhân viên trực chat chỉ xem. Mọi thao tác ghi nhật ký (`catalog.package.*`).
 
 **Quyết định của doanh nghiệp (2026-10-26, 2026-10-28), bot báo giá tất cả gói đang bán trong slm_v2:**
 1. **Hoá đơn → kWh:** giá phẳng **3.500 đ/kWh** (bảng công thức), không dùng biểu giá bậc thang.
