@@ -156,7 +156,7 @@ app:
     product-link-domains:
       BAC: slmsolar.vn
       NAM: slmsolar.com.vn
-    quote-conditions: "Đây là giá niêm yết của gói trọn gói (thiết bị, nhân công lắp đặt và vận chuyển); giá cuối cùng nhân viên báo sau khi khảo sát thực tế."
+    quote-conditions: "Đây là giá niêm yết đã gồm VAT của gói trọn gói (thiết bị, nhân công lắp đặt và vận chuyển); giá cuối cùng nhân viên báo sau khi khảo sát thực tế."
     flat-roof-note: "Mái bằng cần thêm phần khung, chi phí khung nhân viên báo sau khi khảo sát."
 
   # Thông báo cho nhân viên trên trang admin (chuông, âm thanh, thông báo trình duyệt qua SSE)

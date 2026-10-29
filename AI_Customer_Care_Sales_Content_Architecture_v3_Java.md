@@ -341,8 +341,8 @@ Giá, gói và thông số **không** nằm trong prompt. Claude gọi tool, bac
 - Sửa gói 101 và các lỗi dữ liệu trên ở DB nguồn.
 - Nhập giá khung cho mái bằng (`gia_khung_sat` hiện bằng 0 ở mọi gói, mục 58.4).
 - **Công thức sizing của doanh nghiệp** (hóa đơn → kWh theo bậc EVN → kWh/ngày → kWp, hệ số sản lượng theo miền, diện tích mái theo loại mái). Chưa có công thức thì chưa làm được `tim_goi_phu_hop`; đây là việc chặn của Phase 0.
-- **Điều kiện báo giá:** giá đã gồm VAT chưa; có phụ phí vận chuyển / lắp đặt ở tỉnh xa không; chiết khấu của sales so với giá niêm yết; báo giá có hiệu lực bao lâu. AI luôn nói rõ giá là giá niêm yết, giá cuối do nhân viên báo sau khảo sát.
-- **Vùng phục vụ:** tỉnh nào công ty lắp đặt được (mục 4.2.9).
+- **Điều kiện báo giá:** giá đã gồm VAT chưa (đã chốt 2026-10-29: `tong_gia` đã gồm VAT); có phụ phí vận chuyển / lắp đặt ở tỉnh xa không; chiết khấu của sales so với giá niêm yết; báo giá có hiệu lực bao lâu. AI luôn nói rõ giá là giá niêm yết, giá cuối do nhân viên báo sau khảo sát.
+- **Vùng phục vụ:** tỉnh nào công ty lắp đặt được (mục 4.2.9). Đã chốt 2026-10-29: cả 34 tỉnh.
 
 ### 4.2.9 Quy đổi tỉnh → miền → cơ sở giá
 
@@ -356,7 +356,7 @@ Khách nói tỉnh/thành ─► rules/regions.yaml ─► miền (BAC / NAM) �
 - Lưu ở `knowledge/rules/regions.yaml`, sửa và phát hành qua Knowledge Editor như mọi tài liệu (mục 5.3). Khi phát hành, hệ thống kiểm tra: mỗi tỉnh chỉ thuộc một miền, mỗi miền trỏ tới một cơ sở có trong catalog.
 - Danh sách nên theo đơn vị hành chính hiện hành (sau sắp xếp tỉnh năm 2025) và kèm **tên cũ, tên viết tắt, tên không dấu** làm alias, vì khách thường nói theo tên cũ hoặc gõ tắt.
 - AI không chọn cơ sở: AI chỉ ghi tỉnh khách nói (`khu_vuc`), backend quy đổi. Tỉnh không có trong danh sách hoặc không rõ: AI hỏi lại một câu; vẫn không xác định được thì chuyển nhân viên, không tự đoán miền.
-- **Vùng phục vụ:** mỗi tỉnh có cờ `serviced`. Tỉnh công ty không lắp đặt: AI nói rõ, không báo giá gói, ghi lead với lý do "ngoài vùng phục vụ" để sales quyết định (mục 59.3).
+- **Vùng phục vụ:** cả 34 tỉnh đều phục vụ (doanh nghiệp chốt 2026-10-29), nên hiện chưa có cờ. Khi có tỉnh ngừng phục vụ thì thêm cờ `serviced` cho mỗi tỉnh. Tỉnh công ty không lắp đặt: AI nói rõ, không báo giá gói, ghi lead với lý do "ngoài vùng phục vụ" để sales quyết định (mục 59.3).
 - `ho_so_tu_van.thong_tin_da_thu` lưu cả tỉnh và miền đã quy đổi; lead gửi Sales API kèm cả hai.
 
 Bản nháp:
@@ -5126,4 +5126,4 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 - Catalog chưa đồng bộ lần nào thì không đưa tool vào prompt; ngữ cảnh lượt báo "chưa có công cụ báo giá", AI xin số điện thoại như trước.
 - Playbook `khach-hoi-gia`: báo giá sớm rồi hỏi đúng một câu, ví dụ "Không biết hoá đơn tiền điện nhà mình khoảng bao nhiêu một tháng để em tư vấn thêm ạ?".
 
-**Còn chờ doanh nghiệp:** VAT đã gồm trong `tong_gia` chưa (câu điều kiện báo giá hiện chỉ nói "giá niêm yết trọn gói, giá cuối sau khảo sát"); tỉnh nào ngoài vùng phục vụ (hiện coi cả 34 tỉnh đều phục vụ).
+**Doanh nghiệp đã chốt (2026-10-29):** `tong_gia` đã gồm VAT, câu điều kiện báo giá (`app.pricing.quote-conditions`) nói rõ "giá niêm yết đã gồm VAT"; cả 34 tỉnh đều phục vụ, nên chưa cần cờ `serviced` (mục 4.2.9).
