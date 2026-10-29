@@ -1,6 +1,8 @@
 import { defHttp } from '@/utils/http/axios';
+import type { PageResult } from '@/api/model/baseModel';
 import type {
   AdviceRequestModel,
+  CatalogPackageFilterModel,
   CatalogPackageModel,
   CatalogStatusModel,
   PvoutImportRequestModel,
@@ -23,8 +25,8 @@ export const catalogSyncApi = () =>
     { errorMessageMode: 'modal' },
   );
 
-export const catalogPackagesApi = () =>
-  defHttp.get<CatalogPackageModel[]>({ url: `${CATALOG}/packages` });
+export const catalogPackagesApi = (params: CatalogPackageFilterModel) =>
+  defHttp.get<PageResult<CatalogPackageModel>>({ url: `${CATALOG}/packages`, params });
 
 export const catalogWarningLabelsApi = () =>
   defHttp.get<WarningLabels>({ url: `${CATALOG}/warning-labels` });

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -13,6 +14,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import vn.slmglobal.slmai.common.security.RoleCode;
+import vn.slmglobal.slmai.common.web.PageResponse;
 import vn.slmglobal.slmai.services.auth.UserAdminService;
 import vn.slmglobal.slmai.services.auth.dto.CreateUserRequest;
 import vn.slmglobal.slmai.services.sizing.PackageAdvisor;
@@ -161,6 +163,34 @@ class CatalogSyncIntegrationTest {
         assertThat(run.error()).contains("không trả gói nào");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM dm_tron_goi WHERE dang_dung", Integer.class))
                 .isEqualTo(2);
+    }
+
+    @Test
+    void packageListFiltersAndPagesLikeOtherAdminLists() {
+        syncService.sync(CatalogSyncService.TRIGGER_MANUAL, null);
+
+        PageResponse<CatalogRepository.CatalogPackage> first = packages(null, null, null, 0, 1);
+        assertThat(first.total()).isEqualTo(2);
+        assertThat(first.totalPages()).isEqualTo(2);
+        assertThat(first.items()).hasSize(1);
+        PageResponse<CatalogRepository.CatalogPackage> second = packages(null, null, null, 1, 1);
+        assertThat(second.items()).extracting(CatalogRepository.CatalogPackage::id)
+                .doesNotContainAnyElementsOf(first.items().stream().map(CatalogRepository.CatalogPackage::id).toList());
+        assertThat(packages(null, null, null, 5, 10).items()).isEmpty();
+
+        assertThat(packages(null, "HCM", null, 0, 10).items()).extracting(CatalogRepository.CatalogPackage::id)
+                .containsExactly(97);
+        assertThat(packages("98", null, null, 0, 10).items()).extracting(CatalogRepository.CatalogPackage::id)
+                .containsExactly(98);
+        assertThat(packages(null, null, "RECOMMENDABLE", 0, 10).total()).isEqualTo(2);
+        assertThat(packages(null, null, "INACTIVE", 0, 10).total()).isZero();
+    }
+
+    private PageResponse<CatalogRepository.CatalogPackage> packages(String keyword, String branchCode, String status,
+                                                                    int page, int size) {
+        return PageResponse.of(repository.findPackages(
+                new CatalogRepository.PackageFilter(keyword, branchCode, null, null, status),
+                PageRequest.of(page, size)), p -> p);
     }
 
     @Test

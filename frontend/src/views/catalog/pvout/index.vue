@@ -36,14 +36,18 @@
   const years = ref<PvoutTableInfoModel[]>([]);
   const info = ref<PvoutTableInfoModel>();
 
-  /** Chưa chọn năm thì xem bảng mới nhất, cũng là bảng bot đang dùng nếu chưa có bảng năm nay */
+  /**
+   * Chưa chọn năm thì xem bảng mới nhất, cũng là bảng bot đang dùng nếu chưa có bảng năm nay.
+   * Bảng một năm chỉ có 34 tỉnh, backend trả cả bảng nên chia trang ngay ở đây.
+   */
   const loadPvout = async (params: Recordable) => {
+    const { page = 1, size = 10 } = params;
     years.value = await pvoutListApi();
     const year: number | undefined = params.year ?? years.value[0]?.year;
     info.value = years.value.find((y) => y.year === year);
     if (!year) return { items: [], total: 0 };
-    const table = await pvoutTableApi(year);
-    return { items: table.rows, total: table.rows.length };
+    const { rows } = await pvoutTableApi(year);
+    return { items: rows.slice((page - 1) * size, page * size), total: rows.length };
   };
 
   const [registerTable, { reload, getForm }] = useTable({
@@ -57,8 +61,8 @@
     rowKey: 'code',
     columns,
     formConfig: { labelWidth: 60, schemas: searchFormSchema },
+    fetchSetting: { sizeField: 'size' },
     useSearchForm: true,
-    pagination: false,
     showTableSetting: true,
     bordered: true,
     striped: false,

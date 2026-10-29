@@ -50,7 +50,7 @@
   import { useMessage } from '@/hooks/web/useMessage';
   import { formatToDateTime } from '@/utils/dateUtil';
 
-  import { columns, matchesFilter, searchFormSchema } from './packages.data';
+  import { columns, searchFormSchema } from './packages.data';
   import {
     catalogPackagesApi,
     catalogStatusApi,
@@ -67,17 +67,21 @@
   const syncing = ref(false);
 
   /**
-   * Tải lại bảng (nút làm mới của bảng, đổi bộ lọc) thì tải lại cả trạng thái đồng bộ,
+   * vben đánh trang từ 1, Spring Data từ 0 nên phải trừ đi 1.
+   * Tải lại bảng (nút làm mới, đổi bộ lọc, chuyển trang) thì tải lại cả trạng thái đồng bộ,
    * để dòng trạng thái phía trên luôn khớp với danh sách gói.
    */
   const loadPackages = async (params: Recordable) => {
-    const [s, list] = await Promise.all([catalogStatusApi(), catalogPackagesApi()]);
+    const { page = 1, size = 10, ...filters } = params;
+    const [s, result] = await Promise.all([
+      catalogStatusApi(),
+      catalogPackagesApi({ ...filters, page: page - 1, size }),
+    ]);
     status.value = s;
     if (!Object.keys(labels.value).length) {
       labels.value = await catalogWarningLabelsApi();
     }
-    const items = list.filter((p) => matchesFilter(p, params));
-    return { items, total: items.length };
+    return result;
   };
 
   const [registerTable, { reload }] = useTable({
@@ -92,8 +96,9 @@
       schemas: searchFormSchema,
       autoSubmitOnEnter: true,
     },
+    // Backend nhận `size`, vben mặc định gửi `pageSize`
+    fetchSetting: { sizeField: 'size' },
     useSearchForm: true,
-    pagination: false,
     showTableSetting: true,
     bordered: true,
     striped: false,

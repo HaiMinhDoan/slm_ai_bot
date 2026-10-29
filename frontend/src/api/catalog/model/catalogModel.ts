@@ -51,6 +51,17 @@ export interface CatalogPackageModel {
   batteryBrand?: string;
 }
 
+/** Bộ lọc và phân trang của danh sách gói (page đếm từ 0 như Spring) */
+export interface CatalogPackageFilterModel {
+  keyword?: string;
+  branchCode?: string;
+  systemType?: SystemType;
+  phases?: number;
+  status?: 'RECOMMENDABLE' | 'BLOCKED' | 'INACTIVE' | 'WARNING';
+  page?: number;
+  size?: number;
+}
+
 export type WarningLabels = Record<string, { label: string; blocking: boolean }>;
 
 /** Đầu vào tool tim_goi_phu_hop; trường chưa biết để trống */

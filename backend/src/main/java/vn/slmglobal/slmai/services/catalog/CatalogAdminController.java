@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,7 +19,9 @@ import vn.slmglobal.slmai.common.security.RequestContext;
 import vn.slmglobal.slmai.common.security.RequireAuth;
 import vn.slmglobal.slmai.common.security.RoleCode;
 import vn.slmglobal.slmai.common.web.ApiResponses;
+import vn.slmglobal.slmai.common.web.PageResponse;
 import vn.slmglobal.slmai.common.web.ResponseData;
+import vn.slmglobal.slmai.services.catalog.CatalogRepository.CatalogPackage;
 import vn.slmglobal.slmai.services.sizing.PackageAdvisor;
 
 import java.util.List;
@@ -32,6 +36,8 @@ import java.util.Map;
 @RequestMapping("/api/v1/admin/catalog")
 @RequiredArgsConstructor
 public class CatalogAdminController {
+
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final CatalogSyncService syncService;
     private final CatalogRepository repository;
@@ -59,11 +65,21 @@ public class CatalogAdminController {
                 "CATALOG_SYNC_DONE");
     }
 
-    @Operation(summary = "Mọi gói đã đồng bộ (cả gói ngừng, gói bị chặn gợi ý) kèm cảnh báo dữ liệu")
+    @Operation(summary = "Gói đã đồng bộ (cả gói ngừng, gói bị chặn gợi ý) kèm cảnh báo dữ liệu, có lọc và phân trang")
     @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN, RoleCode.STAFF})
     @GetMapping("/packages")
-    public ResponseEntity<ResponseData<List<CatalogRepository.CatalogPackage>>> packages() {
-        return ApiResponses.ok(repository.allPackages(), "CATALOG_PACKAGES_SUCCESS");
+    public ResponseEntity<ResponseData<PageResponse<CatalogPackage>>> packages(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String branchCode,
+            @RequestParam(required = false) String systemType,
+            @RequestParam(required = false) Integer phases,
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageRequest pageable = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), MAX_PAGE_SIZE));
+        Page<CatalogPackage> result = repository.findPackages(
+                new CatalogRepository.PackageFilter(keyword, branchCode, systemType, phases, status), pageable);
+        return ApiResponses.ok(PageResponse.of(result, p -> p), "CATALOG_PACKAGES_SUCCESS");
     }
 
     @Operation(summary = "Nhãn tiếng Việt của mã cảnh báo dữ liệu")

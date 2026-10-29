@@ -1,7 +1,7 @@
 import type { BasicColumn, FormSchema } from '@/components/Table';
 import { h } from 'vue';
 import { Tag } from 'ant-design-vue';
-import type { CatalogPackageModel, SystemType } from '@/api/catalog/model/catalogModel';
+import type { SystemType } from '@/api/catalog/model/catalogModel';
 import {
   BRANCH_LABELS,
   PHASE_OPTIONS,
@@ -17,28 +17,6 @@ export const STATUS_OPTIONS = [
   { label: 'Ngừng bán', value: 'INACTIVE' },
   { label: 'Có cảnh báo dữ liệu', value: 'WARNING' },
 ];
-
-/** Lọc ngay trên trình duyệt: danh sách gói chỉ vài trăm dòng, backend trả cả danh sách */
-export function matchesFilter(p: CatalogPackageModel, params: Recordable): boolean {
-  const { keyword, branchCode, systemType, phases, status } = params;
-  const kw = typeof keyword === 'string' ? keyword.trim().toLowerCase() : '';
-  if (kw && !p.name.toLowerCase().includes(kw) && String(p.id) !== kw) return false;
-  if (branchCode && p.branchCode !== branchCode) return false;
-  if (systemType && p.systemType !== systemType) return false;
-  if (phases && p.phases !== phases) return false;
-  switch (status) {
-    case 'RECOMMENDABLE':
-      return p.active && p.recommendable;
-    case 'BLOCKED':
-      return p.active && !p.recommendable;
-    case 'INACTIVE':
-      return !p.active;
-    case 'WARNING':
-      return p.warnings.length > 0;
-    default:
-      return true;
-  }
-}
 
 export const columns: BasicColumn[] = [
   { title: 'Mã', dataIndex: 'id', width: 70, fixed: 'left' },

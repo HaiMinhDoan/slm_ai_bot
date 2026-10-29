@@ -4,6 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -17,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
@@ -294,6 +298,47 @@ public class CatalogRepository {
     public List<CatalogPackage> allPackages() {
         return jdbc.query(PACKAGE_SELECT + " ORDER BY g.ma_co_so, g.loai_he_thong, g.so_pha, g.cong_suat_kwp, "
                 + "g.id_nguon", Map.of(), packageMapper());
+    }
+
+    /**
+     * Bộ lọc danh sách gói trên admin; trường null là không lọc.
+     *
+     * @param status RECOMMENDABLE, BLOCKED (đang bán nhưng bị chặn gợi ý), INACTIVE, WARNING (có cảnh báo dữ liệu)
+     */
+    public record PackageFilter(String keyword, String branchCode, String systemType, Integer phases, String status) {
+    }
+
+    /** Catalog chỉ vài trăm gói: lọc và cắt trang trong bộ nhớ, không cần dựng truy vấn động */
+    public Page<CatalogPackage> findPackages(PackageFilter filter, Pageable pageable) {
+        String kw = filter.keyword() == null ? "" : filter.keyword().trim().toLowerCase(Locale.ROOT);
+        List<CatalogPackage> matched = allPackages().stream()
+                .filter(p -> kw.isEmpty() || p.name().toLowerCase(Locale.ROOT).contains(kw)
+                        || String.valueOf(p.id()).equals(kw))
+                .filter(p -> isBlank(filter.branchCode()) || filter.branchCode().equals(p.branchCode()))
+                .filter(p -> isBlank(filter.systemType()) || filter.systemType().equals(p.systemType()))
+                .filter(p -> filter.phases() == null || filter.phases().equals(p.phases()))
+                .filter(p -> matchesStatus(p, filter.status()))
+                .toList();
+        int from = (int) Math.min(pageable.getOffset(), matched.size());
+        int to = Math.min(from + pageable.getPageSize(), matched.size());
+        return new PageImpl<>(matched.subList(from, to), pageable, matched.size());
+    }
+
+    private static boolean matchesStatus(CatalogPackage p, String status) {
+        if (isBlank(status)) {
+            return true;
+        }
+        return switch (status) {
+            case "RECOMMENDABLE" -> p.active() && p.recommendable();
+            case "BLOCKED" -> p.active() && !p.recommendable();
+            case "INACTIVE" -> !p.active();
+            case "WARNING" -> !p.warnings().isEmpty();
+            default -> true;
+        };
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     public Optional<CatalogPackage> findPackage(int id) {
