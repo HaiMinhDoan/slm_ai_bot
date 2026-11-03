@@ -229,7 +229,8 @@ public class ClaudeChatClient implements DisposableBean {
         return total == null ? value : total + value;
     }
 
-    private static JsonOutputFormat.Schema schemaOf(Map<String, Object> schema) {
+    /** Schema structured output từ Map (dùng chung cho AI hỗ trợ soạn kiến thức) */
+    public static JsonOutputFormat.Schema schemaOf(Map<String, Object> schema) {
         JsonOutputFormat.Schema.Builder b = JsonOutputFormat.Schema.builder();
         schema.forEach((k, v) -> b.putAdditionalProperty(k, JsonValue.from(v)));
         return b.build();
