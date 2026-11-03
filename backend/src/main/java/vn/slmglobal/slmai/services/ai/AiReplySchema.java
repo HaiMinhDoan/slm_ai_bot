@@ -11,8 +11,15 @@ import java.util.Map;
  * đúng enum và trường null; structured outputs yêu cầu mọi object có {@code additionalProperties: false}, mọi
  * thuộc tính đều required, không hỗ trợ ràng buộc độ dài / min / max (độ dài tin kiểm ở Policy).
  * Dùng LinkedHashMap để thứ tự khoá cố định giữa các lần khởi động (schema là một phần của prompt được cache).
+ *
+ * <p>API giới hạn {@value #MAX_UNION_PARAMS} tham số có {@code anyOf} (trường null được) cho TẤT CẢ schema strict
+ * của một request gộp lại (schema này + tool strict); vượt là lỗi 400 "too many parameters with union types" và
+ * mọi lượt AI chuyển nhân viên. Chỉ cho null ở chỗ thật sự cần; chuỗi "không có" dùng {@code ""}.
  */
 public final class AiReplySchema {
+
+    /** Giới hạn tham số kiểu union của structured outputs, tính gộp mọi schema strict trong một request */
+    public static final int MAX_UNION_PARAMS = 16;
 
     /** Loại câu hỏi (mục 35) */
     public static final List<String> INTENTS = List.of(
@@ -47,14 +54,15 @@ public final class AiReplySchema {
         Map<String, Object> budget = object(ordered(
                 "min", nullable(type("integer")),
                 "max", nullable(type("integer"))));
+        // budget_vnd luôn có, chưa biết thì min và max cùng null (Budget.isKnown)
         Map<String, Object> qualification = object(ordered(
                 "research_level", nullable(researchLevel),
-                "budget_vnd", nullable(budget),
+                "budget_vnd", budget,
                 "timeline", nullable(enumOf(ConsultSlots.TIMELINES))));
 
         Map<String, Object> handoff = object(ordered(
                 "needed", type("boolean"),
-                "reason", nullable(type("string"))));
+                "reason", type("string")));
 
         return object(ordered(
                 "goal", enumOf(GOALS),
@@ -64,7 +72,7 @@ public final class AiReplySchema {
                 "question_asked", nullable(enumOf(ConsultSlots.questionKeys())),
                 "qualification", qualification,
                 "sources", ordered("type", "array", "items", type("string")),
-                "knowledge_gap", nullable(type("string")),
+                "knowledge_gap", type("string"),
                 "handoff", handoff));
     }
 

@@ -22,8 +22,12 @@ import java.util.regex.Pattern;
 
 /**
  * Tool báo giá cho lượt trả lời khách (mục 4.2.6): {@code tim_goi_phu_hop}, {@code chi_tiet_goi}. Định nghĩa cố định
- * (thứ tự khoá không đổi) vì tool nằm đầu prefix được cache. Schema strict: Claude luôn gửi đủ trường, chưa biết thì
- * null; trường null được điền từ hồ sơ tư vấn đã thu.
+ * (thứ tự khoá không đổi) vì tool nằm đầu prefix được cache. Trường thiếu, null hoặc sai kiểu được điền từ hồ sơ tư
+ * vấn đã thu.
+ *
+ * <p>Tool KHÔNG strict: 9 trường null được của hai tool cộng với schema kết quả vượt giới hạn
+ * {@link AiReplySchema#MAX_UNION_PARAMS} tham số union của API (lỗi 400 ngày 2026-11-03, mọi lượt AI chuyển nhân
+ * viên). Đầu vào vốn được đọc phòng thủ ({@code text} / {@code integer} / {@code number}) nên không cần strict.
  */
 @Slf4j
 @Component
@@ -222,7 +226,6 @@ public class CustomerChatTools {
         return Tool.builder()
                 .name(name)
                 .description(description)
-                .strict(true)
                 .inputSchema(Tool.InputSchema.builder()
                         .properties(props.build())
                         .required(List.copyOf(properties.keySet()))

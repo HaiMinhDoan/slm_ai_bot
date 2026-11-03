@@ -68,7 +68,8 @@ class ClaudeChatClientToolLoopTest {
 
         JsonNode first = requests.get(0);
         assertThat(first.path("tools").get(0).path("name").asText()).isEqualTo("tim_goi_phu_hop");
-        assertThat(first.path("tools").get(0).path("strict").asBoolean()).isTrue();
+        // Tool không strict: giới hạn tham số union của API (AiReplySchema.MAX_UNION_PARAMS)
+        assertThat(first.path("tools").get(0).path("strict").asBoolean()).isFalse();
         assertThat(first.path("tools").get(0).path("input_schema").path("additionalProperties").asBoolean()).isFalse();
         assertThat(first.has("tool_choice")).isFalse();
 
