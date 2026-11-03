@@ -9,8 +9,10 @@ import vn.slmglobal.slmai.services.conversation.entity.Message;
 import vn.slmglobal.slmai.services.conversation.entity.MessageDirection;
 import vn.slmglobal.slmai.services.conversation.entity.MessageStatus;
 import vn.slmglobal.slmai.services.knowledge.KnowledgeBase;
+import vn.slmglobal.slmai.services.knowledge.KnowledgeSnapshot;
 import vn.slmglobal.slmai.services.lead.ConsultSlots;
 import vn.slmglobal.slmai.services.lead.entity.ConsultProfile;
+import vn.slmglobal.slmai.services.settings.AiSettingsService;
 
 import java.time.DayOfWeek;
 import java.time.ZonedDateTime;
@@ -20,12 +22,14 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
  * Ghép prompt cho một lượt trả lời khách (mục 5.4, 32):
  * <ol>
- *   <li>Khối cố định (cache): hướng dẫn prompts/customer-chat.md + toàn bộ tài liệu kiến thức.</li>
+ *   <li>Khối cố định (cache): hướng dẫn prompts/customer-chat + toàn bộ tài liệu kiến thức của bản phát hành
+ *   đang chạy (mục 5.3); dựng lại khi kích hoạt bản mới hoặc đổi tên công ty / tư vấn viên.</li>
  *   <li>Khối ngữ cảnh lượt (không cache): thời điểm, giờ làm việc, hồ sơ tư vấn, câu hỏi trước.</li>
  *   <li>Lịch sử hội thoại: tin khách là user, tin của trang là assistant; tin liền nhau cùng phía được gộp.</li>
  * </ol>
@@ -34,47 +38,68 @@ import java.util.stream.Collectors;
 @Component
 public class CustomerChatPromptBuilder {
 
-    static final String PROMPT_LOCATION = "prompts/customer-chat.md";
-
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     private static final Map<DayOfWeek, String> DAY_NAMES = Map.of(
             DayOfWeek.MONDAY, "thứ Hai", DayOfWeek.TUESDAY, "thứ Ba", DayOfWeek.WEDNESDAY, "thứ Tư",
             DayOfWeek.THURSDAY, "thứ Năm", DayOfWeek.FRIDAY, "thứ Sáu", DayOfWeek.SATURDAY, "thứ Bảy",
             DayOfWeek.SUNDAY, "Chủ nhật");
 
-    private final AiProperties properties;
-    private final String cachedSystem;
-    private final String promptVersion;
+    private final AiSettingsService settings;
+    private final KnowledgeBase knowledgeBase;
+    /** Khối cố định đã ghép gần nhất; giữ nguyên từng byte giữa các lượt để prompt cache trúng */
+    private final AtomicReference<SystemBlock> system = new AtomicReference<>();
 
-    public CustomerChatPromptBuilder(AiProperties properties, KnowledgeBase knowledgeBase) {
-        this.properties = properties;
-        String instructions = KnowledgeBase.readClasspathText(PROMPT_LOCATION, properties).strip();
-        this.cachedSystem = instructions + "\n\n# Tài liệu kiến thức\n\n" + knowledgeBase.rendered();
-        this.promptVersion = "customer-chat:" + HashUtil.sha256Hex(instructions).substring(0, 16);
+    /**
+     * @param key     phiên bản kiến thức + tên công ty + tên tư vấn viên
+     * @param text    hướng dẫn + khối kiến thức
+     * @param version luot_goi_ai.phien_ban_prompt
+     */
+    private record SystemBlock(String key, String text, String version) {
     }
 
-    /** luot_goi_ai.phien_ban_prompt */
-    public String promptVersion() {
-        return promptVersion;
+    public CustomerChatPromptBuilder(AiSettingsService settings, KnowledgeBase knowledgeBase) {
+        this.settings = settings;
+        this.knowledgeBase = knowledgeBase;
+    }
+
+    /** luot_goi_ai.phien_ban_prompt của khối cố định ghép từ snapshot này */
+    public String promptVersion(KnowledgeSnapshot k) {
+        return system(k).version();
     }
 
     /**
      * Rỗng khi không có tin nào của khách cần trả lời (tin cuối thuộc về trang).
      *
+     * @param k            kiến thức của lượt này (một snapshot cho cả lượt)
      * @param pricingTools có công cụ báo giá (catalog đã đồng bộ); tool do AiTurnService gắn vào request
      */
-    public Optional<ClaudeChatClient.ChatRequest> build(TurnSnapshot s, ZonedDateTime now, boolean businessOpen,
-                                                        boolean pricingTools) {
+    public Optional<ClaudeChatClient.ChatRequest> build(TurnSnapshot s, KnowledgeSnapshot k, ZonedDateTime now,
+                                                        boolean businessOpen, boolean pricingTools) {
         List<ClaudeChatClient.ChatTurn> turns = turns(s.history());
         if (turns.isEmpty() || !turns.get(turns.size() - 1).customer()) {
             return Optional.empty();
         }
-        return Optional.of(new ClaudeChatClient.ChatRequest(cachedSystem,
+        return Optional.of(new ClaudeChatClient.ChatRequest(system(k).text(),
                 turnContext(s, now, businessOpen, pricingTools), turns, AiReplySchema.schema()));
     }
 
+    private SystemBlock system(KnowledgeSnapshot k) {
+        AiProperties ai = settings.ai();
+        String key = k.version() + "|" + ai.companyName() + "|" + ai.personaName();
+        SystemBlock cached = system.get();
+        if (cached != null && cached.key().equals(key)) {
+            return cached;
+        }
+        String instructions = knowledgeBase.renderPrompt(k);
+        String text = instructions + "\n\n# Tài liệu kiến thức\n\n" + knowledgeBase.renderKnowledge(k);
+        SystemBlock built = new SystemBlock(key, text,
+                "customer-chat:" + HashUtil.sha256Hex(instructions).substring(0, 16));
+        system.set(built);
+        return built;
+    }
+
     String turnContext(TurnSnapshot s, ZonedDateTime now, boolean businessOpen, boolean pricingTools) {
-        AiProperties.BusinessHours hours = properties.businessHours();
+        AiProperties.BusinessHours hours = settings.ai().businessHours();
         ZonedDateTime local = now.withZoneSameInstant(hours.zoneId());
         ConsultProfile p = s.profile();
         StringBuilder sb = new StringBuilder("<ngu_canh_luot>\n");

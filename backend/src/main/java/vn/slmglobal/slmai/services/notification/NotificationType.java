@@ -17,5 +17,9 @@ public enum NotificationType {
     /** Đồng bộ catalog từ slm_v2 lỗi: bot vẫn dùng bản catalog trước đó (gửi quản trị hệ thống) */
     CATALOG_SYNC_FAILED,
     /** Đến hạn nạp dữ liệu định kỳ, ví dụ bảng PV out EVN năm mới (gửi quản trị hệ thống) */
-    DATA_UPDATE_DUE
+    DATA_UPDATE_DUE,
+    /** Bật / tắt công tắc dừng AI (mục 33.2): mọi lượt chỉ lưu nháp (gửi quản trị hệ thống) */
+    AI_KILL_SWITCH,
+    /** Kích hoạt hoặc quay về một bản phát hành kiến thức (mục 5.3; gửi quản trị hệ thống) */
+    KNOWLEDGE_RELEASE
 }

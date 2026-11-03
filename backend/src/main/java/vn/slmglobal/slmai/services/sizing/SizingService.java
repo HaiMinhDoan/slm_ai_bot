@@ -20,7 +20,7 @@ import java.util.Arrays;
 @RequiredArgsConstructor
 public class SizingService {
 
-    private final PricingProperties properties;
+    private final PricingSource rules;
 
     /** Khoảng giá trị; {@code min == max} khi đã đủ thông tin */
     public record Range(double min, double max) {
@@ -56,6 +56,7 @@ public class SizingService {
      */
     public Sizing size(long monthlyBillVnd, String dayNight, Double annualPvout, Range nationalPvout,
                        Double roofAreaM2) {
+        PricingProperties properties = rules.pricing();
         double daily = monthlyBillVnd / (double) properties.pricePerKwh() / 30.0;
         Double share = dayNight == null ? null : properties.nightShare().get(dayNight);
         Range night = share != null ? Range.of(share)
@@ -83,6 +84,7 @@ public class SizingService {
      * @param solarDaily sản lượng mặt trời trung bình mỗi ngày của tháng đang tính
      */
     public double selfConsumedDaily(double solarDaily, double storageKwh, double dailyKwh, double nightShare) {
+        PricingProperties properties = rules.pricing();
         double dayUse = dailyKwh * (1 - nightShare);
         double nightUse = dailyKwh * nightShare;
         double direct = Math.min(solarDaily, dayUse);
@@ -99,6 +101,6 @@ public class SizingService {
         for (double pv : pvoutMonthly) {
             kwh += selfConsumedDaily(kwp * pv / daysPerMonth, storageKwh, dailyKwh, nightShare) * daysPerMonth;
         }
-        return kwh * properties.pricePerKwh();
+        return kwh * rules.pricing().pricePerKwh();
     }
 }

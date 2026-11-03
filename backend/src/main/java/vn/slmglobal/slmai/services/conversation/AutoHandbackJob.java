@@ -1,6 +1,7 @@
 package vn.slmglobal.slmai.services.conversation;
 
 import lombok.RequiredArgsConstructor;
+import vn.slmglobal.slmai.services.settings.AiSettingsService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -19,11 +20,12 @@ import java.time.OffsetDateTime;
 public class AutoHandbackJob {
 
     private final ConversationRepository conversationRepository;
-    private final ConversationProperties properties;
+    private final AiSettingsService settings;
 
     @Scheduled(fixedDelayString = "${app.conversation.handback-check-interval-ms:300000}")
     @Transactional
     public void run() {
+        ConversationProperties properties = settings.conversation();
         if (!properties.workerEnabled() || properties.autoHandback() == null || properties.autoHandback().isZero()) {
             return;
         }

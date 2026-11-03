@@ -15,17 +15,17 @@ import vn.slmglobal.slmai.services.ai.entity.AiPurpose;
 import vn.slmglobal.slmai.services.ai.entity.AiRun;
 import vn.slmglobal.slmai.services.catalog.CatalogSyncService;
 import vn.slmglobal.slmai.services.conversation.ChannelSender;
-import vn.slmglobal.slmai.services.conversation.ConversationProperties;
 import vn.slmglobal.slmai.services.conversation.entity.ChannelCode;
 import vn.slmglobal.slmai.services.conversation.entity.Message;
 import vn.slmglobal.slmai.services.conversation.entity.MessageDirection;
 import vn.slmglobal.slmai.services.conversation.entity.MessageStatus;
 import vn.slmglobal.slmai.services.knowledge.KnowledgeBase;
+import vn.slmglobal.slmai.services.knowledge.KnowledgeSnapshot;
 import vn.slmglobal.slmai.services.lead.ConsultSlots;
 import vn.slmglobal.slmai.services.lead.entity.ConsultProfile;
 import vn.slmglobal.slmai.services.policy.NumberChecker;
 import vn.slmglobal.slmai.services.policy.ReplyPolicy;
-import vn.slmglobal.slmai.services.sizing.PricingProperties;
+import vn.slmglobal.slmai.services.settings.AiSettingsService;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -62,9 +62,7 @@ public class AiTurnService {
     private final KnowledgeBase knowledgeBase;
     private final CustomerChatTools tools;
     private final CatalogSyncService catalogSync;
-    private final PricingProperties pricing;
-    private final AiProperties properties;
-    private final ConversationProperties conversationProperties;
+    private final AiSettingsService settings;
     private final ObjectMapper objectMapper;
     private final Map<ChannelCode, ChannelSender> senders = new EnumMap<>(ChannelCode.class);
     /** Số lần gọi Claude lỗi liên tiếp của từng hội thoại (chỉ trong tiến trình này) */
@@ -80,8 +78,7 @@ public class AiTurnService {
 
     public AiTurnService(AiTurnStore store, CustomerChatPromptBuilder promptBuilder, ClaudeChatClient claude,
                          ReplyPolicy policy, KnowledgeBase knowledgeBase, CustomerChatTools tools,
-                         CatalogSyncService catalogSync, PricingProperties pricing, AiProperties properties,
-                         ConversationProperties conversationProperties, ObjectMapper objectMapper,
+                         CatalogSyncService catalogSync, AiSettingsService settings, ObjectMapper objectMapper,
                          List<ChannelSender> channelSenders) {
         this.store = store;
         this.promptBuilder = promptBuilder;
@@ -90,9 +87,7 @@ public class AiTurnService {
         this.knowledgeBase = knowledgeBase;
         this.tools = tools;
         this.catalogSync = catalogSync;
-        this.pricing = pricing;
-        this.properties = properties;
-        this.conversationProperties = conversationProperties;
+        this.settings = settings;
         this.objectMapper = objectMapper;
         channelSenders.forEach(s -> senders.put(s.channel(), s));
     }
@@ -107,6 +102,9 @@ public class AiTurnService {
         if (s == null) {
             return;
         }
+        // Một cài đặt và một bản kiến thức cho cả lượt, kể cả khi admin vừa đổi giữa chừng
+        AiProperties properties = settings.ai();
+        KnowledgeSnapshot knowledge = knowledgeBase.current();
         ZonedDateTime now = ZonedDateTime.now(properties.businessHours().zoneId());
         boolean businessOpen = properties.businessHours().isOpen(now);
         boolean windowOpen = isWindowOpen(s);
@@ -114,7 +112,8 @@ public class AiTurnService {
         s = withChannelName(s, sender);
 
         boolean pricingTools = tools.available();
-        ClaudeChatClient.ChatRequest request = promptBuilder.build(s, now, businessOpen, pricingTools).orElse(null);
+        ClaudeChatClient.ChatRequest request = promptBuilder.build(s, knowledge, now, businessOpen, pricingTools)
+                .orElse(null);
         if (request == null) {
             store.release(s);
             return;
@@ -128,7 +127,7 @@ public class AiTurnService {
                 ? TypingIndicator.start(sender, s.identity(), typingScheduler)
                 : null;
 
-        AiRun run = newRun(s);
+        AiRun run = newRun(s, knowledge, properties);
         ClaudeChatClient.ChatCompletion completion = null;
         RuntimeException failure = null;
         try {
@@ -145,7 +144,7 @@ public class AiTurnService {
         }
         int sent = failure != null
                 ? onCallFailed(s, run, failure, businessOpen, windowOpen, sender)
-                : finish(s, run, completion, toolSession, businessOpen, windowOpen, sender);
+                : finish(s, knowledge, run, completion, toolSession, businessOpen, windowOpen, sender);
         // Không gửi gì (nháp, bỏ lượt, chờ thử lại): tắt bong bóng thay vì để khách thấy "đang soạn" thêm 20 giây
         if (typing != null && sent == 0) {
             sender.stopTyping(s.identity());
@@ -153,7 +152,8 @@ public class AiTurnService {
     }
 
     /** Phần sau khi Claude trả lời: đọc kết quả, Policy, chốt, gửi. Trả số tin đã gửi ra kênh. */
-    private int finish(TurnSnapshot s, AiRun run, ClaudeChatClient.ChatCompletion completion,
+    private int finish(TurnSnapshot s, KnowledgeSnapshot knowledge, AiRun run,
+                       ClaudeChatClient.ChatCompletion completion,
                        CustomerChatTools.Session toolSession, boolean businessOpen, boolean windowOpen,
                        ChannelSender sender) {
         UUID conversationId = s.conversationId();
@@ -170,8 +170,8 @@ public class AiTurnService {
             decision = policy.evaluate(new ReplyPolicy.Input(
                     reply, s.replyMode(), s.firstTurnAfterHandback(), windowOpen, sender != null,
                     sender != null ? sender.maxTextLength() : 2000,
-                    numberSourceTexts(s, toolSession), numberSourceValues(s.profile()),
-                    allowedLinks(s, toolSession)));
+                    numberSourceTexts(s, knowledge, toolSession), numberSourceValues(s.profile()),
+                    allowedLinks(s, knowledge, toolSession), knowledge.rules().replyPolicy()));
         }
         AiTurnStore.Quote quote = toolSession == null ? null
                 : new AiTurnStore.Quote(toolSession.quotedPackageIds(), toolSession.cheapestQuotedVnd());
@@ -202,6 +202,7 @@ public class AiTurnService {
     /** Trả số tin đã gửi ra kênh (câu báo nhận khi chuyển nhân viên); 0 khi hẹn thử lại. */
     private int onCallFailed(TurnSnapshot s, AiRun run, RuntimeException e, boolean businessOpen,
                              boolean windowOpen, ChannelSender sender) {
+        AiProperties properties = settings.ai();
         int attempt = failures.merge(s.conversationId(), 1, Integer::sum);
         run.setError(truncate(describe(e)));
         boolean retryable = !(e instanceof AnthropicServiceException ase
@@ -261,15 +262,15 @@ public class AiTurnService {
         return sent;
     }
 
-    private AiRun newRun(TurnSnapshot s) {
+    private AiRun newRun(TurnSnapshot s, KnowledgeSnapshot knowledge, AiProperties properties) {
         return AiRun.builder()
                 .purpose(AiPurpose.CUSTOMER_CHAT)
                 .conversationId(s.conversationId())
                 .model(properties.model())
-                .kbVersion(knowledgeBase.version())
+                .kbVersion(knowledge.version())
                 .catalogVersion(catalogVersion())
                 .mediaVersion(MEDIA_VERSION_NONE)
-                .promptVersion(promptBuilder.promptVersion())
+                .promptVersion(promptBuilder.promptVersion(knowledge))
                 .build();
     }
 
@@ -287,7 +288,7 @@ public class AiTurnService {
 
     /** Cửa sổ 24 giờ tính từ tin cuối của khách; trừ hao 1 phút cho thời gian gửi. */
     private boolean isWindowOpen(TurnSnapshot s) {
-        Duration window = conversationProperties.messagingWindow();
+        Duration window = settings.conversation().messagingWindow();
         return s.lastCustomerMessageAt() != null && window != null
                 && s.lastCustomerMessageAt().plus(window).minusMinutes(1).isAfter(OffsetDateTime.now());
     }
@@ -296,9 +297,10 @@ public class AiTurnService {
      * Nguồn hợp lệ cho kiểm tra con số (mục 33.1): tài liệu kiến thức, tin của khách, kết quả tool của lượt này, và
      * tin trang đã gửi khách (đã qua kiểm tra lúc gửi, hoặc do nhân viên gửi).
      */
-    private List<String> numberSourceTexts(TurnSnapshot s, CustomerChatTools.Session toolSession) {
+    private List<String> numberSourceTexts(TurnSnapshot s, KnowledgeSnapshot knowledge,
+                                           CustomerChatTools.Session toolSession) {
         List<String> texts = new ArrayList<>();
-        texts.add(knowledgeBase.rendered());
+        texts.add(knowledgeBase.renderKnowledge(knowledge));
         for (Message m : s.history()) {
             if (m.getContent() == null) {
                 continue;
@@ -320,8 +322,9 @@ public class AiTurnService {
     }
 
     /** Link AI được gửi: link trong kết quả tool, link trang đã gửi trước đó, trang chủ website theo miền */
-    private List<String> allowedLinks(TurnSnapshot s, CustomerChatTools.Session toolSession) {
-        List<String> links = new ArrayList<>(pricing.productLinkDomains().values());
+    private List<String> allowedLinks(TurnSnapshot s, KnowledgeSnapshot knowledge,
+                                      CustomerChatTools.Session toolSession) {
+        List<String> links = new ArrayList<>(knowledge.rules().pricing().productLinkDomains().values());
         if (toolSession != null) {
             links.addAll(toolSession.links());
         }

@@ -3,6 +3,7 @@ package vn.slmglobal.slmai.services.conversation;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import lombok.RequiredArgsConstructor;
+import vn.slmglobal.slmai.services.settings.AiSettingsService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.slmglobal.slmai.services.conversation.entity.ChannelCode;
@@ -35,7 +36,7 @@ public class ConversationService {
     private final ChannelIdentityRepository channelIdentityRepository;
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
-    private final ConversationProperties properties;
+    private final AiSettingsService settings;
 
     /** Tin từ phía khách (tin nhắn, quick reply, postback). */
     public record InboundMessage(ChannelCode channel, String accountId, String externalUserId,
@@ -80,7 +81,7 @@ public class ConversationService {
         }
         // Gộp tin: mỗi tin mới lùi hạn; chỉ khi AI đang phụ trách (người đang theo thì AI không chen vào)
         if (conversation.getOwnership() == Ownership.AI_ACTIVE) {
-            conversation.setReplyDueAt(OffsetDateTime.now().plus(properties.debounce()));
+            conversation.setReplyDueAt(OffsetDateTime.now().plus(settings.conversation().debounce()));
         }
         return new Recorded(conversation.getId(), message.getId(), false, conversation.getReplyDueAt() != null);
     }

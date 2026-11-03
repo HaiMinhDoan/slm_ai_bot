@@ -74,13 +74,21 @@ public final class NumberChecker {
     private static final Pattern PLAIN_BIG_NUMBER = Pattern.compile(
             "(?<![\\d.,])(\\d{1,3}(?:[.,]\\d{3})+|\\d{4,})(?![\\d.,])");
 
-    /** Sai lệch tương đối cho phép khi làm tròn (90.800.000 ↔ "khoảng 91 triệu") */
-    private static final double TOLERANCE = 0.01;
+    /**
+     * Sai lệch tương đối mặc định khi làm tròn (90.800.000 ↔ "khoảng 91 triệu"); sửa ở rule
+     * {@code rules/kiem-tra-truoc-khi-gui} ({@link ReplyPolicyRule#numberTolerance()}).
+     */
+    public static final double DEFAULT_TOLERANCE = 0.01;
 
     private NumberChecker() {
     }
 
     public static Result check(String reply, Collection<String> sourceTexts, Collection<Quantity> extraSources) {
+        return check(reply, sourceTexts, extraSources, DEFAULT_TOLERANCE);
+    }
+
+    public static Result check(String reply, Collection<String> sourceTexts, Collection<Quantity> extraSources,
+                               double tolerance) {
         List<Quantity> sources = new ArrayList<>(extraSources);
         for (String s : sourceTexts) {
             sources.addAll(extract(s));
@@ -88,7 +96,7 @@ public final class NumberChecker {
         }
         List<Quantity> unverified = new ArrayList<>();
         for (Quantity q : extract(reply)) {
-            if (sources.stream().noneMatch(s -> matches(q, s))) {
+            if (sources.stream().noneMatch(s -> matches(q, s, tolerance))) {
                 unverified.add(q);
             }
         }
@@ -170,7 +178,7 @@ public final class NumberChecker {
         }
     }
 
-    private static boolean matches(Quantity q, Quantity source) {
+    private static boolean matches(Quantity q, Quantity source, double tolerance) {
         if (q.kind() != source.kind()) {
             return false;
         }
@@ -178,7 +186,7 @@ public final class NumberChecker {
             return Math.abs(q.value() - source.value()) < 1e-6;
         }
         double base = Math.max(Math.abs(source.value()), 1e-9);
-        return Math.abs(q.value() - source.value()) / base <= TOLERANCE;
+        return Math.abs(q.value() - source.value()) / base <= tolerance;
     }
 
     private record Unit(Kind kind, double multiplier) {

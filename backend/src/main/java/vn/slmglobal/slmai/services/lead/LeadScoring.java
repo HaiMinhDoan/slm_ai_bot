@@ -7,14 +7,10 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Tính mức tiềm năng theo bản nháp rules/lead-scoring.yaml (mục 58.5), tất định. Xét theo thứ tự
- * HOT → OFF_SEGMENT → WARM → COLD. AI chỉ trích tín hiệu; mức do backend tính.
+ * Tính mức tiềm năng theo rule {@code rules/phan-loai-khach} (mục 58.5, {@link LeadScoringRule}), tất định. Xét
+ * theo thứ tự HOT → OFF_SEGMENT → WARM → COLD. AI chỉ trích tín hiệu; mức do backend tính.
  */
 public final class LeadScoring {
-
-    static final Set<String> SOON = Set.of("TUAN_TOI", "THANG_TOI");
-    static final int WARM_ANSWERED_QUESTIONS = 3;
-    static final double LOW_BUDGET_RATIO = 0.8;
 
     /**
      * @param cheapestMatchVnd giá gói rẻ nhất phù hợp mà khách đã được báo (tool tim_goi_phu_hop, tin đã gửi);
@@ -31,13 +27,18 @@ public final class LeadScoring {
     }
 
     public static Score score(Signals s) {
-        boolean lowBudget = s.budgetMaxVnd() != null && s.cheapestMatchVnd() != null
-                && s.budgetMaxVnd() < s.cheapestMatchVnd() * LOW_BUDGET_RATIO;
+        return score(s, LeadScoringRule.DEFAULT);
+    }
 
-        if (s.hasPhone() && (SOON.contains(s.timeline()) || s.minimumInfoComplete())) {
+    public static Score score(Signals s, LeadScoringRule rule) {
+        Set<String> soon = rule.soonTimelines();
+        boolean lowBudget = s.budgetMaxVnd() != null && s.cheapestMatchVnd() != null
+                && s.budgetMaxVnd() < s.cheapestMatchVnd() * rule.lowBudgetRatio();
+
+        if (s.hasPhone() && (soon.contains(s.timeline()) || s.minimumInfoComplete())) {
             List<String> why = new ArrayList<>();
             why.add("Đã cho số điện thoại");
-            if (SOON.contains(s.timeline())) {
+            if (soon.contains(s.timeline())) {
                 why.add("TUAN_TOI".equals(s.timeline()) ? "dự định lắp trong tuần tới" : "dự định lắp trong tháng tới");
             }
             if (s.minimumInfoComplete()) {
@@ -51,7 +52,7 @@ public final class LeadScoring {
         if (lowBudget) {
             return new Score(LeadLevel.OFF_SEGMENT, "Ngân sách thấp hơn rõ rệt gói rẻ nhất phù hợp đã báo", true);
         }
-        if (s.answeredQuestions() >= WARM_ANSWERED_QUESTIONS) {
+        if (s.answeredQuestions() >= rule.warmAnsweredQuestions()) {
             return new Score(LeadLevel.WARM, "Đã trả lời " + s.answeredQuestions() + " câu hỏi"
                     + (s.hasPhone() ? "; đã cho số điện thoại" : ""), false);
         }

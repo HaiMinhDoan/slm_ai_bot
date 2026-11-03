@@ -1,0 +1,13 @@
+# <Tình huống của đoạn chat>
+
+## Bối cảnh
+<khách là ai, hỏi gì, đã biết gì>
+
+## Đoạn chat
+Khách: ...
+Em: ...
+Khách: ...
+Em: ...
+
+## Vì sao đây là mẫu tốt
+- <...>

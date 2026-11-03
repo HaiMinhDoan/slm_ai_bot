@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
+import vn.slmglobal.slmai.services.settings.AiSettingsService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
@@ -58,7 +59,7 @@ public class AiTurnStore {
     private final ConsultProfileService consultProfileService;
     private final LeadService leadService;
     private final TurnNotifier notifier;
-    private final AiProperties properties;
+    private final AiSettingsService settings;
 
     /** Tin cần gửi ra kênh sau khi chốt */
     public record Outgoing(UUID messageId, String text) {
@@ -85,13 +86,13 @@ public class AiTurnStore {
             return Optional.empty();
         }
         // Cắt về micro giây: PostgreSQL lưu tới micro giây, lúc so lại phải khớp tuyệt đối
-        OffsetDateTime lease = OffsetDateTime.now().plus(properties.turnLease()).truncatedTo(ChronoUnit.MICROS);
+        OffsetDateTime lease = OffsetDateTime.now().plus(settings.ai().turnLease()).truncatedTo(ChronoUnit.MICROS);
         c.setReplyDueAt(lease);
 
         ChannelIdentity identity = channelIdentityRepository.findById(c.getChannelIdentityId()).orElseThrow();
         Customer customer = customerRepository.findById(c.getCustomerId()).orElseThrow();
         List<Message> history = new ArrayList<>(messageRepository.findByConversationIdOrderByCreatedAtDesc(
-                c.getId(), PageRequest.of(0, Math.max(1, properties.historyLimit()))));
+                c.getId(), PageRequest.of(0, Math.max(1, settings.ai().historyLimit()))));
         Collections.reverse(history);
         List<Message> pending = messageRepository.findByConversationIdAndDirectionAndStatusOrderByCreatedAtAsc(
                 c.getId(), MessageDirection.IN, MessageStatus.RECEIVED);
@@ -265,7 +266,7 @@ public class AiTurnStore {
      * công tắc dừng toàn cục đang bật.
      */
     private String ackText(ReplyPolicy.Action action, boolean businessOpen) {
-        AiProperties.Templates t = properties.templates();
+        AiProperties.Templates t = settings.ai().templates();
         if (t == null || action == ReplyPolicy.Action.AUTO) {
             return null;
         }
@@ -274,7 +275,7 @@ public class AiTurnStore {
     }
 
     private boolean recentlyAcked(UUID conversationId, OffsetDateTime now) {
-        AiProperties.Templates t = properties.templates();
+        AiProperties.Templates t = settings.ai().templates();
         if (t == null || t.ackCooldown() == null || t.ackCooldown().isZero()) {
             return false;
         }

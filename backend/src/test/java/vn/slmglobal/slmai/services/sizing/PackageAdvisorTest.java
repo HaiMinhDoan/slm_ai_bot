@@ -32,8 +32,8 @@ class PackageAdvisorTest {
                 Map.of("BAC", "slmsolar.vn", "NAM", "slmsolar.com.vn"),
                 "Đây là giá niêm yết của gói trọn gói; giá cuối cùng nhân viên báo sau khi khảo sát thực tế.",
                 "Mái bằng cần thêm phần khung, chi phí khung nhân viên báo sau khi khảo sát.");
-        advisor = new PackageAdvisor(catalog, new ProvinceDirectory(objectMapper), pvout, new SizingService(pricing),
-                pricing, objectMapper);
+        advisor = new PackageAdvisor(catalog, new ProvinceDirectory(objectMapper), pvout, new SizingService(() -> pricing),
+                () -> pricing, objectMapper);
         when(catalog.recommendablePackages("HN")).thenReturn(sorted(List.of(
                 p(158, "HN", "Hệ On-Grid 5 kWp 1 pha", "ON_GRID", 1, 5.0, 0, 53_600_000, false),
                 p(160, "HN", "Hệ On-Grid 9 kWp 1 pha", "ON_GRID", 1, 8.75, 0, 84_200_000, false),

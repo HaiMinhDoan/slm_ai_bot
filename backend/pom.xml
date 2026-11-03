@@ -21,6 +21,7 @@
         <nimbus-jose-jwt.version>10.10</nimbus-jose-jwt.version>
         <springdoc.version>2.8.9</springdoc.version>
         <anthropic-java.version>2.73.0</anthropic-java.version>
+        <java-diff-utils.version>4.15</java-diff-utils.version>
 
         <!-- Kết nối cho flyway-maven-plugin. KHÔNG ghi mật khẩu ở đây; truyền khi chạy:
              ./mvnw flyway:info -Ddb.url=jdbc:postgresql://localhost:5432/slm_ai -Ddb.password=... -->
@@ -98,6 +99,17 @@
             <groupId>com.anthropic</groupId>
             <artifactId>anthropic-java</artifactId>
             <version>${anthropic-java.version}</version>
+        </dependency>
+
+        <!-- Kiến thức và rule sửa trên admin (mục 5.2, 5.9): rule lưu dạng YAML, so sánh phiên bản bằng diff -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.java-diff-utils</groupId>
+            <artifactId>java-diff-utils</artifactId>
+            <version>${java-diff-utils.version}</version>
         </dependency>
 
         <!-- Tài liệu API -->

@@ -41,7 +41,7 @@ public class PackageAdvisor {
     private final ProvinceDirectory provinces;
     private final PvoutService pvout;
     private final SizingService sizing;
-    private final PricingProperties pricing;
+    private final PricingSource pricingSource;
     private final ObjectMapper objectMapper;
 
     /** Thông tin khách đã có; trường chưa biết là null */
@@ -72,6 +72,11 @@ public class PackageAdvisor {
     private record Pick(CatalogPackage pkg, String note) {
     }
 
+    /** Thông số báo giá của bản phát hành đang chạy (rule rules/bao-gia) */
+    private PricingProperties pricing() {
+        return pricingSource.pricing();
+    }
+
     public boolean available() {
         return catalog.hasRecommendablePackages();
     }
@@ -89,8 +94,8 @@ public class PackageAdvisor {
         }
         out.put("co_bang_gia", true);
         String preferred = normalizeType(r.systemType());
-        if ("BANG".equals(r.roofType()) && pricing.flatRoofNote() != null) {
-            notes.add(pricing.flatRoofNote());
+        if ("BANG".equals(r.roofType()) && pricing().flatRoofNote() != null) {
+            notes.add(pricing().flatRoofNote());
         }
 
         List<Integer> quoted = new ArrayList<>();
@@ -109,8 +114,8 @@ public class PackageAdvisor {
                     place.pvMonthly() == null ? null : PvoutRepository.Table.annual(place.pvMonthly()),
                     nationalRange(place.table()), r.roofAreaM2());
             out.set("uoc_tinh", estimate(s, place, r));
-            if (s.requiredKwp().max() > pricing.largeSystemKwp()) {
-                notes.add("Nhu cầu lớn (trên " + VnFormat.kwp(pricing.largeSystemKwp())
+            if (s.requiredKwp().max() > pricing().largeSystemKwp()) {
+                notes.add("Nhu cầu lớn (trên " + VnFormat.kwp(pricing().largeSystemKwp())
                         + "): nên để nhân viên khảo sát và báo giá riêng.");
             }
             ArrayNode options = out.putArray("goi_de_xuat");
@@ -160,8 +165,8 @@ public class PackageAdvisor {
             }
         }
         out.set("con_thieu", missing(r, place));
-        if (pricing.quoteConditions() != null) {
-            out.put("dieu_kien_bao_gia", pricing.quoteConditions());
+        if (pricing().quoteConditions() != null) {
+            out.put("dieu_kien_bao_gia", pricing().quoteConditions());
         }
         out.set("ghi_chu", strings(notes));
         return new Advice(out, List.copyOf(quoted), cheapest);
@@ -214,13 +219,13 @@ public class PackageAdvisor {
         }
         if (pkg.steelFramePrice() > 0) {
             o.put("gia_khung_sat_mai_bang", VnFormat.money(pkg.steelFramePrice()));
-        } else if (pricing.flatRoofNote() != null) {
-            o.put("mai_bang", pricing.flatRoofNote());
+        } else if (pricing().flatRoofNote() != null) {
+            o.put("mai_bang", pricing().flatRoofNote());
         }
         addProduction(o, pkg, place, null, null);
         out.setAll(o);
-        if (pricing.quoteConditions() != null) {
-            out.put("dieu_kien_bao_gia", pricing.quoteConditions());
+        if (pricing().quoteConditions() != null) {
+            out.put("dieu_kien_bao_gia", pricing().quoteConditions());
         }
         out.set("ghi_chu", strings(notes));
         return out;
@@ -261,7 +266,7 @@ public class PackageAdvisor {
             return new Pick(smallest, "Diện tích mái khách nói chỉ đủ khoảng " + VnFormat.kwp(roofCap)
                     + ", nhỏ hơn gói nhỏ nhất; nhân viên sẽ khảo sát mái.");
         }
-        double min = needKwp * pricing.capacityTolerance();
+        double min = needKwp * pricing().capacityTolerance();
         List<CatalogPackage> enough = fitsRoof.stream().filter(p -> p.kwp() >= min - 1e-9).toList();
         if (enough.isEmpty()) {
             CatalogPackage largest = fitsRoof.stream().max(Comparator.comparing(CatalogPackage::kwp)
@@ -304,7 +309,7 @@ public class PackageAdvisor {
         if (preferred != null) {
             return List.of(preferred);
         }
-        Double share = r.dayNight() == null ? null : pricing.nightShare().get(r.dayNight());
+        Double share = r.dayNight() == null ? null : pricing().nightShare().get(r.dayNight());
         if (Boolean.TRUE.equals(r.backupNeeded()) || (share != null && share >= 0.5)) {
             return List.of(HYBRID);
         }
@@ -380,7 +385,7 @@ public class PackageAdvisor {
     private ObjectNode estimate(SizingService.Sizing s, Place place, AdviceRequest r) {
         ObjectNode e = objectMapper.createObjectNode();
         e.put("hoa_don_thang", VnFormat.money(r.monthlyBillVnd()));
-        e.put("gia_dien_quy_doi", pricing.pricePerKwh() + " đ/kWh");
+        e.put("gia_dien_quy_doi", pricing().pricePerKwh() + " đ/kWh");
         e.put("dien_dung_ngay", "khoảng " + VnFormat.kwhRounded(s.dailyKwh()) + "/ngày");
         e.put("dien_dung_thang", "khoảng " + VnFormat.kwhRounded(s.monthlyKwh()) + "/tháng");
         e.put("ty_le_dung_dem", range(s.nightShare(), VnFormat::percent)
@@ -434,7 +439,7 @@ public class PackageAdvisor {
         tk.put("ca_nam", "khoảng " + VnFormat.moneyApprox(annual));
         tk.put("hoan_von", "khoảng " + VnFormat.decimal(p.totalPrice() / annual, 1) + " năm");
         tk.put("cach_tinh", "điện mặt trời tự dùng (ban ngày, và pin cho buổi tối nếu có) × "
-                + pricing.pricePerKwh() + " đ/kWh; không tính bán điện dư lên lưới");
+                + pricing().pricePerKwh() + " đ/kWh; không tính bán điện dư lên lưới");
     }
 
     private ObjectNode summary(CatalogPackage p, Place place) {
@@ -472,7 +477,7 @@ public class PackageAdvisor {
         if (!place.known()) {
             return Optional.empty();
         }
-        String preferred = pricing.productLinkDomains().get(place.province().region().name());
+        String preferred = pricing().productLinkDomains().get(place.province().region().name());
         List<String> synced = catalog.domains(p.branchCode());
         String domain = preferred != null && (synced.isEmpty() || synced.contains(preferred)) ? preferred
                 : synced.isEmpty() ? null : synced.get(0);

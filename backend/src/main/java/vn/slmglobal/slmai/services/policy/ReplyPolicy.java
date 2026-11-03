@@ -3,6 +3,7 @@ package vn.slmglobal.slmai.services.policy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import vn.slmglobal.slmai.services.ai.AiProperties;
+import vn.slmglobal.slmai.services.settings.AiSettingsService;
 import vn.slmglobal.slmai.services.ai.AiReply;
 import vn.slmglobal.slmai.services.conversation.entity.ReplyMode;
 
@@ -51,11 +52,16 @@ public class ReplyPolicy {
             "(?i)(?:https?://)?(?:www\\.)?(?:[a-z0-9-]+\\.)+(?:com|vn|net|org)\\b(?:/[^\\s]*)?");
     private static final Pattern TRAILING_PUNCTUATION = Pattern.compile("[.,;:!?)\\]}'\"]+$");
 
-    private final AiProperties properties;
+    private final AiSettingsService settings;
 
+    /**
+     * @param maxTextLength giới hạn của kênh; lấy min với {@link ReplyPolicyRule#maxLength()}
+     * @param rule          rule rules/kiem-tra-truoc-khi-gui của bản phát hành mà lượt này dùng
+     */
     public record Input(AiReply reply, ReplyMode replyMode, boolean firstTurnAfterHandback, boolean windowOpen,
                         boolean channelSupported, int maxTextLength, Collection<String> numberSourceTexts,
-                        Collection<NumberChecker.Quantity> numberSourceValues, Collection<String> allowedLinks) {
+                        Collection<NumberChecker.Quantity> numberSourceValues, Collection<String> allowedLinks,
+                        ReplyPolicyRule rule) {
     }
 
     public record Decision(Action action, List<String> reasons, List<String> unverifiedNumbers) {
@@ -66,6 +72,8 @@ public class ReplyPolicy {
     }
 
     public Decision evaluate(Input in) {
+        AiProperties properties = settings.ai();
+        ReplyPolicyRule rule = in.rule() == null ? ReplyPolicyRule.DEFAULT : in.rule();
         AiReply reply = in.reply();
         if (properties.handoffIntents() != null && properties.handoffIntents().contains(reply.intent())) {
             return Decision.handoff(HANDOFF_INTENT);
@@ -91,20 +99,22 @@ public class ReplyPolicy {
             reasons.add(INTENT_NOT_AUTO);
         }
         NumberChecker.Result numbers = NumberChecker.check(reply.reply(), in.numberSourceTexts(),
-                in.numberSourceValues());
+                in.numberSourceValues(), rule.numberTolerance());
         List<String> unverified = new ArrayList<>();
         numbers.unverified().forEach(q -> unverified.add(q.text()));
         unverified.addAll(numbers.spelledOut());
         if (!numbers.passed()) {
             reasons.add(NUMBER_CHECK_FAILED);
         }
-        if (!linksAllowed(reply.reply(), in.allowedLinks())) {
+        List<String> allowed = new ArrayList<>(in.allowedLinks() == null ? List.of() : in.allowedLinks());
+        allowed.addAll(rule.extraAllowedLinks());
+        if (!linksAllowed(reply.reply(), allowed)) {
             reasons.add(LINK_NOT_ALLOWED);
         }
-        if (reply.reply().length() > in.maxTextLength()) {
+        if (reply.reply().length() > Math.min(in.maxTextLength(), rule.maxLength())) {
             reasons.add(TOO_LONG);
         }
-        if (countQuestions(reply.reply()) > 1) {
+        if (rule.oneQuestionOnly() && countQuestions(reply.reply()) > 1) {
             reasons.add(MULTIPLE_QUESTIONS);
         }
         if (!in.channelSupported()) {

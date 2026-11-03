@@ -20,6 +20,7 @@ import java.util.UUID;
 public class ConsultProfileService {
 
     private final ConsultProfileRepository repository;
+    private final LeadScoringRuleSource leadScoringRules;
 
     /**
      * @param reply              kết quả AI; null khi lượt lỗi (vẫn ghi nhận số điện thoại)
@@ -86,7 +87,7 @@ public class ConsultProfileService {
                 missing.isEmpty(),
                 profile.getAnsweredQuestions(),
                 budgetMax(qualification),
-                profile.getCheapestQuotedPrice()));
+                profile.getCheapestQuotedPrice()), leadScoringRules.leadScoring());
         profile.setLeadLevel(score.level());
         profile.setLeadLevelReason(score.reason());
         return repository.save(profile);

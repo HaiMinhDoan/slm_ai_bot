@@ -21,12 +21,14 @@ import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlock;
 import com.anthropic.models.messages.Usage;
 import com.fasterxml.jackson.databind.JsonNode;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import vn.slmglobal.slmai.services.settings.AiSettingsService;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -44,13 +46,27 @@ import java.util.stream.Collectors;
  * </ul>
  */
 @Component
-@RequiredArgsConstructor
 public class ClaudeChatClient implements DisposableBean {
 
     static final String FALLBACK_BETA = "server-side-fallback-2026-07-01";
 
-    private final AiProperties properties;
+    /** Cài đặt hiện hành: model, effort đổi được trên admin (Cài đặt AI) */
+    private final Supplier<AiProperties> settings;
     private volatile AnthropicClient client;
+
+    @Autowired
+    public ClaudeChatClient(AiSettingsService settings) {
+        this(settings::ai);
+    }
+
+    /** Cấu hình cố định (test) */
+    public ClaudeChatClient(AiProperties properties) {
+        this(() -> properties);
+    }
+
+    private ClaudeChatClient(Supplier<AiProperties> settings) {
+        this.settings = settings;
+    }
 
     /** Một lượt trong lịch sử: {@code customer} = true là tin của khách (role user), false là tin của trang. */
     public record ChatTurn(boolean customer, String text) {
@@ -111,6 +127,7 @@ public class ClaudeChatClient implements DisposableBean {
 
     /** Lỗi gọi API (mạng, 429, 5xx...) ném ra nguyên dạng {@code AnthropicException} để tầng trên thử lại. */
     public ChatCompletion complete(ChatRequest request) {
+        AiProperties properties = settings.get();
         MessageCreateParams.Builder base = MessageCreateParams.builder()
                 .model(properties.model())
                 .maxTokens(properties.maxTokens())
@@ -218,12 +235,18 @@ public class ClaudeChatClient implements DisposableBean {
         return b.build();
     }
 
+    /** Client Anthropic dùng chung (khoá API, timeout lấy từ .env), cho các lần gọi khác: đếm token, AI hỗ trợ soạn */
+    public AnthropicClient sdk() {
+        return client();
+    }
+
     private AnthropicClient client() {
         AnthropicClient c = client;
         if (c == null) {
             synchronized (this) {
                 c = client;
                 if (c == null) {
+                    AiProperties properties = settings.get();
                     if (!properties.hasApiKey()) {
                         throw new IllegalStateException("Chưa cấu hình ANTHROPIC_API_KEY");
                     }
