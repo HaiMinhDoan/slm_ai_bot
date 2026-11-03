@@ -256,6 +256,30 @@ public final class RuleCodec {
         return more.isEmpty() ? new Parsed<>(rule, List.of()) : new Parsed<>(null, more);
     }
 
+    /**
+     * Kiểm tra rồi ghi lại theo dạng chuẩn (thứ tự khoá, cách viết số cố định): cùng giá trị thì cùng nội dung, cùng
+     * mã băm, dù sửa bằng form hay gõ YAML.
+     */
+    public static Parsed<String> canonical(String key, String yaml) {
+        Parsed<?> p = switch (key) {
+            case PRICING -> pricing(yaml);
+            case LEAD_SCORING -> leadScoring(yaml);
+            case REGIONS -> regions(yaml);
+            case REPLY_POLICY -> replyPolicy(yaml);
+            default -> new Parsed<>(null, List.of("Không có rule " + key));
+        };
+        return p.ok() ? new Parsed<>(write(key, p.value()), List.of()) : new Parsed<>(null, p.errors());
+    }
+
+    /** Như {@link #canonical(String, String)}, nhận giá trị từ form (JSON) */
+    public static Parsed<String> canonical(String key, JsonNode json) {
+        try {
+            return canonical(key, YAML.writeValueAsString(json));
+        } catch (JsonProcessingException e) {
+            return new Parsed<>(null, List.of("Giá trị không hợp lệ: " + e.getOriginalMessage()));
+        }
+    }
+
     /** YAML → JSON để form trên admin đọc; YAML sai trả null */
     public static JsonNode toJson(String yaml) {
         Parsed<JsonNode> t = tree(yaml);

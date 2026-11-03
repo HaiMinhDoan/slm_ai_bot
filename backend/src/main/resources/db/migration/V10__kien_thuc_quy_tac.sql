@@ -38,7 +38,8 @@ CREATE TABLE kt_phien_ban (
 );
 -- Mỗi tài liệu tối đa một bản nháp
 CREATE UNIQUE INDEX uq_kt_phien_ban_mot_nhap ON kt_phien_ban (tai_lieu_id) WHERE trang_thai = 'DRAFT';
-SELECT gan_trigger_sua_luc('kt_phien_ban');
+-- sua_luc do ứng dụng ghi (không dùng trigger dat_sua_luc): trang soạn gửi lại đúng giá trị này để phát hiện hai
+-- người cùng sửa một bản nháp, trigger đổi giá trị sau khi lưu sẽ báo xung đột nhầm.
 
 -- EN: knowledge_releases — immutable knowledge release snapshot
 CREATE TABLE kt_phat_hanh (                          -- bản phát hành: ảnh chụp bất biến

@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import vn.slmglobal.slmai.services.knowledge.entity.KnowledgeRelease;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface KnowledgeReleaseRepository extends JpaRepository<KnowledgeRelease, Long> {
@@ -13,6 +14,8 @@ public interface KnowledgeReleaseRepository extends JpaRepository<KnowledgeRelea
     Optional<KnowledgeRelease> findFirstByStatus(KnowledgeRelease.Status status);
 
     Optional<KnowledgeRelease> findByKbVersion(String kbVersion);
+
+    List<KnowledgeRelease> findByStatus(KnowledgeRelease.Status status);
 
     Page<KnowledgeRelease> findAllByOrderByIdDesc(Pageable pageable);
 
