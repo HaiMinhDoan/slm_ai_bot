@@ -455,6 +455,12 @@ cac_kenh: [messenger, comment]
 
 Nhờ vậy ba chỗ này không bao giờ lệch nhau.
 
+**Đã làm (2026-11-04), khác thiết kế ở trên:**
+- Bảng `kt_tai_lieu`, `kt_phien_ban`, `kt_phat_hanh`, `kt_phat_hanh_chi_tiet` (migration V10). Mã tài liệu giữ dạng đường dẫn (`policies/bao-hanh`, `rules/bao-gia`), không đổi sang `policy.bao-hanh`; loại suy ra từ thư mục đầu. Thêm loại `PROMPT` cho hướng dẫn hệ thống `prompts/customer-chat`, cũng có phiên bản và phát hành như tài liệu.
+- Lần đầu khởi động trên CSDL trống, `KnowledgeSeeder` nhập `knowledge/**/*.md`, prompt và 4 rule sinh từ cấu hình đang chạy thành bản phát hành #1, nên bot chạy y như cũ. **Từ đó CSDL là nguồn duy nhất:** sửa file `.md` trong repo không còn tác dụng với server đang chạy. Chưa có nhập / xuất zip.
+- 4 rule YAML đang dùng: `rules/bao-gia` (thông số báo giá, thay `app.pricing.*`), `rules/phan-loai-khach` (ngưỡng mục 58.5), `rules/tinh-mien` (thay `data/tinh-thanh.json`), `rules/kiem-tra-truoc-khi-gui` (độ dài, một câu hỏi, link thêm, dung sai số của Policy). Chưa có `topics.yaml`, `content-schedule.yaml` và các trường `chu_de`, `cac_kenh`.
+- `consult-slots` **vẫn nằm trong code** (`ConsultSlots`), admin chỉ xem: danh sách này quyết định khuôn kết quả AI và schema tool, mà API giới hạn 16 trường kiểu union (nullable) trên mọi schema strict của một request; đổi trên web dễ làm hỏng mọi lượt AI.
+
 ## 5.3 Phát hành và đồng bộ
 
 Sửa xong không áp dụng ngay. Các bản nháp được gom thành **một bản phát hành**, kiểm tra, rồi mới kích hoạt.
@@ -488,6 +494,12 @@ Admin bấm "Kích hoạt" (hoặc hẹn giờ)
 - Phát hành theo bộ: sửa playbook và FAQ cùng lúc thì lên chung một bản, tránh giai đoạn bot dùng playbook mới với FAQ cũ.
 - Bản phát hành không bao giờ bị sửa. **Rollback** là kích hoạt lại một bản cũ, xong ngay lập tức.
 - Mỗi lượt gọi AI ghi `phien_ban_kt`, `phien_ban_catalog` và `phien_ban_media` vào `luot_goi_ai`, nên luôn truy ra được AI đã dựa vào phiên bản nào khi trả lời.
+
+**Đã làm (2026-11-04), khác sơ đồ trên:**
+- Kiểm tra chạy ngay khi bấm (không có job nền) và chạy **trước** khi đóng băng bản nháp: không đạt thì không tạo gì, nên không có bản phát hành `FAILED`. Trang Phát hành cho bấm "Kiểm tra" trước, xem báo cáo rồi mới "Tạo".
+- Các bước đang có: mã và tài liệu bắt buộc; rule đúng schema, tỉnh thuộc một miền, miền trỏ tới cơ sở có trong catalog; placeholder lạ; tổng token khối kiến thức ≤ 40K (đếm bằng `count_tokens`); lint chỉ cảnh báo. Chưa có bước 5 (bộ test). Cảnh báo khi còn bản phát hành `READY` chưa kích hoạt.
+- Kích hoạt: một transaction, rồi `KnowledgeBase` nạp lại sau commit (`@TransactionalEventListener`), dự phòng kiểm tra mỗi 30 giây. Mỗi lượt AI lấy **một** bản chụp kiến thức + rule dùng cho cả prompt, Policy và `phien_ban_kt`. Chưa làm ấm cache bằng request `max_tokens = 0`.
+- Audit `knowledge.release.create` / `activate` / `rollback`, thông báo `KNOWLEDGE_RELEASE` cho quản trị.
 
 Hai nguồn khác cấp cho prompt cũng có phiên bản riêng:
 
@@ -566,6 +578,14 @@ Chỉ chuyển khi phần ② vượt khoảng 40K token, hoặc FAQ vượt kho
 - **Lịch sử phiên bản**, diff giữa hai bản, nút "khôi phục bản này" (tạo bản nháp mới từ bản cũ).
 - **Chống ghi đè:** bản nháp ghi lại bản gốc đã sửa từ đó (`phien_ban_goc_id`); nếu trong lúc sửa đã có bản mới được phát hành thì báo xung đột và cho xem diff.
 - **Quyền:** `KNOWLEDGE_EDITOR` sửa nháp; `KNOWLEDGE_PUBLISHER` phát hành, rollback. Ai sửa được kiến thức là điều khiển được bot nói gì với khách, nên cần đăng nhập mạnh và audit mọi lần phát hành.
+
+**Đã làm (2026-11-04):** menu *Kiến thức & quy tắc* trên admin, chỉ dùng component có sẵn của Vben (không thêm gói npm).
+- **Quyền:** doanh nghiệp chốt `SYSTEM_ADMIN` và `CONTENT_ADMIN` làm được tất cả (soạn, phát hành, quay về bản cũ, cài đặt AI); không tách `KNOWLEDGE_EDITOR` / `KNOWLEDGE_PUBLISHER`. Mọi thao tác ghi `nhat_ky_thao_tac`.
+- **Tài liệu:** trình soạn Markdown là vditor có sẵn trong Vben (`MarkDown`, xem trước song song), không dùng `md-editor-v3`. Nút "Kiểm tra & đếm token" chạy lint và đếm token bằng API (không đếm khi đang gõ). Tạo tài liệu mới chèn sẵn mẫu `guide/mau/*`.
+- **Quy tắc:** 4 rule sửa bằng form (tỷ lệ hiện dạng %), tỉnh → miền sửa bằng bảng + modal; lỗi kiểm tra hiện theo nhãn của ô. Hướng dẫn hệ thống cho AI soạn như tài liệu. *Thông tin cần hỏi* chỉ xem (mục 5.2).
+- **Diff** tính ở backend (java-diff-utils), trang chỉ hiển thị. Bỏ qua dòng trống và khoảng trắng (với Markdown bỏ cả thụt lề), vì vditor tự chuẩn hoá định dạng khi sửa; YAML giữ thụt lề.
+- **Chống ghi đè:** lưu nháp gửi kèm bản gốc và thời điểm sửa nháp; trả 409 khi đã có bản mới hơn (`BASE_CHANGED`) hoặc người khác vừa lưu nháp (`DRAFT_CHANGED`), trang hiện diff và nút "Vẫn lưu đè".
+- **Cài đặt AI** (bảng `cai_dat_ai`, có hiệu lực ngay, không qua phát hành): công tắc dừng, loại câu hỏi gửi tự động / chuyển nhân viên, giờ làm việc, câu báo nhận, tên tư vấn viên và công ty (thay `{{ten_tu_van_vien}}`, `{{ten_cong_ty}}` trong kiến thức), gộp tin, tự trả lại AI, model, effort, số lần thử lại. Chỉ lưu giá trị đã đổi; ô chưa đổi lấy mặc định trong `application.yml`. Khoá API, timeout, base URL vẫn ở `.env`.
 
 ## 5.10 AI hỗ trợ soạn
 
@@ -661,6 +681,11 @@ Xem trước: bản hiển thị + diff với bản đang chạy + kết quả k
 - Thay đổi ở tài liệu YAML (`sizing-rules`, `lead-scoring`, `consult-slots`) được tô nổi bật từng con số và phải qua schema cùng bộ ca thử.
 - Model: Claude Opus 5.5 (ít lượt, cần viết tốt); phiên chat lưu ở `tl_phien_chat` với `loai_tro_ly = KNOWLEDGE`; mỗi lượt ghi `luot_goi_ai` với `muc_dich = KNOWLEDGE_ASSISTANT`.
 - Cũng dùng được từ `kt_lo_hong`: bấm "nhờ AI viết nháp" trên một lỗ hổng kiến thức là mở sẵn phiên với câu hỏi đó.
+
+**Đã làm (2026-11-04):**
+- **A.** Lint đang có: con số giá / công suất (cả viết không dấu như "5 trieu"), chỗ trống của mẫu (`<điều khoản 1>`), placeholder lạ, dòng viết không dấu, đoạn hơn 5 câu, thuật ngữ lệch `guide/thuat-ngu` (bỏ qua cụm khác nghĩa như "số điện thoại", "trung bình"), thiếu mục bắt buộc của mẫu FAQ / playbook. Chưa có nút "AI góp ý", kiểm tra trùng chủ đề và đếm câu hỏi trong câu mẫu.
+- **B.** Drawer chat trên trang Tài liệu (mở chung, hoặc từ một dòng để gắn tài liệu đích; mở lại thì vào phiên gần nhất). Claude Opus 5.5, thinking adaptive, effort medium, structured output không có trường null, gọi streaming. AI trả lời **chạy nền**, trang hỏi lại mỗi 2,5 giây, vì nginx-proxy-manager cắt request sau 60 giây (một lượt thật mất khoảng 40–50 giây). Mỗi đề xuất có diff với bản nháp hoặc bản đang chạy, lint, mâu thuẫn AI tìm thấy; đề xuất có lỗi (sai loại, sửa rule, mã sai) không duyệt được. Duyệt chỉ hỏi ghi đè khi bản nháp được sửa sau lúc AI đọc. Rule YAML không sửa qua AI, chỉ qua form trang Quy tắc.
+- Chưa có: "Duyệt & phát hành", "nhờ AI viết nháp" từ `kt_lo_hong` (chưa có bảng lỗ hổng trên admin).
 
 Bảng dữ liệu: mục 29 (Knowledge, Assistant, AI Runs).
 
@@ -2843,6 +2868,8 @@ Policy kiểm tra:
 - Một cờ trên admin (quyền cao nhất): khi bật, mọi lượt đi theo `DRAFT`, Lead Nurturing và đăng bài tự động tạm dừng; tin nhận vẫn được lưu.
 - Tự bật khi có dấu hiệu bất thường: tỷ lệ lỗi Claude API, tỷ lệ lượt bị Policy chặn hoặc tỷ lệ nhân viên báo BAD vượt ngưỡng trong một khoảng thời gian (cấu hình).
 - Mỗi lần bật / tắt gửi cảnh báo cho admin và ghi audit log.
+
+**Đã làm (2026-11-04):** nút trên trang *Cài đặt AI*, bật phải nhập lý do; có hiệu lực ngay ở lượt AI kế tiếp. Ghi audit `ai.kill_switch.on` / `off` và thông báo `AI_KILL_SWITCH` cho quản trị. Biến `AI_FORCE_DRAFT` trong `.env` vẫn là giá trị mặc định khi chưa bấm trên web. Chưa có tự bật theo ngưỡng; Lead Nurturing và đăng bài tự động chưa có nên chưa cần tạm dừng.
 
 ------------------------------------------------------------------------
 
@@ -5065,7 +5092,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 
 ------------------------------------------------------------------------
 
-# 60. Việc cần làm (cập nhật 2026-10-29)
+# 60. Việc cần làm (cập nhật 2026-11-04)
 
 ## 60.1 Đã có
 
@@ -5074,7 +5101,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 | Webhook Messenger: lưu khách / hội thoại / tin, gộp tin, khoá lượt, hiện "đang soạn tin" | Chạy thật trên Trang Solarmax. App Meta ở chế độ Development: chỉ tài khoản có vai trò trong app được bot trả lời |
 | Nhân viên tiếp quản: trả lời từ hộp thư Meta thì bot nhường (nhận echo), tự trả lại AI sau thời gian chờ | Chạy thật |
 | AI trả lời (Sonnet 5.5, effort `low`), xưng "Huyền", nói thật là trợ lý tự động khi khách hỏi. Gửi tự động 5 loại (`CHAO_HOI`, `TU_VAN_LAP_MOI`, `HOI_GIA`, `GIAI_THICH`, `CHINH_SACH`), `KHAC` thành nháp, `KY_THUAT_SU_CO` / `KHIEU_NAI` chuyển nhân viên | Chạy thật |
-| Policy: kiểm tra con số, link; công tắc dừng toàn cục (mục 33) | Chạy thật. Công tắc mới là biến `AI_FORCE_DRAFT` trong `.env`, chưa có nút trên web |
+| Policy: kiểm tra con số, link; công tắc dừng toàn cục (mục 33) | Chạy thật. Nút công tắc dừng trên trang *Cài đặt AI*: đã viết 2026-11-04, chờ triển khai |
 | Hồ sơ tư vấn, lead, mức tiềm năng (mục 58.5), cảnh báo trùng số điện thoại; nhật ký mỗi lượt AI (`luot_goi_ai`: token, lần gọi tool) | Chạy thật |
 | Mốc báo giá (60.4): đồng bộ catalog slm_v2 mỗi 10 phút kèm cảnh báo dữ liệu, PV out EVN theo năm và nhắc nạp năm mới, `SizingService`, tool `tim_goi_phu_hop` / `chi_tiet_goi`, link theo miền, giá đã gồm VAT | Chạy thật từ 2026-10-29 |
 | Trang admin `https://fs-wms.io.vn`: đăng nhập, người dùng và vai trò, nhật ký thao tác | Chạy thật (HTTPS qua nginx-proxy-manager) |
@@ -5082,15 +5109,16 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 | Catalog & báo giá trên admin: *Gói từ slm_v2*, *Thử báo giá*, *PV out EVN*. Dựng theo khuôn bảng của fsignai (`BasicTable` / `useTable`, form tìm kiếm, phân trang). Gói sửa, bật / tắt, xoá mềm và khôi phục được ngay trên admin (60.4) | Đã viết 2026-10-29, chờ triển khai bản mới |
 | Thư viện media (mục 6.3 D): nhập ảnh combo từ Google Drive vào MinIO (bucket `slm-ai-media`) | Đã nạp 24 ảnh và 11 link video Facebook (2026-10-29), đang ở trạng thái `DRAFT` nên AI chưa dùng |
 | Sửa, duyệt, xoá mềm và khôi phục media trên admin (mục 6.5) | Đã viết 2026-10-29, chờ triển khai bản mới |
-| Kiến thức: `core/` (identity, voice, guardrails), playbook `khach-hoi-gia`, `tu-van-lap-moi` | Nạp từ file trong repo, chưa có trình soạn trên web |
+| Kiến thức: `core/` (identity, voice, guardrails), playbook `khach-hoi-gia`, `tu-van-lap-moi` | Chạy thật, nạp từ file trong repo |
+| Knowledge Editor (mục 5.2, 5.3, 5.9, 5.10): tài liệu và rule trong CSDL có phiên bản, diff, chống ghi đè, phát hành / quay về bản cũ, trang Quy tắc, *Cài đặt AI* có hiệu lực ngay, AI hỗ trợ soạn (Opus 5.5) | Đã viết 2026-11-04, chờ triển khai. Lần khởi động đầu tự nhập kiến thức và rule đang chạy thành bản phát hành #1 |
 
 ## 60.2 Còn thiếu
 
 **Cho MVP (Phase 0–1, mục 38, 59.7):**
-1. **Inbox admin** (doanh nghiệp yêu cầu ghi lại để làm sau): danh sách hội thoại, xem tin; duyệt / sửa / gửi nháp AI ngay trên trang (thay việc sao chép sang Meta Business Suite); nút "Trả lại AI"; chấm GOOD / BAD / EDIT; danh sách lead; công tắc dừng trên web; gán nhân viên phụ trách (để thông báo `HANDBACK_REPLY` gửi đúng người).
+1. **Inbox admin** (doanh nghiệp yêu cầu ghi lại để làm sau): danh sách hội thoại, xem tin; duyệt / sửa / gửi nháp AI ngay trên trang (thay việc sao chép sang Meta Business Suite); nút "Trả lại AI"; chấm GOOD / BAD / EDIT; danh sách lead; gán nhân viên phụ trách (để thông báo `HANDBACK_REPLY` gửi đúng người).
 2. **Lead → Sales API:** adapter `salesapi` còn trống; lead mới nằm trong CSDL của bot, chưa có trang xem lead (làm cùng Inbox admin).
 3. **Media cho AI:** admin viết `tom_tat` / `dung_khi` và duyệt ảnh combo (form sửa đã có, mục 6.5); `MediaIndexBuilder` dựng danh mục từ mục đã duyệt, chưa xoá; quyết định bot có được gửi link video Facebook không (link slmsolar.vn / slmsolar.com.vn đã cho phép ở mốc báo giá; Policy chỉ cho link có trong kết quả tool, tin trang đã gửi và trang chủ theo miền); gửi ảnh qua Messenger (Attachment Upload API, không cần MinIO công khai). 24 ảnh combo đã nạp đang chờ duyệt.
-4. **Kiến thức v1:** chính sách bảo hành, khoảng 10 FAQ, chiến lược bán hàng (mục 58.7); Knowledge Editor cơ bản: sửa, phiên bản, phát hành, rollback (mục 5.9).
+4. **Kiến thức v1** (soạn trên Knowledge Editor sau khi triển khai): chính sách bảo hành, khoảng 10 FAQ, chiến lược bán hàng (mục 58.7). AI hỗ trợ soạn khi thử đã chỉ ra một chỗ cần doanh nghiệp quyết: playbook `khach-hoi-gia` bước 8 và `core/guardrails` cho bot nêu thời hạn bảo hành lấy từ `chi_tiet_goi`; nếu chính sách bảo hành muốn để nhân viên báo thời hạn thì phải sửa hai tài liệu này cho thống nhất.
 5. **Bộ test** 100–200 câu hỏi thật và kịch bản nhiều lượt (mục 35); KPI mục tiêu và số liệu nền (mục 38, Phase 0).
 6. **Dashboard:** trang *Phân tích* hiện là trang còn sót của fsignai (gọi `/api/v1/admin/dashboard`, lỗi 404). Thay bằng số liệu của bot từ `luot_goi_ai`: chi phí AI, tỷ lệ gửi tự động, tỷ lệ nhân viên sửa nháp.
 7. **Ra khách thật:**
