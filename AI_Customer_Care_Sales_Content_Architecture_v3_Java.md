@@ -2926,6 +2926,8 @@ Trước khi có inbox admin, nhân viên vẫn trả lời khách trong Meta Bu
 | `LEAD_HOT` | Lead vừa chuyển sang HOT (chỉ lúc chuyển, không lặp mỗi lượt) | URGENT |
 | `SEND_FAILED` | Gửi tin AI / tin báo nhận ra kênh thất bại | WARNING |
 | `DUPLICATE_PHONE` | Khách gửi số đã thuộc khách khác: cần gộp khách | INFO |
+| `STAFF_HANDOFF` | Nhân viên bấm "Chuyển cho sale" trên trang Chat với khách (kèm ghi chú) | URGENT |
+| `CUSTOMER_WAITING` | Khách nhắn khi hội thoại do nhân viên phụ trách; một thông báo cho mỗi đợt khách chờ (tin đầu tiên sau tin cuối trang đã gửi) | WARNING |
 
 - **Ghi:** `NotificationService.notify()` chạy trong transaction của nghiệp vụ (lượt AI, lead), `INSERT … ON CONFLICT (khoa_chong_trung) DO NOTHING`; transaction rollback thì không có thông báo. Nội dung ngắn (hiện cả ở thông báo hệ điều hành) không chứa số điện thoại; chi tiết (nháp AI, lý do, tin cuối của khách, số điện thoại) trong `du_lieu`, chỉ trả qua REST.
 - **Đẩy:** sau khi commit, `NotificationSseHub` đẩy qua Server-Sent Events `GET /api/v1/notifications/stream` (xác thực bằng header `Authorization`, frontend đọc bằng `fetch`). Ping mỗi 20 giây; token bị thu hồi (đăng xuất) hoặc hết hạn thì gửi `auth-expired` và đóng. Header `X-Accel-Buffering: no` + location riêng trong `nginx-cms.conf` để nginx không gom buffer. Một instance; chạy nhiều instance thì cần kênh phát chung (Redis / PostgreSQL `NOTIFY`).
@@ -5110,12 +5112,16 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 | Thư viện media (mục 6.3 D): nhập ảnh combo từ Google Drive vào MinIO (bucket `slm-ai-media`) | Đã nạp 24 ảnh và 11 link video Facebook (2026-10-29), đang ở trạng thái `DRAFT` nên AI chưa dùng |
 | Sửa, duyệt, xoá mềm và khôi phục media trên admin (mục 6.5) | Đã viết 2026-10-29, chờ triển khai bản mới |
 | Kiến thức: `core/` (identity, voice, guardrails), playbook `khach-hoi-gia`, `tu-van-lap-moi` | Chạy thật, nạp từ file trong repo |
+| Chat với khách (inbox admin, mục 19, 34): một trang, tab theo kênh kèm số hội thoại cần nhân viên; bảng hội thoại (khách đang chờ, tin cuối, phụ trách, mức tiềm năng); drawer xem tin, gửi / sửa rồi gửi / bỏ nháp AI kèm lý do AI không tự gửi (bản sửa lưu `kt_sua_ban_nhap`), gửi lại tin lỗi; "Chuyển cho sale" (AI dừng, báo mọi nhân viên, không gán người cụ thể) và "Chuyển cho AI" (AI trả lời ngay tin khách còn chờ, bỏ nháp cũ); khung thông tin khách, hồ sơ tư vấn, lead; báo `CUSTOMER_WAITING`. STAFF và SYSTEM_ADMIN xem mọi hội thoại | Đã viết 2026-11-04, chờ triển khai |
 | Knowledge Editor (mục 5.2, 5.3, 5.9, 5.10): tài liệu và rule trong CSDL có phiên bản, diff, chống ghi đè, phát hành / quay về bản cũ, trang Quy tắc, *Cài đặt AI* có hiệu lực ngay, AI hỗ trợ soạn (Opus 5.5) | Đã viết 2026-11-04, chờ triển khai. Lần khởi động đầu tự nhập kiến thức và rule đang chạy thành bản phát hành #1 |
 
 ## 60.2 Còn thiếu
 
 **Cho MVP (Phase 0–1, mục 38, 59.7):**
-1. **Inbox admin** (doanh nghiệp yêu cầu ghi lại để làm sau): danh sách hội thoại, xem tin; duyệt / sửa / gửi nháp AI ngay trên trang (thay việc sao chép sang Meta Business Suite); nút "Trả lại AI"; chấm GOOD / BAD / EDIT; danh sách lead; gán nhân viên phụ trách (để thông báo `HANDBACK_REPLY` gửi đúng người).
+1. **Inbox admin, phần còn lại** (trang Chat với khách đã có, 60.1):
+   - **Nhân viên gõ và gửi tin cho khách ngay trên trang** (doanh nghiệp yêu cầu ghi lại để làm sau, 2026-11-04). Hiện nhân viên vẫn trả lời trong hộp thư Meta Business Suite, trang chỉ gửi được nháp AI. Trong 24 giờ gửi `RESPONSE`; 24 giờ – 7 ngày cần tag `HUMAN_AGENT` (`MessengerClient` đã hỗ trợ, phải xin quyền Human Agent khi App Review).
+   - Hội thoại do nhân viên phụ trách thì số điện thoại khách gửi chưa được tách (chỉ lượt AI tách), nên chưa có lead cho tới khi chuyển lại AI.
+   - Chấm GOOD / BAD / EDIT; trang danh sách lead; gán nhân viên phụ trách cụ thể (để `HANDBACK_REPLY`, `CUSTOMER_WAITING` gửi đúng người).
 2. **Lead → Sales API:** adapter `salesapi` còn trống; lead mới nằm trong CSDL của bot, chưa có trang xem lead (làm cùng Inbox admin).
 3. **Media cho AI:** admin viết `tom_tat` / `dung_khi` và duyệt ảnh combo (form sửa đã có, mục 6.5); `MediaIndexBuilder` dựng danh mục từ mục đã duyệt, chưa xoá; quyết định bot có được gửi link video Facebook không (link slmsolar.vn / slmsolar.com.vn đã cho phép ở mốc báo giá; Policy chỉ cho link có trong kết quả tool, tin trang đã gửi và trang chủ theo miền); gửi ảnh qua Messenger (Attachment Upload API, không cần MinIO công khai). 24 ảnh combo đã nạp đang chờ duyệt.
 4. **Kiến thức v1** (soạn trên Knowledge Editor sau khi triển khai): chính sách bảo hành, khoảng 10 FAQ, chiến lược bán hàng (mục 58.7). AI hỗ trợ soạn khi thử đã chỉ ra một chỗ cần doanh nghiệp quyết: playbook `khach-hoi-gia` bước 8 và `core/guardrails` cho bot nêu thời hạn bảo hành lấy từ `chi_tiet_goi`; nếu chính sách bảo hành muốn để nhân viên báo thời hạn thì phải sửa hai tài liệu này cho thống nhất.
