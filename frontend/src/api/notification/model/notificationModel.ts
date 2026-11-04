@@ -7,7 +7,9 @@ export type NotificationType =
   | 'SEND_FAILED'
   | 'DUPLICATE_PHONE'
   | 'CATALOG_SYNC_FAILED'
-  | 'DATA_UPDATE_DUE';
+  | 'DATA_UPDATE_DUE'
+  | 'AI_KILL_SWITCH'
+  | 'KNOWLEDGE_RELEASE';
 
 export type NotificationSeverity = 'INFO' | 'WARNING' | 'URGENT';
 

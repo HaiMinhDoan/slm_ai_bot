@@ -12,6 +12,8 @@ export const TYPE_LABELS: Record<NotificationType, string> = {
   DUPLICATE_PHONE: 'Trùng số điện thoại',
   CATALOG_SYNC_FAILED: 'Đồng bộ catalog lỗi',
   DATA_UPDATE_DUE: 'Đến hạn nạp dữ liệu',
+  AI_KILL_SWITCH: 'Công tắc dừng AI',
+  KNOWLEDGE_RELEASE: 'Kích hoạt kiến thức',
 };
 
 /** Thông báo việc của quản trị: mở trang Catalog & báo giá để xử lý */

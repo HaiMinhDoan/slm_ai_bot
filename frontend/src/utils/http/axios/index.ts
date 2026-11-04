@@ -60,8 +60,7 @@ const transform: AxiosTransform = {
     const result = (data as any).data;
     const message = (data as any).message || (data as any).messageCode || (data as any).error;
 
-    const hasSuccess =
-      data && Reflect.has(data, 'status') && code >= 200 && code < 300;
+    const hasSuccess = data && Reflect.has(data, 'status') && code >= 200 && code < 300;
     if (hasSuccess) {
       let successMsg = message;
 
@@ -188,7 +187,8 @@ const transform: AxiosTransform = {
     errorLogStore.addAjaxErrorInfo(error);
     const { response, code, message, config } = error || {};
     const errorMessageMode = config?.requestOptions?.errorMessageMode || 'none';
-    const msg: string = response?.data?.error?.message ?? '';
+    // ResponseData của backend: lời báo lỗi nằm ở `message` (error chỉ là tên mã HTTP, ví dụ "Bad Request")
+    const msg: string = response?.data?.message || response?.data?.error?.message || '';
     const err: string = error?.toString?.() ?? '';
     let errMessage = '';
 
