@@ -20,8 +20,14 @@ import vn.slmglobal.slmai.services.customer.entity.ChannelIdentity;
 import vn.slmglobal.slmai.services.customer.entity.Customer;
 import vn.slmglobal.slmai.services.customer.repository.ChannelIdentityRepository;
 import vn.slmglobal.slmai.services.customer.repository.CustomerRepository;
+import vn.slmglobal.slmai.services.notification.NotificationDraft;
+import vn.slmglobal.slmai.services.notification.NotificationService;
+import vn.slmglobal.slmai.services.notification.NotificationSeverity;
+import vn.slmglobal.slmai.services.notification.NotificationType;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -37,6 +43,7 @@ public class ConversationService {
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
     private final AiSettingsService settings;
+    private final NotificationService notifications;
 
     /** Tin từ phía khách (tin nhắn, quick reply, postback). */
     public record InboundMessage(ChannelCode channel, String accountId, String externalUserId,
@@ -82,6 +89,9 @@ public class ConversationService {
         // Gộp tin: mỗi tin mới lùi hạn; chỉ khi AI đang phụ trách (người đang theo thì AI không chen vào)
         if (conversation.getOwnership() == Ownership.AI_ACTIVE) {
             conversation.setReplyDueAt(OffsetDateTime.now().plus(settings.conversation().debounce()));
+        } else if (messageRepository.countWaitingInbound(conversation.getId(), message.getId()) == 0) {
+            // Nhân viên đang phụ trách: báo một lần cho mỗi đợt khách chờ (tin đầu tiên sau tin cuối trang đã gửi)
+            notifyCustomerWaiting(conversation, identity, message);
         }
         return new Recorded(conversation.getId(), message.getId(), false, conversation.getReplyDueAt() != null);
     }
@@ -107,6 +117,27 @@ public class ConversationService {
         // Nền tảng không cho biết nhân viên nào trả lời trong Page Inbox, nên chưa gán người phụ trách cụ thể
         conversation.handToHuman(null, echo.occurredAt());
         return new Recorded(conversation.getId(), message.getId(), false, false);
+    }
+
+    private void notifyCustomerWaiting(Conversation c, ChannelIdentity identity, Message message) {
+        String name = customerRepository.findById(c.getCustomerId()).map(Customer::getName)
+                .filter(n -> n != null && !n.isBlank())
+                .orElse(identity.getDisplayName() != null ? identity.getDisplayName() : "khách");
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("customerName", name);
+        data.put("channel", c.getChannel().name());
+        data.put("pageId", identity.getAccountId());
+        data.put("lastCustomerMessage", message.getContent());
+        notifications.notify(NotificationDraft.builder()
+                .type(NotificationType.CUSTOMER_WAITING)
+                .severity(NotificationSeverity.WARNING)
+                .title("Khách nhắn: " + name.strip())
+                .body("Hội thoại đang do nhân viên phụ trách, khách chờ trả lời.")
+                .data(data)
+                .conversationId(c.getId())
+                .customerId(c.getCustomerId())
+                .dedupeKey("CUSTOMER_WAITING:" + message.getId())
+                .build());
     }
 
     private ChannelIdentity findOrCreateIdentity(ChannelCode channel, String accountId, String externalUserId) {

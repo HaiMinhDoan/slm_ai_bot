@@ -28,7 +28,7 @@ import java.util.Map;
 public class TurnNotifier {
 
     /** Nhãn tiếng Việt của mã lý do Policy / lỗi AI */
-    static final Map<String, String> REASON_LABELS = Map.ofEntries(
+    public static final Map<String, String> REASON_LABELS = Map.ofEntries(
             Map.entry(ReplyPolicy.HANDOFF_INTENT, "khách báo sự cố hoặc khiếu nại"),
             Map.entry(ReplyPolicy.HANDOFF_REQUESTED, "AI đề nghị chuyển nhân viên"),
             Map.entry(ReplyPolicy.EMPTY_REPLY, "AI không soạn được câu trả lời"),

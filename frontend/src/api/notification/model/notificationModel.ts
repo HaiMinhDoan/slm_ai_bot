@@ -9,7 +9,9 @@ export type NotificationType =
   | 'CATALOG_SYNC_FAILED'
   | 'DATA_UPDATE_DUE'
   | 'AI_KILL_SWITCH'
-  | 'KNOWLEDGE_RELEASE';
+  | 'KNOWLEDGE_RELEASE'
+  | 'STAFF_HANDOFF'
+  | 'CUSTOMER_WAITING';
 
 export type NotificationSeverity = 'INFO' | 'WARNING' | 'URGENT';
 

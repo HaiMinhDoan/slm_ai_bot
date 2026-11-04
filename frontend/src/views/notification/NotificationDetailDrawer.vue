@@ -37,6 +37,8 @@
         <DescriptionsItem v-if="reasonLabels.length" label="Lý do">
           <div v-for="r in reasonLabels" :key="r">• {{ r }}</div>
         </DescriptionsItem>
+        <DescriptionsItem v-if="data.by" label="Người chuyển">{{ data.by }}</DescriptionsItem>
+        <DescriptionsItem v-if="data.note" label="Ghi chú">{{ data.note }}</DescriptionsItem>
         <DescriptionsItem v-if="data.aiHandoffReason" label="AI ghi chú">
           {{ data.aiHandoffReason }}
         </DescriptionsItem>
@@ -60,14 +62,16 @@
         <Alert
           type="info"
           show-icon
-          message="Sao chép nháp, sửa nếu cần rồi gửi khách trong hộp thư Meta Business Suite. Inbox admin để duyệt và gửi ngay trên trang này sẽ có ở bản sau."
+          message="Mở hội thoại để gửi, sửa rồi gửi, hoặc bỏ nháp ngay trên trang Chat với khách."
         />
       </template>
 
-      <div class="mt-4">
+      <div class="mt-4 flex gap-2">
+        <Button v-if="item.conversationId" type="primary" @click="openConversation">
+          Mở hội thoại
+        </Button>
         <Button
           v-if="inboxUrl"
-          type="primary"
           :href="inboxUrl"
           target="_blank"
           rel="noopener noreferrer"
@@ -91,6 +95,7 @@
   import type { NotificationModel } from '@/api/notification/model/notificationModel';
   import { useNotificationStore } from '@/store/modules/notification';
   import { formatToDateTime } from '@/utils/dateUtil';
+  import { openConversationLater } from '@/views/inbox/pending';
   import { CATALOG_TYPES, SEVERITY_COLORS, TYPE_LABELS, metaInboxUrl } from './labels';
 
   const DescriptionsItem = Descriptions.Item;
@@ -110,6 +115,12 @@
   const isCatalog = computed(() => !!item.value && CATALOG_TYPES.includes(item.value.type));
 
   const router = useRouter();
+  function openConversation() {
+    closeDrawer();
+    openConversationLater(item.value?.conversationId);
+    router.push('/inbox/index');
+  }
+
   function openCatalog() {
     closeDrawer();
     router.push(data.value.kind === 'PVOUT' ? '/catalog/pvout' : '/catalog/packages');

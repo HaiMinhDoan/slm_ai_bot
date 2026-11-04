@@ -21,5 +21,9 @@ public enum NotificationType {
     /** Bật / tắt công tắc dừng AI (mục 33.2): mọi lượt chỉ lưu nháp (gửi quản trị hệ thống) */
     AI_KILL_SWITCH,
     /** Kích hoạt hoặc quay về một bản phát hành kiến thức (mục 5.3; gửi quản trị hệ thống) */
-    KNOWLEDGE_RELEASE
+    KNOWLEDGE_RELEASE,
+    /** Nhân viên bấm "Chuyển cho sale" trên trang chat: AI dừng, chờ nhân viên trả lời */
+    STAFF_HANDOFF,
+    /** Khách nhắn khi hội thoại đang do nhân viên phụ trách (một thông báo cho mỗi đợt khách chờ) */
+    CUSTOMER_WAITING
 }

@@ -14,6 +14,8 @@ export const TYPE_LABELS: Record<NotificationType, string> = {
   DATA_UPDATE_DUE: 'Đến hạn nạp dữ liệu',
   AI_KILL_SWITCH: 'Công tắc dừng AI',
   KNOWLEDGE_RELEASE: 'Kích hoạt kiến thức',
+  STAFF_HANDOFF: 'Chuyển cho sale',
+  CUSTOMER_WAITING: 'Khách nhắn, chờ nhân viên',
 };
 
 /** Thông báo việc của quản trị: mở trang Catalog & báo giá để xử lý */
