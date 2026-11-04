@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import vn.slmglobal.slmai.adapters.slmv2.SlmV2Snapshot;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -85,16 +86,14 @@ class CatalogNormalizerTest {
         materials.add(new SlmV2Snapshot.Material(134, "day_ac", "Dây điện AC 1 pha", 5, 4, "m", null, "{}", 60,
                 false, 0));
         List<SlmV2Snapshot.PackageItem> items = new ArrayList<>(base.packageItems());
-        items.add(new SlmV2Snapshot.PackageItem(9999, 105, 134, 20, 60, true, false, 1));
-        CatalogRows.PackageRow accessory = normalizer.normalize(new SlmV2Snapshot(base.brands(), base.branches(),
-                base.materialGroups(), materials, base.packageFamilies(), base.packages(), items, base.domains()))
+        items.add(new SlmV2Snapshot.PackageItem(9999, 105, 134, 20, 60, true, false, null, null, 1));
+        CatalogRows.PackageRow accessory = normalizer.normalize(withItems(base, materials, items))
                 .packages().get(0);
         assertThat(accessory.warnings()).contains("INACTIVE_ACCESSORY_IN_PACKAGE");
         assertThat(accessory.recommendable()).isTrue();
 
-        items.set(items.size() - 1, new SlmV2Snapshot.PackageItem(9999, 105, 134, 20, 60, true, true, 1));
-        CatalogRows.PackageRow main = normalizer.normalize(new SlmV2Snapshot(base.brands(), base.branches(),
-                base.materialGroups(), materials, base.packageFamilies(), base.packages(), items, base.domains()))
+        items.set(items.size() - 1, new SlmV2Snapshot.PackageItem(9999, 105, 134, 20, 60, true, true, null, null, 1));
+        CatalogRows.PackageRow main = normalizer.normalize(withItems(base, materials, items))
                 .packages().get(0);
         assertThat(main.warnings()).contains("INACTIVE_MATERIAL_IN_PACKAGE");
         assertThat(main.recommendable()).isFalse();
@@ -107,6 +106,62 @@ class CatalogNormalizerTest {
         assertThat(normalizer.normalize(s).packages().get(0).hash())
                 .isNotEqualTo(normalizer.normalize(snapshot(pkg(98, 1, "Hệ Hy-Brid 5 kWp", "Hy-Brid", "1 pha", 5000.0,
                         91_000_000.0))).packages().get(0).hash());
+    }
+
+    @Test
+    void salePricesImagesContactsAndMissingRegionPrice() {
+        SlmV2Snapshot base = snapshot(pkg(98, 1, "Hệ Hy-Brid 5 kWp", "Hy-Brid", "1 pha", 5000.0, 90_800_000.0),
+                pkg(99, 2, "Hệ Hy-Brid 5 kWp", "Hy-Brid", "1 pha", 5000.0, 91_000_000.0));
+        List<SlmV2Snapshot.Price> prices = List.of(
+                new SlmV2Snapshot.Price(1, 233, LocalDateTime.of(2025, 11, 1, 8, 0),
+                        "[{\"maCoSo\": \"HN\", \"giaBan\": 2400000}]", 1),
+                // Lần đổi giá sau; lặp cơ sở HN như dữ liệu thật của slm_v2, giá HCM ghi dạng chuỗi
+                new SlmV2Snapshot.Price(2, 233, LocalDateTime.of(2026, 3, 6, 13, 23),
+                        "[{\"maCoSo\": \"HN\", \"giaBan\": 2500000}, {\"maCoSo\": \"HN\", \"giaBan\": 2500000}, "
+                                + "{\"maCoSo\": \"HCM\", \"giaBan\": \"2600000.0\"}]", 1),
+                // Inverter chỉ có giá miền Bắc mà gói 99 (miền Nam) có dùng
+                new SlmV2Snapshot.Price(3, 62, LocalDateTime.of(2026, 1, 1, 0, 0),
+                        "[{\"maCoSo\": \"HN\", \"giaBan\": 25000000}]", 1),
+                new SlmV2Snapshot.Price(4, 999, LocalDateTime.of(2026, 1, 1, 0, 0),
+                        "[{\"maCoSo\": \"HN\", \"giaBan\": 1}]", 1),
+                // Lần ghi mới nhất chỉ có giá HN (gặp ở slm_v2): giá HCM vẫn là lần trước, không cảnh báo thiếu giá
+                new SlmV2Snapshot.Price(5, 233, LocalDateTime.of(2026, 9, 23, 3, 53),
+                        "[{\"maCoSo\": \"HN\", \"giaBan\": 2500000}]", 1));
+        SlmV2Snapshot s = new SlmV2Snapshot(base.productLines(), base.brands(), base.branches(),
+                base.materialGroups(), base.materials(), prices,
+                List.of(new SlmV2Snapshot.MaterialImage(46, 233, 500, true, 1)),
+                List.of(new SlmV2Snapshot.ImageFile(500, "http://minio:9000/slm/vat_tu_anh_Tấm pin JA_1"),
+                        new SlmV2Snapshot.ImageFile(347, "http://minio:9000/slm/goi_98")),
+                base.packageFamilies(), base.packages(), base.packageItems(), base.domains(),
+                List.of(new SlmV2Snapshot.DomainContact(9, 4, " 0917599966 ", "", 1),
+                        new SlmV2Snapshot.DomainContact(10, 77, "0900000000", null, 1)));
+
+        CatalogRows.Normalized n = normalizer.normalize(s);
+
+        // Giá của vật tư không có trong catalog bị bỏ; chỉ có giá bán theo cơ sở
+        assertThat(n.prices()).extracting(CatalogRows.PriceRow::id).containsExactly(1, 2, 3, 5);
+        assertThat(n.prices().get(1).salePrices().toString()).isEqualTo("{\"HN\":2500000,\"HCM\":2600000}");
+        assertThat(n.items().get(0).salePrice()).isEqualTo(2_500_000.0);
+        assertThat(n.materialImages()).singleElement()
+                .satisfies(i -> assertThat(i.url()).endsWith("Tấm pin JA_1"));
+        assertThat(n.packages().get(0).imageUrl()).isEqualTo("http://minio:9000/slm/goi_98");
+        // Liên hệ của tên miền không có trong catalog bị bỏ; email trống thành null
+        assertThat(n.domainContacts()).singleElement().satisfies(c -> {
+            assertThat(c.phone()).isEqualTo("0917599966");
+            assertThat(c.email()).isNull();
+        });
+        // Pin, bộ ghi dữ liệu, nhân công chưa có giá; inverter chưa từng có giá miền Nam; tấm pin có giá cả hai miền
+        // (giá miền Nam ở lần ghi trước)
+        assertThat(n.warnings().get("MATERIAL_PRICE_MISSING")).containsExactly(57, 58, 62, 115);
+        assertThat(n.materials()).filteredOn(m -> m.id() == 233).singleElement()
+                .satisfies(m -> assertThat(m.warnings()).doesNotContain("MATERIAL_PRICE_MISSING"));
+        // Thiếu giá vật tư không chặn gói: giá gói lấy tong_gia
+        assertThat(n.packages()).allMatch(CatalogRows.PackageRow::recommendable);
+        // Giá đổi thì phiên bản catalog đổi
+        SlmV2Snapshot cheaper = new SlmV2Snapshot(s.productLines(), s.brands(), s.branches(), s.materialGroups(),
+                s.materials(), prices.subList(0, 1), s.materialImages(), s.imageFiles(), s.packageFamilies(),
+                s.packages(), s.packageItems(), s.domains(), s.domainContacts());
+        assertThat(normalizer.normalize(cheaper).version()).isNotEqualTo(n.version());
     }
 
     // ------------------------------------------------------------------ dữ liệu mẫu giống slm_v2
@@ -122,24 +177,25 @@ class CatalogNormalizerTest {
         List<SlmV2Snapshot.PackageItem> items = new ArrayList<>();
         int itemId = 1;
         for (SlmV2Snapshot.Package p : packages) {
-            items.add(new SlmV2Snapshot.PackageItem(itemId++, p.id(), 233, 8, 144, true, true, 1));
-            items.add(new SlmV2Snapshot.PackageItem(itemId++, p.id(), 62, 1, 60, true, true, 1));
-            items.add(new SlmV2Snapshot.PackageItem(itemId++, p.id(), 57, 1, 60, true, true, 1));
-            items.add(new SlmV2Snapshot.PackageItem(itemId++, p.id(), 58, 1, 24, true, false, 1));
-            items.add(new SlmV2Snapshot.PackageItem(itemId++, p.id(), 115, 1, 0, false, true, 1));
+            items.add(new SlmV2Snapshot.PackageItem(itemId++, p.id(), 233, 8, 144, true, true, 2_500_000.0, null, 1));
+            items.add(new SlmV2Snapshot.PackageItem(itemId++, p.id(), 62, 1, 60, true, true, 25_000_000.0, null, 1));
+            items.add(new SlmV2Snapshot.PackageItem(itemId++, p.id(), 57, 1, 60, true, true, 30_000_000.0, null, 1));
+            items.add(new SlmV2Snapshot.PackageItem(itemId++, p.id(), 58, 1, 24, true, false, 1_000_000.0, null, 1));
+            items.add(new SlmV2Snapshot.PackageItem(itemId++, p.id(), 115, 1, 0, false, true, 10_000_000.0, null, 1));
         }
         return new SlmV2Snapshot(
-                List.of(new SlmV2Snapshot.Brand(1, "JA Solar", null, "Trung Quốc", null, 1),
-                        new SlmV2Snapshot.Brand(2, "Solis", null, "Trung Quốc", null, 1),
-                        new SlmV2Snapshot.Brand(4, "SLM", null, "Việt Nam", null, 1),
-                        new SlmV2Snapshot.Brand(5, "Dyness", null, "Trung Quốc", null, 1)),
+                List.of(new SlmV2Snapshot.ProductLine(1, "SLM", "Điện mặt trời solarmax", null, null, 1)),
+                List.of(new SlmV2Snapshot.Brand(1, "JA Solar", null, "Trung Quốc", null, null, 1),
+                        new SlmV2Snapshot.Brand(2, "Solis", null, "Trung Quốc", null, null, 1),
+                        new SlmV2Snapshot.Brand(4, "SLM", null, "Việt Nam", null, null, 1),
+                        new SlmV2Snapshot.Brand(5, "Dyness", null, "Trung Quốc", null, null, 1)),
                 List.of(new SlmV2Snapshot.Branch(1, "HN", "Hà Nội", null, null, 1),
                         new SlmV2Snapshot.Branch(2, "HCM", "Hồ Chí Minh", null, null, 1)),
-                List.of(new SlmV2Snapshot.MaterialGroup(1, "TAM_PIN", "Tấm pin", 1),
-                        new SlmV2Snapshot.MaterialGroup(2, "BIEN_TAN", "Biến tần", 1),
-                        new SlmV2Snapshot.MaterialGroup(3, "PIN_LUU_TRU", "Pin lưu trữ", 1),
-                        new SlmV2Snapshot.MaterialGroup(4, "TRON_GOI_LAP_DAT", "Trọn gói lắp đặt", 1),
-                        new SlmV2Snapshot.MaterialGroup(5, "HE_DAY_DIEN", "Hệ dây điện", 1)),
+                List.of(new SlmV2Snapshot.MaterialGroup(1, "TAM_PIN", "Tấm pin", 1, null, null, 1),
+                        new SlmV2Snapshot.MaterialGroup(2, "BIEN_TAN", "Biến tần", 1, null, null, 1),
+                        new SlmV2Snapshot.MaterialGroup(3, "PIN_LUU_TRU", "Pin lưu trữ", 1, null, null, 1),
+                        new SlmV2Snapshot.MaterialGroup(4, "TRON_GOI_LAP_DAT", "Trọn gói lắp đặt", 1, null, null, 1),
+                        new SlmV2Snapshot.MaterialGroup(5, "HE_DAY_DIEN", "Hệ dây điện", 1, null, null, 1)),
                 List.of(material(233, 1, 1, "Tấm pin mặt trời JA 625 Wp",
                                 "{\"cong_suat\": {\"ten\": \"Công suất\", \"donVi\": \"Wp\", \"giaTri\": 625}}", 144),
                         material(62, 2, 2, "Inverter Solis Hy-Brid 1 pha 5 kW",
@@ -149,22 +205,32 @@ class CatalogNormalizerTest {
                         material(58, 2, 2, "Bộ ghi dữ liệu biến tần",
                                 "{\"cong_suat\": {\"ten\": \"Công suất\", \"donVi\": \"kW\", \"giaTri\": 0}}", 24),
                         material(115, 4, 4, "Nhân công lắp đặt, vận chuyển", "{}", 0)),
-                List.of(new SlmV2Snapshot.PackageFamily(6, "JA Solar - Solis - Dyness", 1, 2, 5, 1)),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(new SlmV2Snapshot.PackageFamily(6, "JA Solar - Solis - Dyness", 1, 1, 2, 5, 1)),
                 List.of(packages),
                 items,
                 List.of(new SlmV2Snapshot.Domain(4, "slmsolar.vn", 1, 1),
-                        new SlmV2Snapshot.Domain(2, "slmsolar.com.vn", 2, 1)));
+                        new SlmV2Snapshot.Domain(2, "slmsolar.com.vn", 2, 1)),
+                List.of());
     }
 
     static SlmV2Snapshot withPanels(SlmV2Snapshot s, int packageId, int panels) {
         List<SlmV2Snapshot.PackageItem> items = s.packageItems().stream()
                 .map(i -> i.tronGoiId() == packageId && i.vatTuId() == 233
                         ? new SlmV2Snapshot.PackageItem(i.id(), i.tronGoiId(), i.vatTuId(), panels, i.thoiGianBaoHanh(),
-                        i.duocBaoHanh(), i.duocXem(), i.trangThai())
+                        i.duocBaoHanh(), i.duocXem(), i.gia(), i.moTa(), i.trangThai())
                         : i)
                 .toList();
-        return new SlmV2Snapshot(s.brands(), s.branches(), s.materialGroups(), s.materials(), s.packageFamilies(),
-                s.packages(), items, s.domains());
+        return withItems(s, s.materials(), items);
+    }
+
+    static SlmV2Snapshot withItems(SlmV2Snapshot s, List<SlmV2Snapshot.Material> materials,
+                                   List<SlmV2Snapshot.PackageItem> items) {
+        return new SlmV2Snapshot(s.productLines(), s.brands(), s.branches(), s.materialGroups(), materials, s.prices(),
+                s.materialImages(), s.imageFiles(), s.packageFamilies(), s.packages(), items, s.domains(),
+                s.domainContacts());
     }
 
     private static SlmV2Snapshot.Material material(int id, int group, int brand, String name, String specs,

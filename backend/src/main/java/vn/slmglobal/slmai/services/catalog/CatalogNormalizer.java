@@ -60,18 +60,65 @@ public class CatalogNormalizer {
         Map<Integer, SlmV2Snapshot.Material> materials = byId(s.materials(), SlmV2Snapshot.Material::id);
         Map<Integer, SlmV2Snapshot.Package> packages = byId(s.packages(), SlmV2Snapshot.Package::id);
         Set<Integer> brandIds = s.brands().stream().map(SlmV2Snapshot.Brand::id).collect(Collectors.toSet());
+        // Đường dẫn file ảnh (MinIO của slm_v2) theo tep_tin_id: ảnh gói, ảnh vật tư, logo hãng
+        Map<Integer, String> files = new HashMap<>();
+        s.imageFiles().forEach(f -> files.put(f.id(), f.duongDan()));
 
-        List<CatalogRows.BrandRow> brands = s.brands().stream().map(b -> new CatalogRows.BrandRow(b.id(), b.ten(),
-                b.tenQuocTe(), b.quocGia(), b.moTa(), active(b.trangThai()),
-                hash(b.ten(), b.tenQuocTe(), b.quocGia(), b.moTa(), active(b.trangThai())))).toList();
+        List<CatalogRows.ProductLineRow> productLines = s.productLines().stream().map(l ->
+                new CatalogRows.ProductLineRow(l.id(), l.ma(), l.ten(), l.sdtSale(), l.sdtTech(), active(l.trangThai()),
+                        hash(l.ma(), l.ten(), l.sdtSale(), l.sdtTech(), active(l.trangThai())))).toList();
+        List<CatalogRows.BrandRow> brands = s.brands().stream().map(b -> {
+            String logo = b.tepTinId() == null ? null : files.get(b.tepTinId());
+            return new CatalogRows.BrandRow(b.id(), b.ten(), b.tenQuocTe(), b.quocGia(), b.moTa(), b.tepTinId(), logo,
+                    active(b.trangThai()),
+                    hash(b.ten(), b.tenQuocTe(), b.quocGia(), b.moTa(), b.tepTinId(), logo, active(b.trangThai())));
+        }).toList();
         List<CatalogRows.BranchRow> branches = s.branches().stream().map(b -> new CatalogRows.BranchRow(b.id(),
                 b.ma(), b.ten(), b.dcVanPhong(), b.sdt(), active(b.trangThai()),
                 hash(b.ma(), b.ten(), b.dcVanPhong(), b.sdt(), active(b.trangThai())))).toList();
+
+        List<CatalogRows.MaterialGroupRow> materialGroups = s.materialGroups().stream().map(g -> {
+            ObjectNode attributes = specs(g.thuocTinhRieng());
+            return new CatalogRows.MaterialGroupRow(g.id(), g.ma(), g.ten(), g.nganhHangId(), attributes,
+                    g.vatTuChinh(), active(g.trangThai()),
+                    hash(g.ma(), g.ten(), g.nganhHangId(), attributes, g.vatTuChinh(), active(g.trangThai())));
+        }).toList();
+
+        // Lịch sử giá bán: chỉ giá của vật tư có trong catalog. Giá hiện hành của một miền = lần ghi gần nhất có giá
+        // của miền đó (slm_v2 hay ghi lần mới chỉ có giá HN, giá HCM vẫn là lần trước)
+        List<CatalogRows.PriceRow> prices = new ArrayList<>();
+        Map<Integer, Set<String>> pricedBranches = new HashMap<>();
+        for (SlmV2Snapshot.Price pr : s.prices()) {
+            if (!materials.containsKey(pr.vatTuId())) {
+                continue;
+            }
+            ObjectNode sale = salePrices(pr.giaBan());
+            CatalogRows.PriceRow row = new CatalogRows.PriceRow(pr.id(), pr.vatTuId(), pr.taoLuc(), sale,
+                    active(pr.trangThai()), hash(pr.vatTuId(), pr.taoLuc(), sale, active(pr.trangThai())));
+            prices.add(row);
+            if (row.active()) {
+                sale.fieldNames().forEachRemaining(b ->
+                        pricedBranches.computeIfAbsent(pr.vatTuId(), k -> new HashSet<>()).add(b));
+            }
+        }
+
+        List<CatalogRows.MaterialImageRow> materialImages = new ArrayList<>();
+        for (SlmV2Snapshot.MaterialImage im : s.materialImages()) {
+            if (!materials.containsKey(im.vatTuId())) {
+                continue;
+            }
+            String url = im.tepTinId() == null ? null : files.get(im.tepTinId());
+            materialImages.add(new CatalogRows.MaterialImageRow(im.id(), im.vatTuId(), im.tepTinId(), url,
+                    im.anhChinh(), active(im.trangThai()),
+                    hash(im.vatTuId(), im.tepTinId(), url, im.anhChinh(), active(im.trangThai()))));
+        }
 
         // Thành phần đang dùng theo gói; thành phần trỏ tới vật tư / gói không có thì bỏ
         Map<Integer, List<SlmV2Snapshot.PackageItem>> itemsByPackage = new HashMap<>();
         List<CatalogRows.ItemRow> items = new ArrayList<>();
         Set<Integer> visibleMaterials = new HashSet<>();
+        // Vật tư nằm trong gói đang bán mà chưa có giá bán của miền của gói
+        Set<Integer> missingPrice = new HashSet<>();
         for (SlmV2Snapshot.PackageItem it : s.packageItems()) {
             if (!packages.containsKey(it.tronGoiId())) {
                 continue;
@@ -82,10 +129,17 @@ public class CatalogNormalizer {
             }
             boolean visible = Boolean.TRUE.equals(it.duocXem());
             boolean itemActive = active(it.trangThai());
+            String description = it.moTa() == null || it.moTa().isBlank() ? null : it.moTa().strip();
             items.add(new CatalogRows.ItemRow(it.id(), it.tronGoiId(), it.vatTuId(), it.soLuong(),
-                    it.thoiGianBaoHanh(), it.duocBaoHanh(), visible, itemActive,
+                    it.thoiGianBaoHanh(), it.duocBaoHanh(), visible, it.gia(), description, itemActive,
                     hash(it.tronGoiId(), it.vatTuId(), it.soLuong(), it.thoiGianBaoHanh(), it.duocBaoHanh(), visible,
-                            itemActive)));
+                            it.gia(), description, itemActive)));
+            SlmV2Snapshot.Package pkg = packages.get(it.tronGoiId());
+            String pkgBranch = pkg.coSoId() == null ? null : branchCodes.get(pkg.coSoId());
+            if (itemActive && active(pkg.trangThai()) && pkgBranch != null
+                    && !pricedBranches.getOrDefault(it.vatTuId(), Set.of()).contains(pkgBranch)) {
+                missingPrice.add(it.vatTuId());
+            }
             if (itemActive) {
                 itemsByPackage.computeIfAbsent(it.tronGoiId(), k -> new ArrayList<>()).add(it);
                 if (visible && active(packages.get(it.tronGoiId()).trangThai())) {
@@ -108,6 +162,10 @@ public class CatalogNormalizer {
                 w.add(CatalogWarning.SPEC_PLACEHOLDER.name());
                 warn(warnings, CatalogWarning.SPEC_PLACEHOLDER, m.id());
             }
+            if (active(m.trangThai()) && missingPrice.contains(m.id())) {
+                w.add(CatalogWarning.MATERIAL_PRICE_MISSING.name());
+                warn(warnings, CatalogWarning.MATERIAL_PRICE_MISSING, m.id());
+            }
             Integer brand = m.thuongHieuId() != null && brandIds.contains(m.thuongHieuId()) ? m.thuongHieuId() : null;
             materialRows.add(new CatalogRows.MaterialRow(m.id(), m.ma(), m.ten() == null ? null : m.ten().strip(), group, brand, m.donVi(),
                     m.thoiGianBaoHanh(), m.vatTuChinh(), specs, m.moTaBaoGia(), active(m.trangThai()), List.copyOf(w),
@@ -117,9 +175,18 @@ public class CatalogNormalizer {
 
         List<CatalogRows.PackageRow> packageRows = new ArrayList<>();
         for (SlmV2Snapshot.Package p : s.packages()) {
-            packageRows.add(packageRow(p, branchCodes, families, brandIds, materials, groupCodes, specsById,
+            packageRows.add(packageRow(p, branchCodes, families, brandIds, materials, groupCodes, specsById, files,
                     itemsByPackage.getOrDefault(p.id(), List.of()), warnings));
         }
+
+        List<CatalogRows.PackageFamilyRow> packageFamilies = s.packageFamilies().stream().map(f -> {
+            Integer panel = known(f.thuongHieuTamPin(), brandIds);
+            Integer inverter = known(f.thuongHieuInverter(), brandIds);
+            Integer battery = known(f.thuongHieuPinLuuTru(), brandIds);
+            return new CatalogRows.PackageFamilyRow(f.id(), f.ten(), f.nganhHangId(), panel, inverter, battery,
+                    active(f.trangThai()), hash(f.ten(), f.nganhHangId(), panel, inverter, battery,
+                    active(f.trangThai())));
+        }).toList();
 
         List<CatalogRows.DomainRow> domains = s.domains().stream().map(d -> {
             String domain = d.tenMien() == null ? "" : d.tenMien().strip().toLowerCase();
@@ -128,8 +195,24 @@ public class CatalogNormalizer {
                     hash(domain, branch, active(d.trangThai())));
         }).toList();
 
+        Set<Integer> domainIds = s.domains().stream().map(SlmV2Snapshot.Domain::id).collect(Collectors.toSet());
+        List<CatalogRows.DomainContactRow> domainContacts = s.domainContacts().stream()
+                .filter(c -> c.mienId() != null && domainIds.contains(c.mienId()))
+                .map(c -> {
+                    String phone = blankToNull(c.sdt());
+                    String email = blankToNull(c.email());
+                    return new CatalogRows.DomainContactRow(c.id(), c.mienId(), phone, email, active(c.trangThai()),
+                            hash(c.mienId(), phone, email, active(c.trangThai())));
+                }).toList();
+
         List<String> parts = new ArrayList<>();
+        productLines.forEach(r -> parts.add("n" + r.id() + r.hash()));
         brands.forEach(r -> parts.add("b" + r.id() + r.hash()));
+        materialGroups.forEach(r -> parts.add("nv" + r.id() + r.hash()));
+        prices.forEach(r -> parts.add("p" + r.id() + r.hash()));
+        materialImages.forEach(r -> parts.add("a" + r.id() + r.hash()));
+        packageFamilies.forEach(r -> parts.add("ng" + r.id() + r.hash()));
+        domainContacts.forEach(r -> parts.add("l" + r.id() + r.hash()));
         branches.forEach(r -> parts.add("c" + r.id() + r.hash()));
         materialRows.forEach(r -> parts.add("v" + r.id() + r.hash()));
         packageRows.forEach(r -> parts.add("g" + r.id() + r.hash()));
@@ -137,8 +220,9 @@ public class CatalogNormalizer {
         domains.forEach(r -> parts.add("m" + r.id() + r.hash()));
         parts.sort(Comparator.naturalOrder());
         warnings.replaceAll((k, v) -> v.stream().distinct().sorted().toList());
-        return new CatalogRows.Normalized(brands, branches, materialRows, packageRows, items, domains,
-                warnings, HashUtil.sha256Hex(String.join("|", parts)));
+        return new CatalogRows.Normalized(productLines, brands, branches, materialGroups, materialRows, prices,
+                materialImages, packageFamilies, packageRows, items, domains, domainContacts, warnings,
+                HashUtil.sha256Hex(String.join("|", parts)));
     }
 
     private CatalogRows.PackageRow packageRow(SlmV2Snapshot.Package raw, Map<Integer, String> branchCodes,
@@ -146,7 +230,7 @@ public class CatalogNormalizer {
                                               Set<Integer> brandIds,
                                               Map<Integer, SlmV2Snapshot.Material> materials,
                                               Map<Integer, String> groupCodes, Map<Integer, ObjectNode> specs,
-                                              List<SlmV2Snapshot.PackageItem> items,
+                                              Map<Integer, String> files, List<SlmV2Snapshot.PackageItem> items,
                                               Map<String, List<Integer>> warnings) {
         SlmV2Snapshot.Package p = trimmed(raw);
         boolean active = active(p.trangThai());
@@ -248,13 +332,14 @@ public class CatalogNormalizer {
         double storage = Math.round(storageKwh * 100) / 100.0;
         Double inverter = inverterKw > 0 ? Math.round(inverterKw * 100) / 100.0 : null;
         double steel = p.giaKhungSat() == null ? 0 : p.giaKhungSat();
+        String imageUrl = p.tepTinId() == null ? null : files.get(p.tepTinId());
         return new CatalogRows.PackageRow(p.id(), branch, p.nhomTronGoiId(), f == null ? null : f.ten(), panelBrand,
                 inverterBrand, batteryBrand, p.ten(), systemType, phases, kwp, panelCount == 0 ? null : panelCount,
                 panelWp, inverter, storage, p.sanLuongToiThieu(), p.sanLuongToiDa(), p.tongGia(), steel, p.banChay(),
-                p.tepTinId(), p.moTa(), active, recommendable, codes,
+                p.tepTinId(), imageUrl, p.moTa(), active, recommendable, codes,
                 hash(branch, p.nhomTronGoiId(), f == null ? null : f.ten(), panelBrand, inverterBrand, batteryBrand,
                         p.ten(), systemType, phases, kwp, panelCount, panelWp, inverter, storage, p.sanLuongToiThieu(),
-                        p.sanLuongToiDa(), p.tongGia(), steel, p.banChay(), p.tepTinId(), p.moTa(), active,
+                        p.sanLuongToiDa(), p.tongGia(), steel, p.banChay(), p.tepTinId(), imageUrl, p.moTa(), active,
                         recommendable, codes));
     }
 
@@ -294,6 +379,34 @@ public class CatalogNormalizer {
             return 3;
         }
         return null;
+    }
+
+    /**
+     * ds_gia đã bỏ giaNhap ([{"maCoSo": "HN", "giaBan": 27000000}]) → {"HN": 27000000}. Một lần ghi có thể lặp cùng
+     * cơ sở (đã gặp ở slm_v2, hai giá giống nhau): lấy giá sau cùng; bỏ giá trống.
+     */
+    ObjectNode salePrices(String json) {
+        ObjectNode out = objectMapper.createObjectNode();
+        if (json == null || json.isBlank()) {
+            return out;
+        }
+        try {
+            for (JsonNode e : objectMapper.readTree(json)) {
+                String branch = e.path("maCoSo").asText("").strip();
+                JsonNode v = e.get("giaBan");
+                boolean number = v != null && (v.isNumber() || v.asText().strip().matches("\\d+(\\.\\d+)?"));
+                if (!branch.isEmpty() && number) {
+                    out.put(branch, Math.round(v.asDouble()));
+                }
+            }
+        } catch (JsonProcessingException e) {
+            return out;
+        }
+        return out;
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.strip();
     }
 
     /** du_lieu_rieng → {khoá: {ten, value, unit}}; slm_v2 có bản ghi viết hoa khoá (Ten, DonVi, GiaTri) */

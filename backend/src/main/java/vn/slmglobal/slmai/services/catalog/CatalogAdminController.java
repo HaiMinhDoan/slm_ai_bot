@@ -7,6 +7,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import vn.slmglobal.slmai.common.exception.CommonException;
 import vn.slmglobal.slmai.common.security.AuthInfo;
 import vn.slmglobal.slmai.common.security.RequestContext;
 import vn.slmglobal.slmai.common.security.RequireAuth;
@@ -27,6 +30,7 @@ import vn.slmglobal.slmai.common.web.ResponseData;
 import vn.slmglobal.slmai.services.catalog.CatalogRepository.CatalogPackage;
 import vn.slmglobal.slmai.services.sizing.PackageAdvisor;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -46,6 +50,8 @@ public class CatalogAdminController {
     private final CatalogRepository repository;
     private final PackageAdvisor advisor;
     private final CatalogPackageAdminService packageAdmin;
+    private final CatalogMaterialRepository materials;
+    private final CatalogImageService images;
 
     public record StatusResponse(boolean configured, String version, CatalogRepository.SyncRun lastSuccess,
                                  List<CatalogRepository.SyncRun> runs) {
@@ -127,6 +133,61 @@ public class CatalogAdminController {
     public ResponseEntity<ResponseData<CatalogPackage>> restorePackage(@PathVariable int id) {
         return ApiResponses.ok(packageAdmin.restore(RequestContext.requireAuthInfo(), id),
                 "CATALOG_PACKAGE_RESTORED");
+    }
+
+    @Operation(summary = "Vật tư đồng bộ từ slm_v2 kèm giá bán hiện hành theo miền, số gói dùng; "
+            + "status = ACTIVE (mặc định) / INACTIVE / ALL, usage = USED / UNUSED")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN, RoleCode.STAFF})
+    @GetMapping("/materials")
+    public ResponseEntity<ResponseData<PageResponse<CatalogMaterialRepository.MaterialRow>>> materials(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String groupCode,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String usage,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        int p = Math.max(0, page);
+        int s = Math.min(Math.max(1, size), MAX_PAGE_SIZE);
+        CatalogMaterialRepository.Filter f = new CatalogMaterialRepository.Filter(keyword, groupCode, status, usage);
+        long total = materials.count(f);
+        return ApiResponses.ok(new PageResponse<>(materials.list(f, p, s), total, p, s,
+                (int) Math.ceil(total / (double) s)), "CATALOG_MATERIALS_SUCCESS");
+    }
+
+    @Operation(summary = "Nhóm vật tư (tấm pin, biến tần, pin lưu trữ...) để lọc")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN, RoleCode.STAFF})
+    @GetMapping("/material-groups")
+    public ResponseEntity<ResponseData<List<CatalogMaterialRepository.Group>>> materialGroups() {
+        return ApiResponses.ok(materials.groups(), "CATALOG_MATERIAL_GROUPS_SUCCESS");
+    }
+
+    @Operation(summary = "Một vật tư: thông số, ảnh, lịch sử giá bán, các gói dùng vật tư này")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN, RoleCode.STAFF})
+    @GetMapping("/materials/{id}")
+    public ResponseEntity<ResponseData<CatalogMaterialRepository.MaterialDetail>> material(@PathVariable int id) {
+        return ApiResponses.ok(materials.detail(id)
+                .orElseThrow(() -> CommonException.notFound("Không có vật tư " + id)), "CATALOG_MATERIAL_SUCCESS");
+    }
+
+    @Operation(summary = "Vật tư trong một gói: số lượng, giá lúc dựng gói, giá bán hiện hành ở miền của gói")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN, RoleCode.STAFF})
+    @GetMapping("/packages/{id}/items")
+    public ResponseEntity<ResponseData<CatalogMaterialRepository.PackageItems>> packageItems(@PathVariable int id) {
+        return ApiResponses.ok(materials.packageItems(id)
+                .orElseThrow(() -> CommonException.notFound("Không có gói " + id)), "CATALOG_PACKAGE_ITEMS_SUCCESS");
+    }
+
+    /** Ảnh slm_v2 (MinIO http) đi qua backend; frontend tải dạng blob kèm Bearer token như thư viện media */
+    @Operation(summary = "Ảnh vật tư / gói / logo hãng đã đồng bộ, theo tep_tin_id của slm_v2")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN, RoleCode.STAFF})
+    @GetMapping("/images/{fileId}")
+    public ResponseEntity<byte[]> image(@PathVariable int fileId) {
+        CatalogImageService.Image img = images.load(fileId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(img.contentType()))
+                .cacheControl(CacheControl.maxAge(Duration.ofDays(1)).cachePrivate())
+                .header("X-Content-Type-Options", "nosniff")
+                .body(img.bytes());
     }
 
     @Operation(summary = "Nhãn tiếng Việt của mã cảnh báo dữ liệu")

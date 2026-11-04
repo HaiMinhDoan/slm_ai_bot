@@ -1,10 +1,16 @@
 import { defHttp } from '@/utils/http/axios';
 import type { PageResult } from '@/api/model/baseModel';
+import type { AxiosResponse } from 'axios';
 import type {
   AdviceRequestModel,
   CatalogPackageFilterModel,
   CatalogPackageModel,
   CatalogStatusModel,
+  MaterialDetailModel,
+  MaterialFilterModel,
+  MaterialGroupModel,
+  MaterialModel,
+  PackageItemsModel,
   PackageEditModel,
   PackageUpdateModel,
   PvoutImportRequestModel,
@@ -60,6 +66,25 @@ export const catalogAdviseApi = (data: AdviceRequestModel) =>
 
 export const catalogPackageDetailApi = (id: number, khuVuc?: string) =>
   defHttp.get<Recordable>({ url: `${CATALOG}/packages/${id}/detail`, params: { khuVuc } });
+
+export const catalogMaterialsApi = (params: MaterialFilterModel) =>
+  defHttp.get<PageResult<MaterialModel>>({ url: `${CATALOG}/materials`, params });
+
+export const catalogMaterialGroupsApi = () =>
+  defHttp.get<MaterialGroupModel[]>({ url: `${CATALOG}/material-groups` });
+
+export const catalogMaterialApi = (id: number) =>
+  defHttp.get<MaterialDetailModel>({ url: `${CATALOG}/materials/${id}` });
+
+export const catalogPackageItemsApi = (id: number) =>
+  defHttp.get<PackageItemsModel>({ url: `${CATALOG}/packages/${id}/items` });
+
+/** Ảnh slm_v2 (MinIO http) qua backend, tải dạng blob kèm token như thư viện media */
+export const catalogImageBlobApi = (fileId: number) =>
+  defHttp.get<AxiosResponse<Blob>>(
+    { url: `${CATALOG}/images/${fileId}`, responseType: 'blob' },
+    { isReturnNativeResponse: true, errorMessageMode: 'none' },
+  );
 
 export const pvoutListApi = () => defHttp.get<PvoutTableInfoModel[]>({ url: PVOUT });
 

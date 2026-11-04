@@ -26,6 +26,15 @@ const catalog: AppRouteModule = {
       },
     },
     {
+      path: 'materials',
+      name: 'CatalogMaterials',
+      component: () => import('@/views/catalog/materials/index.vue'),
+      meta: {
+        title: 'Vật tư từ slm_v2',
+        icon: 'ant-design:build-outlined',
+      },
+    },
+    {
       path: 'advise',
       name: 'CatalogAdvise',
       component: () => import('@/views/catalog/advise/index.vue'),

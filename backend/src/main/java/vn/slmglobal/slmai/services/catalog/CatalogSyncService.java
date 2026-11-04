@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Đồng bộ catalog từ slm_v2 (mục 4.2.3): đọc mọi view trong một transaction chỉ đọc ở slm_v2 → chuẩn hóa → ghi
+ * Đồng bộ catalog từ slm_v2 (mục 4.2.3): đọc phần sản phẩm trong một transaction chỉ đọc ở slm_v2 → chuẩn hóa → ghi
  * dm_* trong một transaction ở DB của bot. Lỗi giữa chừng thì rollback toàn bộ, bot vẫn dùng bản catalog trước đó,
  * quản trị nhận thông báo (tối đa một lần mỗi ngày).
  *
@@ -115,13 +115,19 @@ public class CatalogSyncService {
             throw new IllegalStateException("Số gói đang bán giảm bất thường (" + activeNow + " → " + activeIncoming
                     + "); giữ nguyên catalog cũ, kiểm tra slm_v2");
         }
-        // Thứ tự theo khoá ngoại: thương hiệu → cơ sở → vật tư → gói → thành phần
-        return repository.upsertBrands(c.brands())
+        // Thứ tự theo khoá ngoại: thương hiệu → cơ sở → vật tư → giá, ảnh → gói → thành phần → tên miền → liên hệ
+        return repository.upsertProductLines(c.productLines())
+                .plus(repository.upsertBrands(c.brands()))
                 .plus(repository.upsertBranches(c.branches()))
+                .plus(repository.upsertMaterialGroups(c.materialGroups()))
                 .plus(repository.upsertMaterials(c.materials()))
+                .plus(repository.upsertPrices(c.prices()))
+                .plus(repository.upsertMaterialImages(c.materialImages()))
+                .plus(repository.upsertPackageFamilies(c.packageFamilies()))
                 .plus(repository.upsertPackages(c.packages()))
                 .plus(repository.upsertItems(c.items()))
-                .plus(repository.upsertDomains(c.domains()));
+                .plus(repository.upsertDomains(c.domains()))
+                .plus(repository.upsertDomainContacts(c.domainContacts()));
     }
 
     private void notifyFailure(String error) {

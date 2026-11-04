@@ -61,6 +61,8 @@ class CatalogSyncIntegrationTest {
     @Autowired
     CatalogRepository repository;
     @Autowired
+    CatalogMaterialRepository materials;
+    @Autowired
     PackageAdvisor advisor;
     @Autowired
     PvoutService pvoutService;
@@ -102,9 +104,37 @@ class CatalogSyncIntegrationTest {
         assertThat(hn.get("duoc_goi_y")).isEqualTo(true);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM dm_vat_tu_tron_goi", Integer.class)).isEqualTo(8);
         assertThat(repository.domains("HCM")).containsExactly("slmsolar.com.vn");
-        // Giá nhập không bao giờ có ở bot (view slm_v2 đã bỏ, bảng dm_* cũng không có cột)
+        // Giá nhập không bao giờ có ở bot (câu đọc slm_v2 chỉ lấy giaBan, bảng dm_* cũng không có cột)
         assertThat(jdbc.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema = 'public' "
-                + "AND table_name LIKE 'dm_%' AND column_name ILIKE '%nhap%'", Integer.class)).isZero();
+                + "AND table_name LIKE 'dm_%' AND (column_name ILIKE '%nhap%' OR column_name = 'gm')", Integer.class))
+                .isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM dm_gia_vat_tu WHERE gia_ban::text ILIKE '%nhap%' "
+                + "OR gia_ban::text LIKE '%1900000%'", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM dm_gia_vat_tu", Integer.class)).isEqualTo(5);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM dm_vat_tu_tron_goi WHERE gia_ban IS NOT NULL",
+                Integer.class)).isEqualTo(8);
+        assertThat(jdbc.queryForObject("SELECT duong_dan FROM dm_anh_vat_tu WHERE vat_tu_id = 233", String.class))
+                .endsWith("JA 625 Wp_1");
+        assertThat(jdbc.queryForObject("SELECT anh_url FROM dm_tron_goi WHERE id_nguon = 98", String.class))
+                .endsWith("tron_goi_98");
+        assertThat(jdbc.queryForObject("SELECT sdt FROM dm_ten_mien_lien_he WHERE ten_mien_id = 4", String.class))
+                .isEqualTo("0917599966");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM dm_nganh_hang", Integer.class)).isEqualTo(1);
+
+        // Giá hiện hành theo miền: HN là lần ghi mới nhất, HCM vẫn là lần trước (lần mới chỉ có HN)
+        CatalogMaterialRepository.MaterialRow ja = materials.list(
+                new CatalogMaterialRepository.Filter("ja625", null, null, null), 0, 10).get(0);
+        assertThat(ja.salePrices().get("HN").asLong()).isEqualTo(2_500_000L);
+        assertThat(ja.salePrices().get("HCM").asLong()).isEqualTo(2_650_000L);
+        assertThat(ja.packageCount()).isEqualTo(2);
+        assertThat(ja.warnings()).isEmpty();
+        CatalogMaterialRepository.PackageItems items = materials.packageItems(97).orElseThrow();
+        assertThat(items.branchCode()).isEqualTo("HCM");
+        assertThat(items.lineTotal()).isEqualTo(8 * 2_600_000 + 25_300_000 + 21_000_000 + 1_300_000);
+        assertThat(items.items()).filteredOn(i -> i.materialId() == 233).singleElement()
+                .satisfies(i -> assertThat(i.currentPrice()).isEqualTo(2_650_000.0));
+        assertThat(materials.detail(233).orElseThrow().prices()).hasSize(2);
+        assertThat(materials.imageUrl(500)).hasValueSatisfying(u -> assertThat(u).endsWith("JA 625 Wp_1"));
 
         CatalogRepository.SyncRun again = syncService.sync(CatalogSyncService.TRIGGER_SCHEDULED, null);
         assertThat(again.inserted()).isZero();
@@ -118,7 +148,7 @@ class CatalogSyncIntegrationTest {
     void updatesChangedRowsAndDeactivatesMissingOnes() {
         syncService.sync(CatalogSyncService.TRIGGER_MANUAL, null);
         jdbc.update("UPDATE slmv2.ai_v_tron_goi SET tong_gia = 91000000 WHERE id = 98");
-        jdbc.update("DELETE FROM slmv2.ai_v_vat_tu_tron_goi WHERE tron_goi_id = 97");
+        jdbc.update("DELETE FROM slmv2.vat_tu_tron_goi WHERE tron_goi_id = 97");
         jdbc.update("DELETE FROM slmv2.ai_v_tron_goi WHERE id = 97");
 
         CatalogRepository.SyncRun run = syncService.sync(CatalogSyncService.TRIGGER_MANUAL, null);
@@ -356,8 +386,19 @@ class CatalogSyncIntegrationTest {
                     tep_tin_id int, loai_he_thong varchar, loai_pha varchar, cong_suat_he_thong double precision,
                     san_luong_toi_thieu double precision, san_luong_toi_da double precision, mo_ta text,
                     tong_gia double precision, gia_khung_sat double precision, ban_chay boolean, trang_thai int);
-                CREATE TABLE slmv2.ai_v_vat_tu_tron_goi (id int, tron_goi_id int, vat_tu_id int, so_luong int,
-                    thoi_gian_bao_hanh int, duoc_bao_hanh boolean, duoc_xem boolean, trang_thai int);
+                -- Bảng gốc như slm_v2: có gia (giá bán) và gm (biên lợi nhuận, bot không đọc)
+                CREATE TABLE slmv2.vat_tu_tron_goi (id int, tron_goi_id int, vat_tu_id int, mo_ta varchar,
+                    so_luong int, gia double precision, gm double precision, thoi_gian_bao_hanh int,
+                    duoc_bao_hanh boolean, duoc_xem boolean, trang_thai int);
+                CREATE TABLE slmv2.ai_v_nganh_hang (id int, ma varchar, ten varchar, sdt_sale varchar, sdt_tech varchar,
+                    trang_thai int);
+                -- Lịch sử giá như slm_v2: ds_gia có cả giaNhap, bot chỉ được lấy giaBan
+                CREATE TABLE slmv2.thong_tin_gia (id int, vat_tu_id int, ds_gia jsonb, tao_luc timestamp,
+                    trang_thai int);
+                CREATE TABLE slmv2.ai_v_anh_vat_tu (id int, vat_tu_id int, tep_tin_id int, anh_chinh boolean,
+                    trang_thai int);
+                CREATE TABLE slmv2.ai_v_tep_tin_anh (id int, duong_dan text);
+                CREATE TABLE slmv2.thong_tin_ten_mien (id int, mien_id int, sdt varchar, email varchar, trang_thai int);
                 CREATE TABLE slmv2.ai_v_mien (id int, ten_mien varchar, co_so_id int, trang_thai int);
                 INSERT INTO slmv2.ai_v_thuong_hieu VALUES (1, 'JA Solar', NULL, 'Trung Quốc', NULL, NULL, 1),
                     (2, 'Solis', NULL, 'Trung Quốc', NULL, NULL, 1), (5, 'Dyness', NULL, 'Trung Quốc', NULL, NULL, 1);
@@ -376,6 +417,22 @@ class CatalogSyncIntegrationTest {
                 INSERT INTO slmv2.ai_v_nhom_tron_goi VALUES (6, 'JA Solar - Solis - Dyness', 1, 1, 2, 5, 1);
                 INSERT INTO slmv2.ai_v_mien VALUES (5, 'slmsolar.com', 1, 1), (4, 'slmsolar.vn', 1, 1),
                     (2, 'slmsolar.com.vn', 2, 1);
+                INSERT INTO slmv2.ai_v_nganh_hang VALUES (1, 'SLM', 'Điện mặt trời solarmax', '0976666905',
+                    '0977879291', 1);
+                INSERT INTO slmv2.thong_tin_gia VALUES
+                    (1, 233, '[{"maCoSo": "HN", "giaBan": 2600000, "giaNhap": 1900000},
+                               {"maCoSo": "HCM", "giaBan": 2650000, "giaNhap": 1900000}]', '2026-05-27 10:20:20', 1),
+                    (2, 233, '[{"maCoSo": "HN", "giaBan": 2500000, "giaNhap": 1800000}]', '2026-09-23 03:53:35', 1),
+                    (3, 62, '[{"maCoSo": "HN", "giaBan": 25300000, "giaNhap": 20000000},
+                              {"maCoSo": "HCM", "giaBan": 25300000, "giaNhap": 20000000}]', '2026-01-01 00:00:00', 1),
+                    (4, 57, '[{"maCoSo": "HN", "giaBan": 21000000, "giaNhap": 15000000},
+                              {"maCoSo": "HCM", "giaBan": 21000000, "giaNhap": 15000000}]', '2026-01-01 00:00:00', 1),
+                    (5, 58, '[{"maCoSo": "HN", "giaBan": 1300000, "giaNhap": 900000},
+                              {"maCoSo": "HCM", "giaBan": 1300000, "giaNhap": 900000}]', '2026-01-01 00:00:00', 1);
+                INSERT INTO slmv2.ai_v_anh_vat_tu VALUES (46, 233, 500, true, 1);
+                INSERT INTO slmv2.ai_v_tep_tin_anh VALUES (500, 'http://minio:9000/slm/vat_tu_anh_Tấm pin JA 625 Wp_1'),
+                    (347, 'http://minio:9000/slm/tron_goi_98');
+                INSERT INTO slmv2.thong_tin_ten_mien VALUES (9, 4, '0917599966', 'sale@slmsolar.com', 1);
                 """);
         insertPackage(98, 1, 90_800_000);
         insertPackage(97, 2, 90_800_000);
@@ -385,8 +442,10 @@ class CatalogSyncIntegrationTest {
         jdbc.update("INSERT INTO slmv2.ai_v_tron_goi VALUES (?, ?, 6, 'Hệ Hy-Brid 5 kWp 1 pha - Lưu trữ 5.12 kWh', "
                 + "347, 'Hy-Brid', '1 pha', 5000, 500, 700, NULL, ?, 0, true, 1)", id, branchId, price);
         int base = id * 10;
-        jdbc.update("INSERT INTO slmv2.ai_v_vat_tu_tron_goi VALUES (?, ?, 233, 8, 144, true, true, 1), "
-                        + "(?, ?, 62, 1, 60, true, true, 1), (?, ?, 57, 1, 60, true, true, 1), (?, ?, 58, 1, 24, true, false, 1)",
+        jdbc.update("INSERT INTO slmv2.vat_tu_tron_goi (id, tron_goi_id, vat_tu_id, so_luong, gia, gm, "
+                        + "thoi_gian_bao_hanh, duoc_bao_hanh, duoc_xem, trang_thai) VALUES "
+                        + "(?, ?, 233, 8, 2600000, 0.3, 144, true, true, 1), (?, ?, 62, 1, 25300000, 0.2, 60, true, true, 1), "
+                        + "(?, ?, 57, 1, 21000000, 0.2, 60, true, true, 1), (?, ?, 58, 1, 1300000, 0.2, 24, true, false, 1)",
                 base, id, base + 1, id, base + 2, id, base + 3, id);
     }
 

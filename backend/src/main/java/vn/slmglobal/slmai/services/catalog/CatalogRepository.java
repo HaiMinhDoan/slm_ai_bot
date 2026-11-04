@@ -110,14 +110,17 @@ public class CatalogRepository {
 
     public Counts upsertBrands(List<CatalogRows.BrandRow> rows) {
         return upsert("dm_thuong_hieu", rows, CatalogRows.BrandRow::id, CatalogRows.BrandRow::hash, """
-                INSERT INTO dm_thuong_hieu (id_nguon, ten, ten_quoc_te, quoc_gia, mo_ta, dang_dung, ma_bam, dong_bo_luc)
-                VALUES (:id, :ten, :tenQuocTe, :quocGia, :moTa, :dangDung, :maBam, now())
+                INSERT INTO dm_thuong_hieu (id_nguon, ten, ten_quoc_te, quoc_gia, mo_ta, tep_tin_id, anh_url, dang_dung,
+                                            ma_bam, dong_bo_luc)
+                VALUES (:id, :ten, :tenQuocTe, :quocGia, :moTa, :tepTin, :anh, :dangDung, :maBam, now())
                 ON CONFLICT (id_nguon) DO UPDATE SET ten = EXCLUDED.ten, ten_quoc_te = EXCLUDED.ten_quoc_te,
-                    quoc_gia = EXCLUDED.quoc_gia, mo_ta = EXCLUDED.mo_ta, dang_dung = EXCLUDED.dang_dung,
-                    ma_bam = EXCLUDED.ma_bam, dong_bo_luc = now()""",
+                    quoc_gia = EXCLUDED.quoc_gia, mo_ta = EXCLUDED.mo_ta, tep_tin_id = EXCLUDED.tep_tin_id,
+                    anh_url = EXCLUDED.anh_url, dang_dung = EXCLUDED.dang_dung, ma_bam = EXCLUDED.ma_bam,
+                    dong_bo_luc = now()""",
                 r -> new MapSqlParameterSource().addValue("id", r.id()).addValue("ten", r.name())
                         .addValue("tenQuocTe", r.nameIntl()).addValue("quocGia", r.country())
-                        .addValue("moTa", r.description()).addValue("dangDung", r.active()).addValue("maBam", r.hash()));
+                        .addValue("moTa", r.description()).addValue("tepTin", r.logoFileId())
+                        .addValue("anh", r.logoUrl()).addValue("dangDung", r.active()).addValue("maBam", r.hash()));
     }
 
     public Counts upsertBranches(List<CatalogRows.BranchRow> rows) {
@@ -157,10 +160,10 @@ public class CatalogRepository {
                 INSERT INTO dm_tron_goi (id_nguon, ma_co_so, nhom_tron_goi_id, ten_nhom_goi, thuong_hieu_tam_pin_id,
                     thuong_hieu_inverter_id, thuong_hieu_pin_luu_tru_id, ten, loai_he_thong, so_pha, cong_suat_kwp,
                     so_tam_pin, cong_suat_tam_wp, cong_suat_inverter_kw, luu_tru_kwh, san_luong_thang_min,
-                    san_luong_thang_max, tong_gia, gia_khung_sat, ban_chay, tep_tin_id, mo_ta, dang_dung, duoc_goi_y,
-                    canh_bao, ma_bam, dong_bo_luc)
+                    san_luong_thang_max, tong_gia, gia_khung_sat, ban_chay, tep_tin_id, anh_url, mo_ta, dang_dung,
+                    duoc_goi_y, canh_bao, ma_bam, dong_bo_luc)
                 VALUES (:id, :coSo, :nhom, :tenNhom, :thTamPin, :thInverter, :thPin, :ten, :loai, :pha, :kwp,
-                    :soTam, :wp, :inverterKw, :luuTru, :slMin, :slMax, :gia, :khungSat, :banChay, :tepTin, :moTa,
+                    :soTam, :wp, :inverterKw, :luuTru, :slMin, :slMax, :gia, :khungSat, :banChay, :tepTin, :anh, :moTa,
                     :dangDung, :goiY, CAST(:canhBao AS text[]), :maBam, now())
                 ON CONFLICT (id_nguon) DO UPDATE SET ma_co_so = EXCLUDED.ma_co_so,
                     nhom_tron_goi_id = EXCLUDED.nhom_tron_goi_id, ten_nhom_goi = EXCLUDED.ten_nhom_goi,
@@ -173,7 +176,8 @@ public class CatalogRepository {
                     luu_tru_kwh = EXCLUDED.luu_tru_kwh, san_luong_thang_min = EXCLUDED.san_luong_thang_min,
                     san_luong_thang_max = EXCLUDED.san_luong_thang_max, tong_gia = EXCLUDED.tong_gia,
                     gia_khung_sat = EXCLUDED.gia_khung_sat, ban_chay = EXCLUDED.ban_chay,
-                    tep_tin_id = EXCLUDED.tep_tin_id, mo_ta = EXCLUDED.mo_ta, dang_dung = EXCLUDED.dang_dung,
+                    tep_tin_id = EXCLUDED.tep_tin_id, anh_url = EXCLUDED.anh_url, mo_ta = EXCLUDED.mo_ta,
+                    dang_dung = EXCLUDED.dang_dung,
                     duoc_goi_y = EXCLUDED.duoc_goi_y, canh_bao = EXCLUDED.canh_bao, ma_bam = EXCLUDED.ma_bam,
                     dong_bo_luc = now()""",
                 r -> new MapSqlParameterSource().addValue("id", r.id()).addValue("coSo", r.branchCode())
@@ -186,6 +190,7 @@ public class CatalogRepository {
                         .addValue("slMin", r.outputMin()).addValue("slMax", r.outputMax())
                         .addValue("gia", r.totalPrice()).addValue("khungSat", r.steelFramePrice())
                         .addValue("banChay", r.bestSeller()).addValue("tepTin", r.imageFileId())
+                        .addValue("anh", r.imageUrl())
                         .addValue("moTa", r.description()).addValue("dangDung", r.active())
                         .addValue("goiY", r.recommendable()).addValue("canhBao", textArray(r.warnings()))
                         .addValue("maBam", r.hash()));
@@ -194,17 +199,19 @@ public class CatalogRepository {
     public Counts upsertItems(List<CatalogRows.ItemRow> rows) {
         return upsert("dm_vat_tu_tron_goi", rows, CatalogRows.ItemRow::id, CatalogRows.ItemRow::hash, """
                 INSERT INTO dm_vat_tu_tron_goi (id_nguon, tron_goi_id, vat_tu_id, so_luong, bao_hanh_thang,
-                    duoc_bao_hanh, hien_thi_khach, dang_dung, ma_bam, dong_bo_luc)
-                VALUES (:id, :goi, :vatTu, :soLuong, :baoHanh, :duocBaoHanh, :hienThi, :dangDung, :maBam, now())
+                    duoc_bao_hanh, hien_thi_khach, gia_ban, mo_ta, dang_dung, ma_bam, dong_bo_luc)
+                VALUES (:id, :goi, :vatTu, :soLuong, :baoHanh, :duocBaoHanh, :hienThi, :giaBan, :moTa, :dangDung,
+                    :maBam, now())
                 ON CONFLICT (id_nguon) DO UPDATE SET tron_goi_id = EXCLUDED.tron_goi_id,
                     vat_tu_id = EXCLUDED.vat_tu_id, so_luong = EXCLUDED.so_luong,
                     bao_hanh_thang = EXCLUDED.bao_hanh_thang, duoc_bao_hanh = EXCLUDED.duoc_bao_hanh,
-                    hien_thi_khach = EXCLUDED.hien_thi_khach, dang_dung = EXCLUDED.dang_dung,
-                    ma_bam = EXCLUDED.ma_bam, dong_bo_luc = now()""",
+                    hien_thi_khach = EXCLUDED.hien_thi_khach, gia_ban = EXCLUDED.gia_ban, mo_ta = EXCLUDED.mo_ta,
+                    dang_dung = EXCLUDED.dang_dung, ma_bam = EXCLUDED.ma_bam, dong_bo_luc = now()""",
                 r -> new MapSqlParameterSource().addValue("id", r.id()).addValue("goi", r.packageId())
                         .addValue("vatTu", r.materialId()).addValue("soLuong", r.quantity())
                         .addValue("baoHanh", r.warrantyMonths()).addValue("duocBaoHanh", r.hasWarranty())
-                        .addValue("hienThi", r.customerVisible()).addValue("dangDung", r.active())
+                        .addValue("hienThi", r.customerVisible()).addValue("giaBan", r.salePrice())
+                        .addValue("moTa", r.description()).addValue("dangDung", r.active())
                         .addValue("maBam", r.hash()));
     }
 
@@ -216,6 +223,88 @@ public class CatalogRepository {
                     dang_dung = EXCLUDED.dang_dung, ma_bam = EXCLUDED.ma_bam, dong_bo_luc = now()""",
                 r -> new MapSqlParameterSource().addValue("id", r.id()).addValue("tenMien", r.domain())
                         .addValue("coSo", r.branchCode()).addValue("dangDung", r.active()).addValue("maBam", r.hash()));
+    }
+
+    public Counts upsertProductLines(List<CatalogRows.ProductLineRow> rows) {
+        return upsert("dm_nganh_hang", rows, CatalogRows.ProductLineRow::id, CatalogRows.ProductLineRow::hash, """
+                INSERT INTO dm_nganh_hang (id_nguon, ma, ten, sdt_sale, sdt_ky_thuat, dang_dung, ma_bam, dong_bo_luc)
+                VALUES (:id, :ma, :ten, :sale, :kyThuat, :dangDung, :maBam, now())
+                ON CONFLICT (id_nguon) DO UPDATE SET ma = EXCLUDED.ma, ten = EXCLUDED.ten,
+                    sdt_sale = EXCLUDED.sdt_sale, sdt_ky_thuat = EXCLUDED.sdt_ky_thuat,
+                    dang_dung = EXCLUDED.dang_dung, ma_bam = EXCLUDED.ma_bam, dong_bo_luc = now()""",
+                r -> new MapSqlParameterSource().addValue("id", r.id()).addValue("ma", r.code())
+                        .addValue("ten", r.name()).addValue("sale", r.salesPhone()).addValue("kyThuat", r.techPhone())
+                        .addValue("dangDung", r.active()).addValue("maBam", r.hash()));
+    }
+
+    public Counts upsertMaterialGroups(List<CatalogRows.MaterialGroupRow> rows) {
+        return upsert("dm_nhom_vat_tu", rows, CatalogRows.MaterialGroupRow::id, CatalogRows.MaterialGroupRow::hash, """
+                INSERT INTO dm_nhom_vat_tu (id_nguon, ma, ten, nganh_hang_id, thuoc_tinh, vat_tu_chinh, dang_dung,
+                                            ma_bam, dong_bo_luc)
+                VALUES (:id, :ma, :ten, :nganh, CAST(:thuocTinh AS jsonb), :chinh, :dangDung, :maBam, now())
+                ON CONFLICT (id_nguon) DO UPDATE SET ma = EXCLUDED.ma, ten = EXCLUDED.ten,
+                    nganh_hang_id = EXCLUDED.nganh_hang_id, thuoc_tinh = EXCLUDED.thuoc_tinh,
+                    vat_tu_chinh = EXCLUDED.vat_tu_chinh, dang_dung = EXCLUDED.dang_dung, ma_bam = EXCLUDED.ma_bam,
+                    dong_bo_luc = now()""",
+                r -> new MapSqlParameterSource().addValue("id", r.id()).addValue("ma", r.code())
+                        .addValue("ten", r.name()).addValue("nganh", r.productLineId())
+                        .addValue("thuocTinh", json(r.attributes())).addValue("chinh", r.main())
+                        .addValue("dangDung", r.active()).addValue("maBam", r.hash()));
+    }
+
+    public Counts upsertPrices(List<CatalogRows.PriceRow> rows) {
+        return upsert("dm_gia_vat_tu", rows, CatalogRows.PriceRow::id, CatalogRows.PriceRow::hash, """
+                INSERT INTO dm_gia_vat_tu (id_nguon, vat_tu_id, hieu_luc_tu, gia_ban, dang_dung, ma_bam, dong_bo_luc)
+                VALUES (:id, :vatTu, :hieuLuc, CAST(:giaBan AS jsonb), :dangDung, :maBam, now())
+                ON CONFLICT (id_nguon) DO UPDATE SET vat_tu_id = EXCLUDED.vat_tu_id,
+                    hieu_luc_tu = EXCLUDED.hieu_luc_tu, gia_ban = EXCLUDED.gia_ban, dang_dung = EXCLUDED.dang_dung,
+                    ma_bam = EXCLUDED.ma_bam, dong_bo_luc = now()""",
+                r -> new MapSqlParameterSource().addValue("id", r.id()).addValue("vatTu", r.materialId())
+                        .addValue("hieuLuc", r.effectiveFrom()).addValue("giaBan", json(r.salePrices()))
+                        .addValue("dangDung", r.active()).addValue("maBam", r.hash()));
+    }
+
+    public Counts upsertMaterialImages(List<CatalogRows.MaterialImageRow> rows) {
+        return upsert("dm_anh_vat_tu", rows, CatalogRows.MaterialImageRow::id, CatalogRows.MaterialImageRow::hash, """
+                INSERT INTO dm_anh_vat_tu (id_nguon, vat_tu_id, tep_tin_id, duong_dan, anh_chinh, dang_dung, ma_bam,
+                                           dong_bo_luc)
+                VALUES (:id, :vatTu, :tepTin, :duongDan, :chinh, :dangDung, :maBam, now())
+                ON CONFLICT (id_nguon) DO UPDATE SET vat_tu_id = EXCLUDED.vat_tu_id,
+                    tep_tin_id = EXCLUDED.tep_tin_id, duong_dan = EXCLUDED.duong_dan, anh_chinh = EXCLUDED.anh_chinh,
+                    dang_dung = EXCLUDED.dang_dung, ma_bam = EXCLUDED.ma_bam, dong_bo_luc = now()""",
+                r -> new MapSqlParameterSource().addValue("id", r.id()).addValue("vatTu", r.materialId())
+                        .addValue("tepTin", r.fileId()).addValue("duongDan", r.url()).addValue("chinh", r.main())
+                        .addValue("dangDung", r.active()).addValue("maBam", r.hash()));
+    }
+
+    public Counts upsertPackageFamilies(List<CatalogRows.PackageFamilyRow> rows) {
+        return upsert("dm_nhom_tron_goi", rows, CatalogRows.PackageFamilyRow::id, CatalogRows.PackageFamilyRow::hash,
+                """
+                INSERT INTO dm_nhom_tron_goi (id_nguon, ten, nganh_hang_id, thuong_hieu_tam_pin_id,
+                    thuong_hieu_inverter_id, thuong_hieu_pin_luu_tru_id, dang_dung, ma_bam, dong_bo_luc)
+                VALUES (:id, :ten, :nganh, :tamPin, :inverter, :pin, :dangDung, :maBam, now())
+                ON CONFLICT (id_nguon) DO UPDATE SET ten = EXCLUDED.ten, nganh_hang_id = EXCLUDED.nganh_hang_id,
+                    thuong_hieu_tam_pin_id = EXCLUDED.thuong_hieu_tam_pin_id,
+                    thuong_hieu_inverter_id = EXCLUDED.thuong_hieu_inverter_id,
+                    thuong_hieu_pin_luu_tru_id = EXCLUDED.thuong_hieu_pin_luu_tru_id,
+                    dang_dung = EXCLUDED.dang_dung, ma_bam = EXCLUDED.ma_bam, dong_bo_luc = now()""",
+                r -> new MapSqlParameterSource().addValue("id", r.id()).addValue("ten", r.name())
+                        .addValue("nganh", r.productLineId()).addValue("tamPin", r.panelBrandId())
+                        .addValue("inverter", r.inverterBrandId()).addValue("pin", r.batteryBrandId())
+                        .addValue("dangDung", r.active()).addValue("maBam", r.hash()));
+    }
+
+    public Counts upsertDomainContacts(List<CatalogRows.DomainContactRow> rows) {
+        return upsert("dm_ten_mien_lien_he", rows, CatalogRows.DomainContactRow::id,
+                CatalogRows.DomainContactRow::hash, """
+                INSERT INTO dm_ten_mien_lien_he (id_nguon, ten_mien_id, sdt, email, dang_dung, ma_bam, dong_bo_luc)
+                VALUES (:id, :tenMien, :sdt, :email, :dangDung, :maBam, now())
+                ON CONFLICT (id_nguon) DO UPDATE SET ten_mien_id = EXCLUDED.ten_mien_id, sdt = EXCLUDED.sdt,
+                    email = EXCLUDED.email, dang_dung = EXCLUDED.dang_dung, ma_bam = EXCLUDED.ma_bam,
+                    dong_bo_luc = now()""",
+                r -> new MapSqlParameterSource().addValue("id", r.id()).addValue("tenMien", r.domainId())
+                        .addValue("sdt", r.phone()).addValue("email", r.email()).addValue("dangDung", r.active())
+                        .addValue("maBam", r.hash()));
     }
 
     /**

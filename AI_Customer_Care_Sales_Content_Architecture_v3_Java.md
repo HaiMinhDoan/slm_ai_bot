@@ -180,9 +180,9 @@ Chỉ đồng bộ các bảng trên. Bot không đọc khách hàng, hợp đ�
 
 ### 4.2.2 Quy tắc nghiệp vụ bắt buộc
 
-1. **Không đồng bộ giá nhập và biên lợi nhuận.** `thong_tin_gia.ds_gia` chứa cả `giaBan` và `giaNhap`; `gm`, `gm_tong` là biên lợi nhuận. Chặn ngay từ nguồn bằng view (mục 4.2.5), không chỉ lọc trong code của bot.
-2. **`thong_tin_gia` là lịch sử giá.** Một vật tư có nhiều dòng cùng `trang_thai = 1`; giá hiện hành là dòng có `tao_luc` mới nhất.
-3. **Giá gói là `tron_goi.tong_gia`**, không phải tổng `gia × so_luong` của các dòng vật tư (ví dụ gói 97: cộng các dòng ra 84,0 tr, `tong_gia` là 90,8 tr). AI chỉ báo `tong_gia`; giá từng dòng trong gói không được đồng bộ.
+1. **Không đồng bộ giá nhập và biên lợi nhuận.** `thong_tin_gia.ds_gia` chứa cả `giaBan` và `giaNhap`; `gm`, `gm_tong` là biên lợi nhuận. Chặn ngay trong câu đọc ở nguồn (view mục 4.2.5, hoặc câu SELECT chỉ lấy cột / khoá được phép), không chỉ lọc trong code của bot.
+2. **`thong_tin_gia` là lịch sử giá.** Một vật tư có nhiều dòng cùng `trang_thai = 1`. Giá hiện hành **của từng miền** là dòng gần nhất có giá của miền đó: slm_v2 hay ghi lần mới chỉ có giá HN, giá HCM vẫn ở lần trước (2026-11-04: 30 / 33 vật tư có lần ghi mới nhất thiếu HCM nhưng lần trước có).
+3. **Giá gói là `tron_goi.tong_gia`**, không phải tổng `gia × so_luong` của các dòng vật tư (ví dụ gói 97: cộng các dòng ra 84,0 tr, `tong_gia` là 90,8 tr). AI chỉ báo `tong_gia`. Giá từng dòng (`vat_tu_tron_goi.gia`, giá bán một đơn vị lúc dựng gói) và giá lẻ vật tư được đồng bộ từ 2026-11-04 để xem trên admin; AI chưa dùng.
 4. **`vat_tu_tron_goi.duoc_xem`** đánh dấu thành phần hiển thị cho khách (tấm pin, inverter, pin lưu trữ, nhân công). Dùng cột này để trả lời "gói gồm những gì".
 5. **Đơn vị:** `tron_goi.cong_suat_he_thong` tính bằng W (5000 = 5 kWp). `san_luong_toi_thieu`/`san_luong_toi_da` là kWh/tháng (cần xác nhận, mục 4.2.8).
 6. **Giá theo cơ sở:** gói đã tách riêng theo `co_so`; giá lẻ vật tư nằm trong `ds_gia` theo `maCoSo`. Hai cơ sở thực chất là hai vùng giá: **HN = miền Bắc, HCM = miền Nam**; tỉnh của khách được quy đổi sang miền theo `rules/regions.yaml` (mục 4.2.9).
@@ -235,6 +235,8 @@ Cảnh báo hiện trên admin. Với loại **chặn**, gói hoặc vật tư k
 | `DUPLICATE_BRANCH_PRICE` | Một cơ sở xuất hiện 2 lần trong `ds_gia` | Cảnh báo |
 | `SPEC_PLACEHOLDER` | Thông số là giá trị giữ chỗ | Cảnh báo |
 | `MISSING_IMAGE` | Gói không có ảnh | Cảnh báo |
+
+**Cập nhật 2026-11-04 (doanh nghiệp yêu cầu đồng bộ đủ phần sản phẩm):** đồng bộ thêm ngành hàng, nhóm vật tư (kèm khuôn thông số), nhóm gói, lịch sử giá bán vật tư (`dm_gia_vat_tu`, chỉ `giaBan` theo `maCoSo`), giá từng dòng vật tư trong gói, ảnh vật tư, logo hãng, ảnh gói, hotline / email theo tên miền (`thong_tin_ten_mien`); migration V12. Lịch sử giá, giá dòng trong gói và hotline chưa có view nên đọc bảng gốc bằng tài khoản `postgres` (doanh nghiệp chốt 2026-10-29), câu SELECT chỉ lấy cột được phép. Cảnh báo mới `MATERIAL_PRICE_MISSING` (không chặn): vật tư trong gói đang bán mà chưa lần ghi giá nào có giá của miền của gói; thay cho `MISSING_BRANCH_PRICE`, `DUPLICATE_BRANCH_PRICE` (lặp cơ sở trong một lần ghi thì lấy giá sau cùng). Trang admin *Vật tư từ slm_v2* (giá theo miền, lịch sử giá, ảnh, gói nào dùng) và nút *Vật tư trong gói* ở trang gói (giá lúc dựng gói, giá hiện hành, tổng so với giá gói). Ảnh trên MinIO http của slm_v2 đi qua backend vì trang admin chạy https. Lần đồng bộ thật đầu tiên: 207 lần ghi giá, 1.877 dòng vật tư trong gói có giá, 47 ảnh vật tư; vật tư 84, 85 chưa có giá miền Nam.
 
 Sản lượng min / max của `slm_v2` chỉ lưu để đối chiếu, không xét cảnh báo: sản lượng nói với khách tính theo PV out EVN (mục 60.3). Lần đồng bộ thử với dữ liệu thật (2026-10-28): 74 / 74 gói đang bán được gợi ý; cảnh báo `CAPACITY_FROM_PANELS` (101), `INACTIVE_ACCESSORY_IN_PACKAGE` (105, 106, 214, 215), `NAME_PHASE_MISMATCH` (172).
 
@@ -5108,6 +5110,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 | Mốc báo giá (60.4): đồng bộ catalog slm_v2 mỗi 10 phút kèm cảnh báo dữ liệu, PV out EVN theo năm và nhắc nạp năm mới, `SizingService`, tool `tim_goi_phu_hop` / `chi_tiet_goi`, link theo miền, giá đã gồm VAT | Chạy thật từ 2026-10-29 |
 | Trang admin `https://fs-wms.io.vn`: đăng nhập, người dùng và vai trò, nhật ký thao tác | Chạy thật (HTTPS qua nginx-proxy-manager) |
 | Thông báo nhân viên (mục 34): chuông, âm thanh, thông báo trình duyệt qua SSE | Chạy thật |
+| Đồng bộ đủ phần sản phẩm slm_v2 (mục 4.2.4): giá bán vật tư theo miền có lịch sử, giá từng vật tư trong gói, ảnh, nhóm, hotline; trang *Vật tư từ slm_v2*, nút *Vật tư trong gói* | Đã viết 2026-11-04, chờ triển khai |
 | Catalog & báo giá trên admin: *Gói từ slm_v2*, *Thử báo giá*, *PV out EVN*. Dựng theo khuôn bảng của fsignai (`BasicTable` / `useTable`, form tìm kiếm, phân trang). Gói sửa, bật / tắt, xoá mềm và khôi phục được ngay trên admin (60.4) | Đã viết 2026-10-29, chờ triển khai bản mới |
 | Thư viện media (mục 6.3 D): nhập ảnh combo từ Google Drive vào MinIO (bucket `slm-ai-media`) | Đã nạp 24 ảnh và 11 link video Facebook (2026-10-29), đang ở trạng thái `DRAFT` nên AI chưa dùng |
 | Sửa, duyệt, xoá mềm và khôi phục media trên admin (mục 6.5) | Đã viết 2026-10-29, chờ triển khai bản mới |

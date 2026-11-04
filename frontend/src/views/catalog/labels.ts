@@ -40,3 +40,11 @@ export function millions(vnd?: number): string {
 export function decimal(v?: number, digits = 2): string {
   return v == null ? '' : v.toLocaleString('vi-VN', { maximumFractionDigits: digits });
 }
+
+/** 27000000 → "27.000.000 đ" */
+export function vnd(v?: number | null): string {
+  return v == null ? '' : `${Math.round(v).toLocaleString('vi-VN')} đ`;
+}
+
+/** Cơ sở giá hiện có (slm_v2 co_so): cột giá theo miền */
+export const PRICE_BRANCHES = ['HN', 'HCM'];

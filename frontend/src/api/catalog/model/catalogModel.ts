@@ -175,3 +175,98 @@ export interface PvoutImportResultModel {
     changePercent?: number;
   }[];
 }
+
+/** Giá bán theo mã cơ sở giá: {"HN": 27000000, "HCM": 26500000}; không có giá nhập */
+export type SalePrices = Record<string, number>;
+
+export interface MaterialFilterModel {
+  keyword?: string;
+  groupCode?: string;
+  /** ACTIVE (mặc định) / INACTIVE / ALL */
+  status?: string;
+  /** USED: có trong gói đang bán; UNUSED: không thuộc gói đang bán nào */
+  usage?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface MaterialModel {
+  id: number;
+  code: string;
+  name: string;
+  groupCode?: string;
+  groupName?: string;
+  brand?: string;
+  unit?: string;
+  warrantyMonths?: number;
+  main?: boolean;
+  active: boolean;
+  warnings: string[];
+  /** Giá bán hiện hành theo miền: lần ghi gần nhất có giá của miền đó */
+  salePrices: SalePrices;
+  /** Ngày áp dụng giá hiện hành theo miền */
+  priceDates: Record<string, string>;
+  /** Lần đổi giá gần nhất */
+  priceFrom?: string;
+  packageCount: number;
+  imageFileId?: number;
+}
+
+export interface MaterialGroupModel {
+  code: string;
+  name: string;
+  main?: boolean;
+}
+
+export interface MaterialDetailModel {
+  material: MaterialModel;
+  specs: Record<string, { ten?: string; value?: number | string; unit?: string }>;
+  quoteDescription?: string;
+  syncedAt?: string;
+  images: { id: number; fileId?: number; main?: boolean; active: boolean }[];
+  prices: { id: number; effectiveFrom?: string; salePrices: SalePrices; active: boolean }[];
+  packages: {
+    itemId: number;
+    packageId: number;
+    packageName: string;
+    branchCode: string;
+    packageActive: boolean;
+    totalPrice?: number;
+    quantity?: number;
+    /** Giá bán một đơn vị lúc dựng gói */
+    salePrice?: number;
+    customerVisible: boolean;
+    itemActive: boolean;
+  }[];
+}
+
+export interface PackageItemModel {
+  id: number;
+  materialId: number;
+  code: string;
+  name: string;
+  groupCode?: string;
+  brand?: string;
+  unit?: string;
+  quantity?: number;
+  /** Giá bán một đơn vị lúc dựng gói (slm_v2) */
+  salePrice?: number;
+  /** Giá bán hiện hành của vật tư ở miền của gói */
+  currentPrice?: number;
+  customerVisible: boolean;
+  active: boolean;
+  description?: string;
+  warrantyMonths?: number;
+}
+
+export interface PackageItemsModel {
+  packageId: number;
+  packageName: string;
+  branchCode: string;
+  totalPrice?: number;
+  items: PackageItemModel[];
+  /** Tổng số lượng × giá lúc dựng gói của các dòng đang dùng */
+  lineTotal: number;
+  /** Tổng theo giá hiện hành; trống nếu có vật tư chưa có giá của miền */
+  currentTotal?: number;
+}

@@ -48,6 +48,11 @@
             v-else
             :actions="[
               {
+                icon: 'ant-design:unordered-list-outlined',
+                tooltip: 'Vật tư trong gói, giá từng vật tư',
+                onClick: () => openItems(true, { id: record.id }),
+              },
+              {
                 icon: 'clarity:note-edit-line',
                 tooltip: 'Sửa gói',
                 auth: EDIT_ROLES,
@@ -80,6 +85,7 @@
     </BasicTable>
 
     <PackageDrawer @register="registerDrawer" @success="handleSuccess" />
+    <PackageItemsDrawer @register="registerItems" />
   </PageWrapper>
 </template>
 
@@ -96,6 +102,7 @@
   import { formatToDateTime } from '@/utils/dateUtil';
 
   import PackageDrawer from './PackageDrawer.vue';
+  import PackageItemsDrawer from './PackageItemsDrawer.vue';
   import { columns, searchFormSchema } from './packages.data';
   import {
     catalogPackageDeleteApi,
@@ -117,6 +124,7 @@
   const { hasPermission } = usePermission();
   const canEdit = hasPermission(EDIT_ROLES);
   const [registerDrawer, { openDrawer }] = useDrawer();
+  const [registerItems, { openDrawer: openItems }] = useDrawer();
   const status = ref<CatalogStatusModel>();
   const labels = ref<WarningLabels>({});
   const syncing = ref(false);
@@ -173,9 +181,8 @@
     striped: false,
     // Chỉ chọn bằng ô tick: bấm nút sửa trên một dòng không được kéo dòng đó vào lệnh Bật / Tắt
     clickToRowSelect: false,
-    actionColumn: canEdit
-      ? { width: 100, title: 'Thao tác', dataIndex: 'action', fixed: 'right' }
-      : undefined,
+    // Nhân viên trực chat chỉ có nút xem vật tư; sửa / xoá theo quyền (auth của từng nút)
+    actionColumn: { width: canEdit ? 130 : 70, title: 'Thao tác', dataIndex: 'action', fixed: 'right' },
   });
 
   const STATUS_LABELS: Record<string, string> = {
