@@ -34,20 +34,22 @@
     />
 
     <div v-if="session" class="chat">
-      <div v-if="!session.messages.length" class="text-gray-500 py-6 text-center">
-        Chưa có tin nhắn. Mô tả thay đổi bạn muốn ở ô bên dưới.
-      </div>
-      <div
+      <Empty
+        v-if="!session.messages.length"
+        description="Chưa có tin nhắn. Mô tả thay đổi bạn muốn ở ô bên dưới."
+      />
+      <Card
         v-for="m in session.messages"
         :key="m.id"
+        size="small"
         :class="['msg', m.role === 'USER' ? 'msg-user' : 'msg-ai']"
       >
-        <div class="msg-head"
-          >{{ m.role === 'USER' ? 'Bạn' : 'AI' }} · {{ formatToDateTime(m.createdAt) }}</div
-        >
-        <Alert v-if="m.error" type="error" show-icon :message="m.error" />
-        <div v-else class="msg-text">{{ m.text }}</div>
-        <div v-for="p in proposalsOf(m)" :key="p.id" class="proposal">
+        <TypographyText type="secondary" class="text-xs">
+          {{ m.role === 'USER' ? 'Bạn' : 'AI' }} · {{ formatToDateTime(m.createdAt) }}
+        </TypographyText>
+        <Alert v-if="m.error" type="error" show-icon class="mt-1" :message="m.error" />
+        <TypographyParagraph v-else class="mt-1 mb-0 whitespace-pre-wrap">{{ m.text }}</TypographyParagraph>
+        <Card v-for="p in proposalsOf(m)" :key="p.id" size="small" class="mt-3">
           <div class="flex items-center flex-wrap gap-1">
             <Tag :color="CHANGE_ACTION[p.action]?.color">{{ CHANGE_ACTION[p.action]?.label }}</Tag>
             <b>{{ p.docKey }}</b>
@@ -89,16 +91,18 @@
               Duyệt thành bản nháp
             </Button>
             <Button size="small" @click="reject(p)">Từ chối</Button>
-            <span v-if="!p.canAccept" class="text-red-500 text-xs self-center">
+            <TypographyText v-if="!p.canAccept" type="danger" class="text-xs self-center">
               Đề xuất có lỗi, nhắn AI sửa lại.
-            </span>
+            </TypographyText>
           </div>
-        </div>
-      </div>
-      <div v-if="session.pending" class="msg msg-ai">
+        </Card>
+      </Card>
+      <Card v-if="session.pending" size="small" class="msg msg-ai">
         <Spin size="small" />
-        <span class="ml-2 text-gray-500">AI đang soạn đề xuất (có thể mất 30–90 giây)...</span>
-      </div>
+        <TypographyText type="secondary" class="ml-2">
+          AI đang soạn đề xuất (có thể mất 30–90 giây)...
+        </TypographyText>
+      </Card>
     </div>
 
     <template #footer>
@@ -126,7 +130,7 @@
 
 <script lang="ts" setup>
   import { computed, onBeforeUnmount, reactive, ref } from 'vue';
-  import { Alert, Input, Select, Spin, Tag } from 'ant-design-vue';
+  import { Alert, Card, Empty, Input, Select, Spin, Tag, Typography } from 'ant-design-vue';
   import { Button } from '@/components/Button';
   import { BasicDrawer, useDrawerInner } from '@/components/Drawer';
   import { CodeEditor, MODE } from '@/components/CodeEditor';
@@ -155,6 +159,8 @@
   /** Mở bằng openDrawer(true, { docId?, docKey? }); duyệt đề xuất xong phát `changed` để trang tải lại */
   const emit = defineEmits(['changed', 'register']);
   const InputTextArea = Input.TextArea;
+  const TypographyText = Typography.Text;
+  const TypographyParagraph = Typography.Paragraph;
   const { createMessage, createConfirm } = useMessage();
 
   const PROPOSAL_STATUS = {
@@ -291,39 +297,17 @@
     gap: 12px;
   }
 
-  // Màu bán trong suốt để đọc được ở cả giao diện sáng và tối
+  // Chỉ bố cục; màu nền / viền do Card của ant-design-vue theo giao diện sáng / tối
   .msg {
     max-width: 92%;
-    padding: 10px 12px;
-    border: 1px solid rgb(128 128 128 / 25%);
-    border-radius: 8px;
   }
 
   .msg-user {
     align-self: flex-end;
-    background: rgb(22 119 255 / 10%);
   }
 
   .msg-ai {
     align-self: flex-start;
-    background: rgb(128 128 128 / 8%);
-  }
-
-  .msg-head {
-    margin-bottom: 4px;
-    color: #888;
-    font-size: 12px;
-  }
-
-  .msg-text {
-    white-space: pre-wrap;
-  }
-
-  .proposal {
-    margin-top: 10px;
-    padding: 10px;
-    border: 1px solid rgb(128 128 128 / 35%);
-    border-radius: 6px;
   }
 
   .diff-box {

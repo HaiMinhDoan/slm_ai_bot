@@ -66,21 +66,21 @@
         />
 
         <div ref="scrollEl" class="messages">
-          <div v-if="!detail.messages.length" class="text-gray-500 py-6 text-center">Chưa có tin nhắn.</div>
-          <div
+          <Empty v-if="!detail.messages.length" description="Chưa có tin nhắn" />
+          <Card
             v-for="m in detail.messages"
             :key="m.id"
+            size="small"
             :class="[
               'msg',
               m.direction === 'IN' ? 'msg-in' : 'msg-out',
-              m.senderType === 'SYSTEM' ? 'msg-system' : '',
-              isPending(m) ? 'msg-pending' : '',
               m.status === 'DISCARDED' ? 'msg-discarded' : '',
             ]"
           >
-            <div class="msg-head">
-              <b>{{ senderLabel(m) }}</b>
-              · {{ formatToDateTime(m.sentAt || m.createdAt) }}
+            <div class="mb-1">
+              <TypographyText type="secondary" class="text-xs">
+                <b>{{ senderLabel(m) }}</b> · {{ formatToDateTime(m.sentAt || m.createdAt) }}
+              </TypographyText>
               <Tag v-if="m.status === 'DRAFT'" color="orange" class="ml-1">Nháp chưa gửi</Tag>
               <Tag v-else-if="m.status === 'FAILED'" color="red" class="ml-1">Gửi lỗi</Tag>
               <Tag v-else-if="m.status === 'DISCARDED'" class="ml-1">Đã bỏ</Tag>
@@ -107,7 +107,9 @@
                 <Button size="small" @click="cancelEdit(m.id)">Huỷ sửa</Button>
               </div>
             </template>
-            <div v-else class="msg-text">{{ m.content }}</div>
+            <TypographyParagraph v-else class="mb-0 whitespace-pre-wrap break-words">
+              {{ m.content }}
+            </TypographyParagraph>
 
             <div v-for="(a, i) in m.attachments ?? []" :key="i" class="mt-1">
               <Image
@@ -119,12 +121,14 @@
               <a v-else-if="a.payload?.url" :href="a.payload.url" target="_blank" rel="noopener noreferrer">
                 Tệp đính kèm ({{ a.type || 'tệp' }})
               </a>
-              <span v-else class="text-gray-500">[{{ a.type || 'đính kèm' }}]</span>
+              <TypographyText v-else type="secondary">[{{ a.type || 'đính kèm' }}]</TypographyText>
             </div>
 
             <template v-if="isPending(m) && editing[m.id] === undefined">
-              <div v-if="m.reasons.length" class="text-xs mt-1 text-gray-500">
-                Chưa tự gửi vì: {{ m.reasons.join(', ') }}
+              <div v-if="m.reasons.length" class="mt-1">
+                <TypographyText type="secondary" class="text-xs">
+                  Chưa tự gửi vì: {{ m.reasons.join(', ') }}
+                </TypographyText>
               </div>
               <div class="mt-2 flex gap-2">
                 <Popconfirm title="Gửi tin này cho khách?" @confirm="send(m)">
@@ -140,7 +144,7 @@
                 </Popconfirm>
               </div>
             </template>
-          </div>
+          </Card>
         </div>
       </div>
 
@@ -212,7 +216,18 @@
 
 <script lang="ts" setup>
   import { computed, nextTick, reactive, ref } from 'vue';
-  import { Alert, Descriptions, Image, Input, Popconfirm, Spin, Tag, Typography } from 'ant-design-vue';
+  import {
+    Alert,
+    Card,
+    Descriptions,
+    Empty,
+    Image,
+    Input,
+    Popconfirm,
+    Spin,
+    Tag,
+    Typography,
+  } from 'ant-design-vue';
   import { Button } from '@/components/Button';
   import { BasicDrawer, useDrawerInner } from '@/components/Drawer';
   import { useModal } from '@/components/Modal';
@@ -246,6 +261,7 @@
   const InputTextArea = Input.TextArea;
   const DescriptionsItem = Descriptions.Item;
   const TypographyText = Typography.Text;
+  const TypographyParagraph = Typography.Paragraph;
   const { createMessage } = useMessage();
 
   /** Hỏi lại hội thoại đang mở: thấy tin mới của khách và câu trả lời của AI */
@@ -427,47 +443,22 @@
     overflow-y: auto;
   }
 
-  // Màu bán trong suốt để đọc được ở cả giao diện sáng và tối
+  // Chỉ bố cục; màu nền / viền do Card của ant-design-vue theo giao diện sáng / tối
   .msg {
+    flex-shrink: 0;
     max-width: 75%;
-    padding: 8px 12px;
-    border: 1px solid rgb(128 128 128 / 25%);
-    border-radius: 10px;
   }
 
   .msg-in {
     align-self: flex-start;
-    background: rgb(128 128 128 / 8%);
   }
 
   .msg-out {
     align-self: flex-end;
-    background: rgb(22 119 255 / 10%);
-  }
-
-  .msg-system {
-    background: rgb(128 128 128 / 4%);
-    font-size: 13px;
-  }
-
-  .msg-pending {
-    border: 1px dashed rgb(250 140 22 / 80%);
-    background: rgb(250 140 22 / 8%);
   }
 
   .msg-discarded {
     opacity: 0.5;
-  }
-
-  .msg-head {
-    margin-bottom: 4px;
-    color: #888;
-    font-size: 12px;
-  }
-
-  .msg-text {
-    white-space: pre-wrap;
-    word-break: break-word;
   }
 
   .footer {

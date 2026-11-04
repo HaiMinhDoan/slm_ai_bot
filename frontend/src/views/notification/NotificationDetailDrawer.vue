@@ -49,19 +49,29 @@
 
       <template v-if="data.lastCustomerMessage">
         <Divider orientation="left">Tin cuối của khách</Divider>
-        <TypographyParagraph class="bubble">{{ data.lastCustomerMessage }}</TypographyParagraph>
+        <Card size="small">
+          <TypographyParagraph class="mb-0 whitespace-pre-wrap">{{
+            data.lastCustomerMessage
+          }}</TypographyParagraph>
+        </Card>
       </template>
 
       <template v-if="data.draftText || data.text">
         <Divider orientation="left">{{
           data.draftText ? 'Nháp AI (chưa gửi khách)' : 'Tin chưa gửi được'
         }}</Divider>
-        <TypographyParagraph class="bubble draft" :copyable="{ text: data.draftText || data.text }">
-          {{ data.draftText || data.text }}
-        </TypographyParagraph>
+        <Card size="small">
+          <TypographyParagraph
+            class="mb-0 whitespace-pre-wrap"
+            :copyable="{ text: data.draftText || data.text }"
+          >
+            {{ data.draftText || data.text }}
+          </TypographyParagraph>
+        </Card>
         <Alert
           type="info"
           show-icon
+          class="mt-3"
           message="Mở hội thoại để gửi, sửa rồi gửi, hoặc bỏ nháp ngay trên trang Chat với khách."
         />
       </template>
@@ -89,7 +99,7 @@
 <script lang="ts" setup>
   import { computed, ref } from 'vue';
   import { useRouter } from 'vue-router';
-  import { Alert, Button, Descriptions, Divider, Tag, Typography } from 'ant-design-vue';
+  import { Alert, Button, Card, Descriptions, Divider, Tag, Typography } from 'ant-design-vue';
   import { BasicDrawer, useDrawerInner } from '@/components/Drawer';
   import { notificationDetailApi } from '@/api/notification';
   import type { NotificationModel } from '@/api/notification/model/notificationModel';
@@ -143,15 +153,3 @@
   });
 </script>
 
-<style lang="less" scoped>
-  .bubble {
-    padding: 8px 12px;
-    border-radius: 8px;
-    background: #f5f5f5;
-    white-space: pre-wrap;
-  }
-
-  .draft {
-    background: #fffbe6;
-  }
-</style>
