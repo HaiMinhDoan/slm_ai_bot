@@ -4,7 +4,6 @@ import vn.slmglobal.slmai.services.lead.entity.LeadLevel;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Tính mức tiềm năng theo rule {@code rules/phan-loai-khach} (mục 58.5, {@link LeadScoringRule}), tất định. Xét
@@ -31,14 +30,15 @@ public final class LeadScoring {
     }
 
     public static Score score(Signals s, LeadScoringRule rule) {
-        Set<String> soon = rule.soonTimelines();
+        // Set bất biến (Set.of) ném NPE khi contains(null): khách cho số mà chưa nói thời điểm lắp là chuyện thường
+        boolean soon = s.timeline() != null && rule.soonTimelines().contains(s.timeline());
         boolean lowBudget = s.budgetMaxVnd() != null && s.cheapestMatchVnd() != null
                 && s.budgetMaxVnd() < s.cheapestMatchVnd() * rule.lowBudgetRatio();
 
-        if (s.hasPhone() && (soon.contains(s.timeline()) || s.minimumInfoComplete())) {
+        if (s.hasPhone() && (soon || s.minimumInfoComplete())) {
             List<String> why = new ArrayList<>();
             why.add("Đã cho số điện thoại");
-            if (soon.contains(s.timeline())) {
+            if (soon) {
                 why.add("TUAN_TOI".equals(s.timeline()) ? "dự định lắp trong tuần tới" : "dự định lắp trong tháng tới");
             }
             if (s.minimumInfoComplete()) {
