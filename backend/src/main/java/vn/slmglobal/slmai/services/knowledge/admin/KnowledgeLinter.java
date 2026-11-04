@@ -31,12 +31,18 @@ public final class KnowledgeLinter {
     }
 
     private static final Pattern MONEY_OR_POWER = Pattern.compile(
-            "(?iu)\\b\\d[\\d.,]*\\s*(triệu|tr|nghìn|ngàn|đồng|đ|vnđ|vnd|kwp|kw|kwh|wp)\\b");
+            "(?iu)\\b\\d[\\d.,]*\\s*(triệu|trieu|tr|tỷ|tỉ|ty|nghìn|nghin|ngàn|ngan|k|đồng|dong|đ|vnđ|vnd|kwp|kw|kwh|wp)\\b");
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\{\\s*([^}]*)\\s*}}");
+    /** Chỗ trống của mẫu guide/mau/*: "<điều khoản 1>", "<...>" (thẻ HTML như <br> không có dấu cách nên không khớp) */
+    private static final Pattern TEMPLATE_GAP = Pattern.compile("<([^<>\\n]*(\\s|\\.\\.\\.)[^<>\\n]*)>");
     private static final Pattern SENTENCE_END = Pattern.compile("[.!?…](\\s|$)");
     /** Từ tiếng Việt hay gặp khi gõ không dấu */
     private static final Set<String> UNACCENTED = Set.of("khong", "duoc", "cua", "nhung", "khach", "nguoi", "chung",
             "toi", "minh", "dien", "mat", "troi", "lap", "dat", "hang", "nhan", "vien", "neu", "thi", "cho", "nhe");
+    /** Cụm từ chứa từ "nên tránh" nhưng mang nghĩa khác (số điện thoại, trung bình...): bỏ qua khi so thuật ngữ */
+    private static final List<String> TERM_EXCEPTIONS = List.of("số điện thoại", "bình thường", "trung bình",
+            "bình luận", "bình chọn", "hòa bình", "hoà bình", "bình dương", "bình định", "bình thuận", "bình phước",
+            "quảng bình", "ninh bình", "thái bình", "bình yên", "bình tĩnh");
     private static final Map<KnowledgeDocType, List<String>> REQUIRED_SECTIONS = Map.of(
             KnowledgeDocType.FAQ, List.of("## Trả lời ngắn", "## Chuyển nhân viên khi"),
             KnowledgeDocType.PLAYBOOK, List.of("## Mục tiêu", "## Các bước"));
@@ -76,6 +82,13 @@ public final class KnowledgeLinter {
                             no));
                 }
             }
+            if (type != null && type.botReads()) {
+                Matcher g = TEMPLATE_GAP.matcher(line);
+                if (g.find()) {
+                    out.add(new Issue(Level.WARNING, "TEMPLATE_GAP", "Còn chỗ trống của mẫu \"" + g.group()
+                            + "\": điền nội dung thật hoặc xoá dòng này", no));
+                }
+            }
             Matcher p = PLACEHOLDER.matcher(line);
             while (p.find()) {
                 String full = p.group();
@@ -91,6 +104,9 @@ public final class KnowledgeLinter {
                 out.add(new Issue(Level.INFO, "LONG_PARAGRAPH", "Đoạn văn dài hơn 5 câu, nên tách nhỏ", no));
             }
             String lower = line.toLowerCase(Locale.ROOT);
+            for (String e : TERM_EXCEPTIONS) {
+                lower = lower.replace(e, " ");
+            }
             for (Map.Entry<String, String> t : terms.entrySet()) {
                 if (containsWord(lower, t.getKey())) {
                     out.add(new Issue(Level.INFO, "TERM", "Nên dùng \"" + t.getValue() + "\" thay cho \"" + t.getKey()

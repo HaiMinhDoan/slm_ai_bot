@@ -164,7 +164,7 @@ public final class RuleCodec {
         boolean nightNumbers = night.values().stream().noneMatch(v -> Double.isNaN(v));
         if (nightNumbers && !(night.get("NGAY_NHIEU") <= night.get("CAN_BANG")
                 && night.get("CAN_BANG") <= night.get("DEM_NHIEU"))) {
-            errors.add("night_share: tỷ lệ dùng đêm phải tăng dần NGAY_NHIEU ≤ CAN_BANG ≤ DEM_NHIEU");
+            errors.add("night_share: tỷ lệ điện đêm phải tăng dần: khách dùng ngày nhiều ≤ cân bằng ≤ dùng đêm nhiều");
         }
         double depth = number(n, "battery_depth", 0.1, 1, errors);
         double tolerance = number(n, "capacity_tolerance", 0.5, 1, errors);

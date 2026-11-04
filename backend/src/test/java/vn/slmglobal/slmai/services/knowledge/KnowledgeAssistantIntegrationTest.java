@@ -5,10 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -40,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "app.ai.worker-enabled=false",
         "app.ai.api-key=test-key"
 })
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class KnowledgeAssistantIntegrationTest {
 
     @Container
@@ -70,6 +75,7 @@ class KnowledgeAssistantIntegrationTest {
     JdbcTemplate jdbc;
 
     @Test
+    @Order(1)
     void proposalsAreCheckedAndAcceptedAsDraft() throws Exception {
         KnowledgeAssistantService.SessionView s = assistant.start(new KnowledgeAssistantService.StartRequest(null,
                 null), ADMIN);
@@ -113,10 +119,45 @@ class KnowledgeAssistantIntegrationTest {
                 Integer.class)).isEqualTo(1);
     }
 
+    @Test
+    @Order(2)
+    void onlyDraftsSavedAfterTheProposalNeedConfirmation() throws Exception {
+        // Bản nháp có trước khi nhắn: AI đọc và soạn tiếp trên đó, duyệt thẳng không hỏi
+        saveDraft("Bản nháp người soạn lưu trước khi nhờ AI");
+        KnowledgeAssistantService.SessionView s = assistant.start(new KnowledgeAssistantService.StartRequest(null,
+                null), ADMIN);
+        assistant.send(s.id(), new KnowledgeAssistantService.SendRequest("Thêm mục mái bằng", null), ADMIN);
+        KnowledgeAssistantService.ProposalView first = waitDone(s.id(), 2).proposals().stream()
+                .filter(p -> p.docKey().equals("playbooks/khach-hoi-gia")).findFirst().orElseThrow();
+        assertThat(assistant.accept(first.id(), false, ADMIN).status()).isEqualTo("ACCEPTED");
+
+        // Bản nháp lưu sau khi AI đề xuất: duyệt sẽ mất phần AI chưa thấy nên phải xác nhận (force)
+        assistant.send(s.id(), new KnowledgeAssistantService.SendRequest("Viết lại ngắn hơn", null), ADMIN);
+        KnowledgeAssistantService.ProposalView second = waitDone(s.id(), 4).proposals().stream()
+                .filter(p -> p.docKey().equals("playbooks/khach-hoi-gia")
+                        && p.status().equals("PROPOSED")).findFirst().orElseThrow();
+        saveDraft("Người khác vừa sửa tay sau khi AI đề xuất");
+        assertThatThrownBy(() -> assistant.accept(second.id(), false, ADMIN))
+                .isInstanceOfSatisfying(CommonException.class,
+                        e -> assertThat(e.getHttpStatus()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(assistant.accept(second.id(), true, ADMIN).status()).isEqualTo("ACCEPTED");
+    }
+
+    private void saveDraft(String content) {
+        KnowledgeAdminService.DocDetail d = admin.getByKey("playbooks/khach-hoi-gia");
+        admin.saveDraft(d.doc().id(), new KnowledgeAdminService.SaveDraftRequest(d.doc().title(), content, null,
+                null, null, null, true), ADMIN);
+    }
+
     private KnowledgeAssistantService.SessionView waitDone(java.util.UUID id) throws InterruptedException {
+        return waitDone(id, 2);
+    }
+
+    private KnowledgeAssistantService.SessionView waitDone(java.util.UUID id, int messageCount)
+            throws InterruptedException {
         for (int i = 0; i < 100; i++) {
             KnowledgeAssistantService.SessionView v = assistant.get(id, ADMIN);
-            if (!v.pending() && v.messages().size() >= 2) {
+            if (!v.pending() && v.messages().size() >= messageCount) {
                 return v;
             }
             Thread.sleep(100);

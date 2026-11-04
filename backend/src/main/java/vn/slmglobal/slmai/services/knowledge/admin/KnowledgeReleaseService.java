@@ -136,7 +136,7 @@ public class KnowledgeReleaseService {
                             v.getVersionNo(), a == null ? null : a.getVersionNo(), v.getAuthor(), v.getUpdatedAt(),
                             v.getChangeNote(), v.isAiAssisted(), d.isArchived());
                 })
-                .sorted(Comparator.comparing(DraftRow::key))
+                .sorted(Comparator.comparing(DraftRow::key, KnowledgeDocType.KEY_ORDER))
                 .toList();
     }
 
@@ -157,7 +157,7 @@ public class KnowledgeReleaseService {
             KnowledgeDoc d = docById.get(i.getDocId());
             KnowledgeVersion v = vs.get(i.getVersionId());
             return new ItemRow(d.getId(), d.getKey(), d.getType().label(), v.getTitle(), v.getVersionNo(), v.getId());
-        }).sorted(Comparator.comparing(ItemRow::key)).toList();
+        }).sorted(Comparator.comparing(ItemRow::key, KnowledgeDocType.KEY_ORDER)).toList();
         return new ReleaseDetail(row(r), r.getValidationReport(), out);
     }
 
@@ -275,7 +275,7 @@ public class KnowledgeReleaseService {
                 changes.add(new Change(d.getKey(), a.getTitle(), "REMOVED", a.getVersionNo(), null));
             }
         });
-        changes.sort(Comparator.comparing(Change::key));
+        changes.sort(Comparator.comparing(Change::key, KnowledgeDocType.KEY_ORDER));
         return new Plan(byDoc, drafts, changes, docById);
     }
 

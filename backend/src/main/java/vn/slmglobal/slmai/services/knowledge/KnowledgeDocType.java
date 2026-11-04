@@ -1,6 +1,7 @@
 package vn.slmglobal.slmai.services.knowledge;
 
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Optional;
 
 /**
@@ -67,6 +68,11 @@ public enum KnowledgeDocType {
                 .filter(t -> key.startsWith(t.folder + "/"))
                 .max((a, b) -> Integer.compare(a.folder.length(), b.folder.length()));
     }
+
+    /** Thứ tự hiện trên admin: theo nhóm (thứ tự khai báo ở trên, bot đọc trước), trong nhóm theo mã */
+    public static final Comparator<String> KEY_ORDER = Comparator
+            .comparing((String key) -> ofKey(key).map(Enum::ordinal).orElse(Integer.MAX_VALUE))
+            .thenComparing(Comparator.naturalOrder());
 
     public enum DocFormat {
         MARKDOWN,

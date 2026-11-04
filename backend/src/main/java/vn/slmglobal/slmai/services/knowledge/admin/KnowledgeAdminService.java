@@ -140,13 +140,16 @@ public class KnowledgeAdminService {
 
     @Transactional(readOnly = true)
     public PageResponse<DocRow> list(Filter f, int page, int size) {
-        Map<Long, KnowledgeVersion> all = versions.findAll().stream()
+        List<KnowledgeVersion> allVersions = versions.findAll();
+        Map<Long, KnowledgeVersion> all = allVersions.stream()
                 .collect(Collectors.toMap(KnowledgeVersion::getId, Function.identity()));
+        Map<Long, List<KnowledgeVersion>> byDoc = allVersions.stream()
+                .collect(Collectors.groupingBy(KnowledgeVersion::getDocId));
         Map<Long, Long> active = activeVersionByDoc();
         String kw = f.keyword() == null ? "" : f.keyword().strip().toLowerCase(Locale.ROOT);
         List<DocRow> rows = new ArrayList<>();
         for (KnowledgeDoc d : docs.findAllByOrderByKeyAsc()) {
-            DocRow r = row(d, all.values().stream().filter(v -> v.getDocId().equals(d.getId())).toList(),
+            DocRow r = row(d, byDoc.getOrDefault(d.getId(), List.of()),
                     active.get(d.getId()) == null ? null : all.get(active.get(d.getId())));
             boolean archivedView = "ARCHIVED".equals(f.status());
             if (r.archived() != archivedView) {
@@ -167,6 +170,7 @@ public class KnowledgeAdminService {
             }
             rows.add(r);
         }
+        rows.sort(Comparator.comparing(DocRow::key, KnowledgeDocType.KEY_ORDER));
         int from = Math.min(page * size, rows.size());
         int to = Math.min(from + size, rows.size());
         return new PageResponse<>(rows.subList(from, to), rows.size(), page, size,
@@ -202,7 +206,7 @@ public class KnowledgeAdminService {
         KnowledgeVersion to = toId != null ? own(vs, toId)
                 : draft(vs).orElse(latestFrozen(vs).orElse(null));
         String text = KnowledgeDiff.unified(name(d, from), from == null ? "" : from.getContent(), name(d, to),
-                to == null ? "" : to.getContent());
+                to == null ? "" : to.getContent(), d.getFormat() == KnowledgeDocType.DocFormat.YAML);
         return new Diff(from == null ? null : summary(from, active), to == null ? null : summary(to, active), text);
     }
 
@@ -494,7 +498,7 @@ public class KnowledgeAdminService {
         data.put("reason", reason);
         data.put("current", current == null ? null : dto(current, active));
         data.put("diff", KnowledgeDiff.unified(name(d, current), current == null ? "" : current.getContent(),
-                d.getKey() + " (bản của bạn)", yours));
+                d.getKey() + " (bản của bạn)", yours, d.getFormat() == KnowledgeDocType.DocFormat.YAML));
         return new CommonException(HttpStatus.CONFLICT, message, data);
     }
 

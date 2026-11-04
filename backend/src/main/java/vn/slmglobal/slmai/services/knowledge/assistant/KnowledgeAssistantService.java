@@ -531,6 +531,9 @@ public class KnowledgeAssistantService {
     // ------------------------------------------------------------------ xem
 
     private SessionView view(AssistantSession s) {
+        // Xét cờ trước khi đọc: lượt AI lưu tin và đề xuất (commit) rồi mới bỏ cờ, nên cờ đã tắt thì các câu đọc dưới
+        // thấy đủ. Đọc trước rồi mới xét cờ có thể ra tin AI mà thiếu đề xuất, trang ngừng hỏi lại và không hiện thẻ.
+        boolean pending = processing.contains(s.getId());
         List<ChangeProposal> ps = proposals.findBySessionIdOrderByIdAsc(s.getId());
         List<MessageView> ms = messages.findBySessionIdOrderByIdAsc(s.getId()).stream().map(m -> {
             List<Long> ids = new ArrayList<>();
@@ -540,7 +543,7 @@ public class KnowledgeAssistantService {
             return new MessageView(m.getId(), m.getRole().name(), text, m.getContent().path("error").asText(null),
                     ids, m.getCreatedAt());
         }).toList();
-        return new SessionView(s.getId(), s.getTitle(), s.getCreatedAt(), processing.contains(s.getId()), ms,
+        return new SessionView(s.getId(), s.getTitle(), s.getCreatedAt(), pending, ms,
                 ps.stream().map(this::proposalView).toList());
     }
 
@@ -559,7 +562,7 @@ public class KnowledgeAssistantService {
         }
         String diff = p.getStatus() == ChangeProposal.Status.PROPOSED
                 ? KnowledgeDiff.unified(p.getDocKey() + " (hiện tại)", current, p.getDocKey() + " (đề xuất)",
-                p.getContent() == null ? "" : p.getContent())
+                p.getContent() == null ? "" : p.getContent(), p.getDocType() == KnowledgeDocType.RULE)
                 : null;
         List<String> conflicts = new ArrayList<>();
         if (p.getConflicts() != null) {
@@ -573,9 +576,26 @@ public class KnowledgeAssistantService {
                 p.getCreatedAt());
     }
 
+    /**
+     * Bản nháp được lưu sau lúc AI đọc các bản nháp để soạn đề xuất này: duyệt sẽ ghi đè phần AI chưa thấy nên phải
+     * xác nhận. Bản nháp có từ trước thì AI đã đọc và soạn tiếp trên đó, duyệt thẳng.
+     */
     private Optional<KnowledgeVersion> otherDraft(Long docId, ChangeProposal p) {
+        OffsetDateTime seen = draftsSeenAt(p);
         return versions.findByDocIdAndStatus(docId, KnowledgeVersion.Status.DRAFT)
-                .filter(v -> !v.getId().equals(p.getResultVersionId()));
+                .filter(v -> !v.getId().equals(p.getResultVersionId()))
+                .filter(v -> seen == null || v.getUpdatedAt().isAfter(seen));
+    }
+
+    /** AI đọc các bản nháp ngay sau tin của người soạn: lấy tin gần nhất của người soạn trước đề xuất */
+    private OffsetDateTime draftsSeenAt(ChangeProposal p) {
+        OffsetDateTime seen = null;
+        for (AssistantMessage m : messages.findBySessionIdOrderByIdAsc(p.getSessionId())) {
+            if (m.getRole() == AssistantMessage.Role.USER && !m.getCreatedAt().isAfter(p.getCreatedAt())) {
+                seen = m.getCreatedAt();
+            }
+        }
+        return seen;
     }
 
     private static boolean hasError(ChangeProposal p) {
