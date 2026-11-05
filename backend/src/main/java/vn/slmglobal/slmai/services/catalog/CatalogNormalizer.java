@@ -44,6 +44,12 @@ public class CatalogNormalizer {
     static final String GROUP_BATTERY = "PIN_LUU_TRU";
     static final double MIN_CAPACITY_W = 1000;
     static final double CAPACITY_MISMATCH_RATIO = 0.03;
+    /** Cơ sở giá miền Bắc: lần ghi giá không có giá riêng của miền nào thì miền đó lấy giá này (như slm_v2) */
+    static final String NORTH_BRANCH = "HN";
+    /** Lần ghi giá hiện hành của vật tư: hiệu lực muộn nhất, cùng lúc thì id lớn hơn */
+    private static final Comparator<CatalogRows.PriceRow> LATEST_PRICE = Comparator
+            .comparing(CatalogRows.PriceRow::effectiveFrom, Comparator.nullsFirst(Comparator.naturalOrder()))
+            .thenComparingInt(CatalogRows.PriceRow::id);
 
     private static final Pattern PHASE_IN_NAME = Pattern.compile("(\\d)\\s*pha", Pattern.CASE_INSENSITIVE);
     private static final Set<String> PLACEHOLDERS = Set.of("", "abc", "0", "null", "-");
@@ -84,10 +90,10 @@ public class CatalogNormalizer {
                     hash(g.ma(), g.ten(), g.nganhHangId(), attributes, g.vatTuChinh(), active(g.trangThai())));
         }).toList();
 
-        // Lịch sử giá bán: chỉ giá của vật tư có trong catalog. Giá hiện hành của một miền = lần ghi gần nhất có giá
-        // của miền đó (slm_v2 hay ghi lần mới chỉ có giá HN, giá HCM vẫn là lần trước)
+        // Lịch sử giá bán: chỉ giá của vật tư có trong catalog. Giá hiện hành = lần ghi gần nhất; miền nào lần đó không
+        // có giá riêng thì lấy giá miền Bắc của lần đó
         List<CatalogRows.PriceRow> prices = new ArrayList<>();
-        Map<Integer, Set<String>> pricedBranches = new HashMap<>();
+        Map<Integer, CatalogRows.PriceRow> latestPrice = new HashMap<>();
         for (SlmV2Snapshot.Price pr : s.prices()) {
             if (!materials.containsKey(pr.vatTuId())) {
                 continue;
@@ -97,8 +103,7 @@ public class CatalogNormalizer {
                     active(pr.trangThai()), hash(pr.vatTuId(), pr.taoLuc(), sale, active(pr.trangThai())));
             prices.add(row);
             if (row.active()) {
-                sale.fieldNames().forEachRemaining(b ->
-                        pricedBranches.computeIfAbsent(pr.vatTuId(), k -> new HashSet<>()).add(b));
+                latestPrice.merge(pr.vatTuId(), row, (a, b) -> LATEST_PRICE.compare(a, b) >= 0 ? a : b);
             }
         }
 
@@ -117,7 +122,7 @@ public class CatalogNormalizer {
         Map<Integer, List<SlmV2Snapshot.PackageItem>> itemsByPackage = new HashMap<>();
         List<CatalogRows.ItemRow> items = new ArrayList<>();
         Set<Integer> visibleMaterials = new HashSet<>();
-        // Vật tư nằm trong gói đang bán mà chưa có giá bán của miền của gói
+        // Vật tư nằm trong gói đang bán mà lần ghi giá mới nhất không có giá của miền của gói, cũng không có giá miền Bắc
         Set<Integer> missingPrice = new HashSet<>();
         for (SlmV2Snapshot.PackageItem it : s.packageItems()) {
             if (!packages.containsKey(it.tronGoiId())) {
@@ -136,8 +141,9 @@ public class CatalogNormalizer {
                             it.gia(), description, itemActive)));
             SlmV2Snapshot.Package pkg = packages.get(it.tronGoiId());
             String pkgBranch = pkg.coSoId() == null ? null : branchCodes.get(pkg.coSoId());
-            if (itemActive && active(pkg.trangThai()) && pkgBranch != null
-                    && !pricedBranches.getOrDefault(it.vatTuId(), Set.of()).contains(pkgBranch)) {
+            CatalogRows.PriceRow latest = latestPrice.get(it.vatTuId());
+            if (itemActive && active(pkg.trangThai()) && pkgBranch != null && (latest == null
+                    || !latest.salePrices().has(pkgBranch) && !latest.salePrices().has(NORTH_BRANCH))) {
                 missingPrice.add(it.vatTuId());
             }
             if (itemActive) {

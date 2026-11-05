@@ -29,10 +29,10 @@ public enum CatalogWarning {
     /** Thông số chính (công suất, dung lượng) của thiết bị chính là giá trị giữ chỗ */
     SPEC_PLACEHOLDER(false, "Thông số thiết bị chính đang để trống / giữ chỗ"),
     /**
-     * Vật tư nằm trong gói đang bán mà chưa lần ghi giá nào (thong_tin_gia) có giá bán của miền của gói; giá gói vẫn
-     * dùng tong_gia
+     * Vật tư nằm trong gói đang bán mà lần ghi giá mới nhất (thong_tin_gia) không có giá của miền của gói, cũng không có
+     * giá miền Bắc để thay; giá gói vẫn dùng tong_gia
      */
-    MATERIAL_PRICE_MISSING(false, "Vật tư trong gói chưa có giá bán của miền");
+    MATERIAL_PRICE_MISSING(false, "Vật tư trong gói chưa có giá bán");
 
     private final boolean blocking;
     private final String label;

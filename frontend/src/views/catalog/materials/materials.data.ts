@@ -1,7 +1,10 @@
 import type { BasicColumn, FormSchema } from '@/components/Table';
 import { catalogMaterialGroupsApi } from '@/api/catalog';
 import { formatToDateTime } from '@/utils/dateUtil';
-import { BRANCH_LABELS, PRICE_BRANCHES, vnd } from '../labels';
+import { BRANCH_LABELS, PRICE_BRANCHES } from '../labels';
+
+/** Cột giá theo miền: dataIndex = PRICE_PREFIX + mã cơ sở, ô vẽ ở bodyCell của index.vue */
+export const PRICE_PREFIX = 'price_';
 
 export const columns: BasicColumn[] = [
   { title: 'Ảnh', dataIndex: 'imageFileId', width: 70 },
@@ -11,10 +14,9 @@ export const columns: BasicColumn[] = [
   ...PRICE_BRANCHES.map(
     (b): BasicColumn => ({
       title: `Giá bán ${BRANCH_LABELS[b] ?? b}`,
-      dataIndex: `price_${b}`,
+      dataIndex: `${PRICE_PREFIX}${b}`,
       width: 150,
       align: 'right',
-      customRender: ({ record }) => vnd(record.salePrices?.[b]),
     }),
   ),
   {

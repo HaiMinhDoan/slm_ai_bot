@@ -15,6 +15,16 @@
             <Tag v-for="w in record.warnings" :key="w" color="orange">{{ labels[w]?.label ?? w }}</Tag>
           </div>
         </template>
+        <template v-else-if="String(column.dataIndex).startsWith(PRICE_PREFIX)">
+          <div>{{ vnd(record.salePrices?.[String(column.dataIndex).slice(PRICE_PREFIX.length)]) }}</div>
+          <TypographyText
+            v-if="record.northPriced?.includes(String(column.dataIndex).slice(PRICE_PREFIX.length))"
+            type="secondary"
+            class="text-xs"
+          >
+            theo giá miền Bắc
+          </TypographyText>
+        </template>
         <template v-else-if="column.dataIndex === 'warrantyMonths'">
           {{ record.warrantyMonths ? `${record.warrantyMonths} tháng` : '' }}
         </template>
@@ -48,8 +58,9 @@
   import { catalogMaterialsApi, catalogWarningLabelsApi } from '@/api/catalog';
   import type { WarningLabels } from '@/api/catalog/model/catalogModel';
   import CatalogImage from '../CatalogImage.vue';
+  import { vnd } from '../labels';
   import MaterialDrawer from './MaterialDrawer.vue';
-  import { columns, searchFormSchema } from './materials.data';
+  import { columns, PRICE_PREFIX, searchFormSchema } from './materials.data';
 
   defineOptions({ name: 'CatalogMaterials' });
 
@@ -70,7 +81,8 @@
     title: 'Vật tư đồng bộ từ slm_v2',
     titleHelpMessage: [
       'Đọc từ slm_v2 (chỉ đọc), tự đồng bộ 10 phút một lần cùng với gói. Không đồng bộ giá nhập, biên lợi nhuận.',
-      'Giá bán là lần ghi giá mới nhất ở slm_v2. Giá gói báo cho khách vẫn là giá trọn gói, không cộng từ vật tư.',
+      'Giá bán là lần ghi giá mới nhất ở slm_v2; lần đó không có giá miền Nam thì miền Nam lấy giá miền Bắc, như slm_v2.',
+      'Giá gói báo cho khách vẫn là giá trọn gói, không cộng từ vật tư.',
     ],
     api: loadMaterials,
     rowKey: 'id',

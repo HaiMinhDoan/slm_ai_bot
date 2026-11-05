@@ -18,9 +18,12 @@
         </DescriptionsItem>
         <DescriptionsItem v-for="b in PRICE_BRANCHES" :key="b" :label="`Giá bán ${BRANCH_LABELS[b] ?? b}`">
           <b>{{ vnd(m.salePrices?.[b]) || 'Chưa có giá' }}</b>
-          <TypographyText v-if="m.priceDates?.[b]" type="secondary" class="text-xs ml-1">
-            từ {{ formatToDate(m.priceDates[b]) }}
+          <TypographyText v-if="m.northPriced?.includes(b)" type="secondary" class="text-xs ml-1">
+            theo giá miền Bắc
           </TypographyText>
+        </DescriptionsItem>
+        <DescriptionsItem label="Giá áp dụng từ">
+          {{ m.priceFrom ? formatToDateTime(m.priceFrom) : '' }}
         </DescriptionsItem>
         <DescriptionsItem label="Đồng bộ lúc">
           {{ detail.syncedAt ? formatToDateTime(detail.syncedAt) : '' }}
@@ -61,7 +64,7 @@
   import { Descriptions, Tag, Typography } from 'ant-design-vue';
   import { BasicDrawer, useDrawerInner } from '@/components/Drawer';
   import { BasicTable, useTable } from '@/components/Table';
-  import { formatToDate, formatToDateTime } from '@/utils/dateUtil';
+  import { formatToDateTime } from '@/utils/dateUtil';
   import { catalogMaterialApi } from '@/api/catalog';
   import type { MaterialDetailModel, MaterialModel } from '@/api/catalog/model/catalogModel';
   import CatalogImage from '../CatalogImage.vue';
@@ -102,7 +105,11 @@
         title: `Giá bán ${BRANCH_LABELS[b] ?? b}`,
         dataIndex: `price_${b}`,
         align: 'right' as const,
-        customRender: ({ record }) => vnd(record.salePrices?.[b]),
+        // Lần ghi không có giá riêng của miền thì miền đó lấy giá miền Bắc
+        customRender: ({ record }) =>
+          record.salePrices?.[b] != null || record.salePrices?.HN == null
+            ? vnd(record.salePrices?.[b])
+            : `${vnd(record.salePrices.HN)} (theo miền Bắc)`,
       })),
       {
         title: 'Trạng thái',

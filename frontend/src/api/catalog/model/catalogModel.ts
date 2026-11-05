@@ -202,11 +202,11 @@ export interface MaterialModel {
   main?: boolean;
   active: boolean;
   warnings: string[];
-  /** Giá bán hiện hành theo miền: lần ghi gần nhất có giá của miền đó */
+  /** Giá bán hiện hành theo miền: lần ghi giá mới nhất; miền nào lần đó không có giá riêng thì lấy giá miền Bắc */
   salePrices: SalePrices;
-  /** Ngày áp dụng giá hiện hành theo miền */
-  priceDates: Record<string, string>;
-  /** Lần đổi giá gần nhất */
+  /** Các miền đang lấy giá miền Bắc */
+  northPriced: string[];
+  /** Ngày áp dụng của lần ghi giá mới nhất */
   priceFrom?: string;
   packageCount: number;
   imageFileId?: number;
@@ -253,6 +253,8 @@ export interface PackageItemModel {
   salePrice?: number;
   /** Giá bán hiện hành của vật tư ở miền của gói */
   currentPrice?: number;
+  /** Giá hiện hành là giá miền Bắc vì lần ghi giá mới nhất không có giá riêng của miền của gói */
+  northPriced: boolean;
   customerVisible: boolean;
   active: boolean;
   description?: string;
@@ -267,6 +269,6 @@ export interface PackageItemsModel {
   items: PackageItemModel[];
   /** Tổng số lượng × giá lúc dựng gói của các dòng đang dùng */
   lineTotal: number;
-  /** Tổng theo giá hiện hành; trống nếu có vật tư chưa có giá của miền */
+  /** Tổng theo giá hiện hành; trống nếu có vật tư chưa có giá bán */
   currentTotal?: number;
 }

@@ -23,6 +23,7 @@ import vn.slmglobal.slmai.services.sizing.PvoutReminderJob;
 import vn.slmglobal.slmai.services.sizing.PvoutService;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -121,18 +122,25 @@ class CatalogSyncIntegrationTest {
                 .isEqualTo("0917599966");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM dm_nganh_hang", Integer.class)).isEqualTo(1);
 
-        // Giá hiện hành theo miền: HN là lần ghi mới nhất, HCM vẫn là lần trước (lần mới chỉ có HN)
+        // Giá hiện hành là lần ghi mới nhất; lần đó chỉ có giá HN nên HCM lấy giá HN, không lùi về giá HCM lần trước
         CatalogMaterialRepository.MaterialRow ja = materials.list(
                 new CatalogMaterialRepository.Filter("ja625", null, null, null), 0, 10).get(0);
         assertThat(ja.salePrices().get("HN").asLong()).isEqualTo(2_500_000L);
-        assertThat(ja.salePrices().get("HCM").asLong()).isEqualTo(2_650_000L);
+        assertThat(ja.salePrices().get("HCM").asLong()).isEqualTo(2_500_000L);
+        assertThat(ja.northPriced()).containsExactly("HCM");
+        assertThat(ja.priceFrom()).isEqualTo(LocalDateTime.of(2026, 9, 23, 3, 53, 35));
         assertThat(ja.packageCount()).isEqualTo(2);
         assertThat(ja.warnings()).isEmpty();
         CatalogMaterialRepository.PackageItems items = materials.packageItems(97).orElseThrow();
         assertThat(items.branchCode()).isEqualTo("HCM");
         assertThat(items.lineTotal()).isEqualTo(8 * 2_600_000 + 25_300_000 + 21_000_000 + 1_300_000);
         assertThat(items.items()).filteredOn(i -> i.materialId() == 233).singleElement()
-                .satisfies(i -> assertThat(i.currentPrice()).isEqualTo(2_650_000.0));
+                .satisfies(i -> {
+                    assertThat(i.currentPrice()).isEqualTo(2_500_000.0);
+                    assertThat(i.northPriced()).isTrue();
+                });
+        assertThat(items.items()).filteredOn(i -> i.materialId() == 62).singleElement()
+                .satisfies(i -> assertThat(i.northPriced()).isFalse());
         assertThat(materials.detail(233).orElseThrow().prices()).hasSize(2);
         assertThat(materials.imageUrl(500)).hasValueSatisfying(u -> assertThat(u).endsWith("JA 625 Wp_1"));
 

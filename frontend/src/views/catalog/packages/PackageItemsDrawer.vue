@@ -8,7 +8,7 @@
         <DescriptionsItem label="Tổng vật tư lúc dựng gói">{{ vnd(data.lineTotal) }}</DescriptionsItem>
         <DescriptionsItem label="Tổng theo giá hiện hành">
           <template v-if="data.currentTotal != null">{{ vnd(data.currentTotal) }}</template>
-          <TypographyText v-else type="warning">Có vật tư chưa có giá của miền này</TypographyText>
+          <TypographyText v-else type="warning">Có vật tư chưa có giá bán</TypographyText>
         </DescriptionsItem>
       </Descriptions>
       <Alert
@@ -42,6 +42,9 @@
             >
               đã đổi
             </Tag>
+            <div v-if="record.northPriced">
+              <TypographyText type="secondary" class="text-xs">theo giá miền Bắc</TypographyText>
+            </div>
           </template>
           <template v-else-if="column?.dataIndex === 'customerVisible'">
             <Tag v-if="record.customerVisible" color="blue">Hiện cho khách</Tag>

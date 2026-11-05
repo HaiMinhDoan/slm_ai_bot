@@ -13,14 +13,15 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
 /**
- * Đọc vật tư, giá bán, ảnh và thành phần gói đã đồng bộ từ slm_v2 cho trang admin (chỉ đọc). Giá hiện hành của một
- * miền = lần ghi giá (dm_gia_vat_tu đang dùng) gần nhất có giá của miền đó: slm_v2 hay ghi lần mới chỉ có giá HN,
- * giá HCM vẫn là lần trước.
+ * Đọc vật tư, giá bán, ảnh và thành phần gói đã đồng bộ từ slm_v2 cho trang admin (chỉ đọc). Giá hiện hành như
+ * slm_v2: lần ghi giá (dm_gia_vat_tu đang dùng) gần nhất; miền nào lần đó không có giá riêng thì lấy giá miền Bắc (HN)
+ * của chính lần đó.
  */
 @Repository
 @RequiredArgsConstructor
@@ -37,13 +38,13 @@ public class CatalogMaterialRepository {
     }
 
     /**
-     * @param salePrices giá bán hiện hành theo mã cơ sở ({"HN": 27000000})
-     * @param priceDates ngày áp dụng giá hiện hành theo mã cơ sở
-     * @param priceFrom  lần đổi giá gần nhất (miền nào cũng được)
+     * @param salePrices  giá bán hiện hành theo mã cơ sở ({"HN": 27000000, "HCM": 27000000})
+     * @param northPriced các mã cơ sở mà lần ghi giá mới nhất không có giá riêng nên đang lấy giá miền Bắc
+     * @param priceFrom   ngày áp dụng của lần ghi giá mới nhất
      */
     public record MaterialRow(int id, String code, String name, String groupCode, String groupName, String brand,
                               String unit, Integer warrantyMonths, Boolean main, boolean active, List<String> warnings,
-                              JsonNode salePrices, JsonNode priceDates, LocalDateTime priceFrom, int packageCount,
+                              JsonNode salePrices, List<String> northPriced, LocalDateTime priceFrom, int packageCount,
                               Integer imageFileId) {
     }
 
@@ -69,30 +70,36 @@ public class CatalogMaterialRepository {
 
     /**
      * Một dòng vật tư trong gói. {@code salePrice}: giá lúc dựng gói (slm_v2 vat_tu_tron_goi.gia);
-     * {@code currentPrice}: giá bán hiện hành của vật tư ở miền của gói.
+     * {@code currentPrice}: giá bán hiện hành của vật tư ở miền của gói; {@code northPriced}: giá đó là giá miền Bắc
+     * vì lần ghi giá mới nhất không có giá riêng của miền của gói.
      */
     public record PackageItem(int id, int materialId, String code, String name, String groupCode, String brand,
                               String unit, Integer quantity, Double salePrice, Double currentPrice,
-                              boolean customerVisible, boolean active, String description, Integer warrantyMonths) {
+                              boolean northPriced, boolean customerVisible, boolean active, String description, Integer warrantyMonths) {
     }
 
     /**
      * @param lineTotal    tổng giá lúc dựng gói của các dòng đang dùng (số lượng × giá); khác giá gói là bình thường
-     * @param currentTotal tổng theo giá hiện hành; null nếu có dòng chưa có giá của miền
+     * @param currentTotal tổng theo giá hiện hành; null nếu có dòng chưa có giá (kể cả giá miền Bắc)
      */
     public record PackageItems(int packageId, String packageName, String branchCode, Double totalPrice,
                                List<PackageItem> items, double lineTotal, Double currentTotal) {
     }
 
-    /** Giá hiện hành theo từng miền: mỗi mã cơ sở lấy lần ghi gần nhất có giá của nó */
+    /**
+     * Giá hiện hành: {@code gia_moi} là lần ghi giá đang dùng gần nhất; {@code gia.gia_ban} là giá của từng cơ sở, cơ sở
+     * nào lần đó không có giá riêng thì lấy giá HN (miền Bắc); {@code gia.theo_mien_bac} là các cơ sở đó.
+     */
     private static final String CURRENT_PRICE = """
             LEFT JOIN LATERAL (
-                SELECT jsonb_object_agg(m.co_so, m.gia) AS gia_ban, jsonb_object_agg(m.co_so, m.tu) AS tu_ngay,
-                       max(m.tu) AS hieu_luc_tu
-                FROM (SELECT DISTINCT ON (e.key) e.key AS co_so, e.value AS gia, g.hieu_luc_tu AS tu
-                      FROM dm_gia_vat_tu g CROSS JOIN LATERAL jsonb_each(g.gia_ban) e
-                      WHERE g.vat_tu_id = v.id_nguon AND g.dang_dung
-                      ORDER BY e.key, g.hieu_luc_tu DESC NULLS LAST, g.id_nguon DESC) m) gia ON true
+                SELECT g.gia_ban, g.hieu_luc_tu FROM dm_gia_vat_tu g
+                WHERE g.vat_tu_id = v.id_nguon AND g.dang_dung
+                ORDER BY g.hieu_luc_tu DESC NULLS LAST, g.id_nguon DESC LIMIT 1) gia_moi ON true
+            LEFT JOIN LATERAL (
+                SELECT jsonb_object_agg(c.ma, COALESCE(gia_moi.gia_ban -> c.ma, gia_moi.gia_ban -> 'HN')) AS gia_ban,
+                       jsonb_agg(c.ma ORDER BY c.id_nguon) FILTER (WHERE gia_moi.gia_ban -> c.ma IS NULL) AS theo_mien_bac
+                FROM dm_co_so c
+                WHERE COALESCE(gia_moi.gia_ban -> c.ma, gia_moi.gia_ban -> 'HN') IS NOT NULL) gia ON true
             """;
 
     private static final String MATERIAL_FROM = """
@@ -112,7 +119,7 @@ public class CatalogMaterialRepository {
     private static final String MATERIAL_COLUMNS = """
             SELECT v.id_nguon, v.ma, v.ten, v.ma_nhom, nv.ten AS ten_nhom, th.ten AS thuong_hieu, v.don_vi,
                    v.bao_hanh_thang, v.vat_tu_chinh, v.dang_dung, v.canh_bao, gia.gia_ban::text AS gia_ban,
-                   gia.tu_ngay::text AS tu_ngay, gia.hieu_luc_tu, COALESCE(goi.so, 0) AS so_goi,
+                   gia.theo_mien_bac::text AS theo_mien_bac, gia_moi.hieu_luc_tu, COALESCE(goi.so, 0) AS so_goi,
                    anh.tep_tin_id AS anh_id
             """;
 
@@ -185,7 +192,9 @@ public class CatalogMaterialRepository {
         String branch = (String) head.get(0)[1];
         List<PackageItem> items = jdbc.query("""
                 SELECT i.id_nguon, v.id_nguon AS vat_tu_id, v.ma, v.ten, v.ma_nhom, th.ten AS thuong_hieu, v.don_vi,
-                       i.so_luong, i.gia_ban, (gia.gia_ban->>:coSo)::numeric AS gia_hien_hanh, i.hien_thi_khach,
+                       i.so_luong, i.gia_ban, (gia.gia_ban->>:coSo)::numeric AS gia_hien_hanh,
+                       gia_moi.gia_ban -> :coSo IS NULL AND gia.gia_ban -> :coSo IS NOT NULL AS theo_mien_bac,
+                       i.hien_thi_khach,
                        i.dang_dung, i.mo_ta,
                        COALESCE(NULLIF(i.bao_hanh_thang, 0), NULLIF(v.bao_hanh_thang, 0)) AS bao_hanh
                 FROM dm_vat_tu_tron_goi i
@@ -199,8 +208,8 @@ public class CatalogMaterialRepository {
                 (rs, i) -> new PackageItem(rs.getInt("id_nguon"), rs.getInt("vat_tu_id"), rs.getString("ma"),
                         rs.getString("ten"), rs.getString("ma_nhom"), rs.getString("thuong_hieu"),
                         rs.getString("don_vi"), integer(rs, "so_luong"), decimal(rs, "gia_ban"),
-                        decimal(rs, "gia_hien_hanh"), rs.getBoolean("hien_thi_khach"), rs.getBoolean("dang_dung"),
-                        rs.getString("mo_ta"), integer(rs, "bao_hanh")));
+                        decimal(rs, "gia_hien_hanh"), rs.getBoolean("theo_mien_bac"), rs.getBoolean("hien_thi_khach"),
+                        rs.getBoolean("dang_dung"), rs.getString("mo_ta"), integer(rs, "bao_hanh")));
         double lineTotal = 0;
         double currentTotal = 0;
         boolean currentComplete = true;
@@ -236,7 +245,7 @@ public class CatalogMaterialRepository {
                 rs.getString("ma_nhom"), rs.getString("ten_nhom"), rs.getString("thuong_hieu"),
                 rs.getString("don_vi"), integer(rs, "bao_hanh_thang"), bool(rs, "vat_tu_chinh"),
                 rs.getBoolean("dang_dung"), w == null ? List.of() : List.of((String[]) w.getArray()),
-                readJson(rs.getString("gia_ban")), readJson(rs.getString("tu_ngay")),
+                readJson(rs.getString("gia_ban")), codes(rs.getString("theo_mien_bac")),
                 rs.getObject("hieu_luc_tu", LocalDateTime.class), rs.getInt("so_goi"), integer(rs, "anh_id"));
     }
 
@@ -273,6 +282,12 @@ public class CatalogMaterialRepository {
 
     private static String keyword(Filter f) {
         return f.keyword() == null || f.keyword().isBlank() ? null : f.keyword().strip().toLowerCase(Locale.ROOT);
+    }
+
+    private List<String> codes(String jsonArray) {
+        List<String> out = new ArrayList<>();
+        readJson(jsonArray).forEach(c -> out.add(c.asText()));
+        return out;
     }
 
     private JsonNode readJson(String json) {

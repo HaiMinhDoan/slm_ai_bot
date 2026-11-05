@@ -119,12 +119,18 @@ class CatalogNormalizerTest {
                 new SlmV2Snapshot.Price(2, 233, LocalDateTime.of(2026, 3, 6, 13, 23),
                         "[{\"maCoSo\": \"HN\", \"giaBan\": 2500000}, {\"maCoSo\": \"HN\", \"giaBan\": 2500000}, "
                                 + "{\"maCoSo\": \"HCM\", \"giaBan\": \"2600000.0\"}]", 1),
-                // Inverter chỉ có giá miền Bắc mà gói 99 (miền Nam) có dùng
+                // Inverter chỉ có giá miền Bắc mà gói 99 (miền Nam) có dùng: miền Nam lấy giá miền Bắc
                 new SlmV2Snapshot.Price(3, 62, LocalDateTime.of(2026, 1, 1, 0, 0),
                         "[{\"maCoSo\": \"HN\", \"giaBan\": 25000000}]", 1),
+                // Pin lần trước có giá miền Bắc, lần mới nhất chỉ có giá miền Nam: gói 98 (miền Bắc) thiếu giá,
+                // không lấy giá miền Nam thay, cũng không lùi về lần trước
+                new SlmV2Snapshot.Price(6, 57, LocalDateTime.of(2026, 1, 1, 0, 0),
+                        "[{\"maCoSo\": \"HN\", \"giaBan\": 21000000}]", 1),
+                new SlmV2Snapshot.Price(7, 57, LocalDateTime.of(2026, 2, 1, 0, 0),
+                        "[{\"maCoSo\": \"HCM\", \"giaBan\": 21500000}]", 1),
                 new SlmV2Snapshot.Price(4, 999, LocalDateTime.of(2026, 1, 1, 0, 0),
                         "[{\"maCoSo\": \"HN\", \"giaBan\": 1}]", 1),
-                // Lần ghi mới nhất chỉ có giá HN (gặp ở slm_v2): giá HCM vẫn là lần trước, không cảnh báo thiếu giá
+                // Lần ghi mới nhất chỉ có giá HN (gặp ở slm_v2): miền Nam lấy giá HN của lần này
                 new SlmV2Snapshot.Price(5, 233, LocalDateTime.of(2026, 9, 23, 3, 53),
                         "[{\"maCoSo\": \"HN\", \"giaBan\": 2500000}]", 1));
         SlmV2Snapshot s = new SlmV2Snapshot(base.productLines(), base.brands(), base.branches(),
@@ -139,7 +145,7 @@ class CatalogNormalizerTest {
         CatalogRows.Normalized n = normalizer.normalize(s);
 
         // Giá của vật tư không có trong catalog bị bỏ; chỉ có giá bán theo cơ sở
-        assertThat(n.prices()).extracting(CatalogRows.PriceRow::id).containsExactly(1, 2, 3, 5);
+        assertThat(n.prices()).extracting(CatalogRows.PriceRow::id).containsExactly(1, 2, 3, 6, 7, 5);
         assertThat(n.prices().get(1).salePrices().toString()).isEqualTo("{\"HN\":2500000,\"HCM\":2600000}");
         assertThat(n.items().get(0).salePrice()).isEqualTo(2_500_000.0);
         assertThat(n.materialImages()).singleElement()
@@ -150,11 +156,11 @@ class CatalogNormalizerTest {
             assertThat(c.phone()).isEqualTo("0917599966");
             assertThat(c.email()).isNull();
         });
-        // Pin, bộ ghi dữ liệu, nhân công chưa có giá; inverter chưa từng có giá miền Nam; tấm pin có giá cả hai miền
-        // (giá miền Nam ở lần ghi trước)
-        assertThat(n.warnings().get("MATERIAL_PRICE_MISSING")).containsExactly(57, 58, 62, 115);
-        assertThat(n.materials()).filteredOn(m -> m.id() == 233).singleElement()
-                .satisfies(m -> assertThat(m.warnings()).doesNotContain("MATERIAL_PRICE_MISSING"));
+        // Bộ ghi dữ liệu, nhân công chưa có giá; pin thiếu giá miền Bắc; inverter và tấm pin có giá miền Bắc nên miền
+        // Nam lấy giá đó
+        assertThat(n.warnings().get("MATERIAL_PRICE_MISSING")).containsExactly(57, 58, 115);
+        assertThat(n.materials()).filteredOn(m -> m.id() == 233 || m.id() == 62).hasSize(2)
+                .allSatisfy(m -> assertThat(m.warnings()).doesNotContain("MATERIAL_PRICE_MISSING"));
         // Thiếu giá vật tư không chặn gói: giá gói lấy tong_gia
         assertThat(n.packages()).allMatch(CatalogRows.PackageRow::recommendable);
         // Giá đổi thì phiên bản catalog đổi
