@@ -85,6 +85,34 @@ class MessengerClientTest {
                 .hasMessageNotContaining("PAGE_TOKEN");
     }
 
+    /** User Profile API cần tính năng app chưa có (400 subcode 33); tên lấy từ người tham gia cuộc trò chuyện */
+    @Test
+    void fetchesNameFromConversationParticipants() {
+        server.expect(requestTo(startsWith(BASE + "/v26.0/me/conversations")))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(queryParam("platform", "messenger"))
+                .andExpect(queryParam("user_id", "PSID_1"))
+                .andExpect(queryParam("fields", "participants"))
+                .andExpect(queryParam("access_token", "PAGE_TOKEN"))
+                .andRespond(withSuccess("""
+                        {"data":[{"participants":{"data":[
+                            {"name":"Solarmax","id":"PAGE"},
+                            {"name":" Thùy Giang ","email":"PSID_1@facebook.com","id":"PSID_1"}]},
+                          "id":"t_1"}]}
+                        """, MediaType.parseMediaType("text/javascript;charset=UTF-8")));
+
+        assertThat(client.fetchUserName("PSID_1")).isEqualTo("Thùy Giang");
+        server.verify();
+    }
+
+    @Test
+    void nameIsNullWhenNoConversationFound() {
+        server.expect(requestTo(startsWith(BASE + "/v26.0/me/conversations")))
+                .andRespond(withSuccess("{\"data\":[]}", MediaType.APPLICATION_JSON));
+
+        assertThat(client.fetchUserName("PSID_1")).isNull();
+    }
+
     @Test
     void rejectsTooLongText() {
         assertThatThrownBy(() -> client.sendText("PSID_1", "a".repeat(MessengerClient.MAX_TEXT_LENGTH + 1), false))

@@ -86,32 +86,42 @@ public class MessengerClient {
     }
 
     /**
-     * Tên Facebook của khách qua User Profile API (GET /{psid}?fields=name). Chỉ gọi được sau khi khách đã nhắn
-     * cho Trang; trả null khi không lấy được.
+     * Tên Facebook của khách, lấy từ người tham gia cuộc trò chuyện giữa Trang và khách
+     * (GET /me/conversations?platform=messenger&user_id={psid}&fields=participants; cần pages_messaging,
+     * pages_manage_metadata, pages_read_engagement). Không dùng User Profile API (GET /{psid}) vì API đó cần tính năng
+     * Business Asset User Profile Access mà app chưa có: Meta trả 400 code=100 subcode=33 cho mọi khách.
+     * Trả null khi không lấy được.
      */
     public String fetchUserName(String psid) {
         if (!properties.hasPageAccessToken()) {
             throw new MessengerApiException("Chưa cấu hình FB_PAGE_ACCESS_TOKEN");
         }
-        JsonNode profile = restClient.get()
-                .uri(b -> b.path("/{version}/{psid}")
-                        .queryParam("fields", "name,first_name,last_name")
+        JsonNode response = restClient.get()
+                .uri(b -> b.path("/{version}/me/conversations")
+                        .queryParam("platform", "messenger")
+                        .queryParam("user_id", psid)
+                        .queryParam("fields", "participants")
                         .queryParam("access_token", properties.pageAccessToken())
-                        .build(properties.graphApiVersion(), psid))
+                        .build(properties.graphApiVersion()))
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, (request, resp) -> {
-                    throw new MessengerApiException("User Profile API lỗi HTTP " + resp.getStatusCode().value()
+                    throw new MessengerApiException("Conversations API lỗi HTTP " + resp.getStatusCode().value()
                             + ": " + MessengerApiException.describeGraphError(resp.getBody().readAllBytes()));
                 })
                 .body(JsonNode.class);
-        if (profile == null) {
+        if (response == null) {
             return null;
         }
-        String name = profile.path("name").asText("").strip();
-        if (name.isEmpty()) {
-            name = (profile.path("last_name").asText("") + " " + profile.path("first_name").asText("")).strip();
+        // Người tham gia gồm khách và chính Trang: chỉ lấy người có id là PSID của khách
+        for (JsonNode conversation : response.path("data")) {
+            for (JsonNode participant : conversation.path("participants").path("data")) {
+                String name = participant.path("name").asText("").strip();
+                if (psid.equals(participant.path("id").asText()) && !name.isEmpty()) {
+                    return name;
+                }
+            }
         }
-        return name.isEmpty() ? null : name;
+        return null;
     }
 
     /** Hành động người gửi: {@code mark_seen}, {@code typing_on}, {@code typing_off}. */

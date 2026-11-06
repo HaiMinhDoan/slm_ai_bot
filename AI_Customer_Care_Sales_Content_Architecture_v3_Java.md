@@ -1168,7 +1168,7 @@ Persona lưu thành các phần trong `knowledge/core/voice.md`, kèm vài đo�
 - Không bao giờ khẳng định mình là người thật, không bịa chuyện đời tư, không nhận làm việc chỉ người làm được (gọi điện, khảo sát).
 - Không dùng tên của một nhân viên có thật.
 
-**Xưng hô:** AI gọi khách là anh hoặc chị theo thứ tự: khách tự xưng → tên Facebook rõ giới (chữ đệm "Thị" / "Văn", tên điển hình) → không chắc thì "anh/chị". Tên Facebook lấy một lần qua User Profile API của Messenger, lưu ở `dinh_danh_kenh.ten_hien_thi`. API này cần Advanced Access cho tính năng **Business Asset User Profile Access** (xin trong App Review cùng `pages_messaging`); chưa được duyệt thì API không trả tên và AI chỉ dựa vào cách khách tự xưng; cách gọi đã xác định lưu ở `khach_hang.so_thich.danh_xung` và đổi ngay khi khách tự xưng khác (`core/voice.md`).
+**Xưng hô:** AI gọi khách là anh hoặc chị theo thứ tự: khách tự xưng → tên Facebook rõ giới (chữ đệm "Thị" / "Văn", tên điển hình) → không chắc thì "anh/chị". Tên Facebook lấy một lần từ người tham gia cuộc trò chuyện (`GET /me/conversations?platform=messenger&user_id={psid}&fields=participants`, cần `pages_messaging`, `pages_manage_metadata`, `pages_read_engagement`), lưu ở `dinh_danh_kenh.ten_hien_thi`. **Cập nhật 2026-11-06:** không dùng User Profile API (`GET /{psid}`) nữa: API đó cần tính năng Business Asset User Profile Access mà app chưa có, Meta trả 400 `code=100 subcode=33` cho mọi khách nên chưa khách nào có tên. Khi app lên Live, Conversations API cần Advanced Access của các quyền trên cho khách không có vai trò trong app (xin trong App Review). Không lấy được tên thì AI chỉ dựa vào cách khách tự xưng; cách gọi đã xác định lưu ở `khach_hang.so_thich.danh_xung` và đổi ngay khi khách tự xưng khác (`core/voice.md`).
 ------------------------------------------------------------------------
 
 # 17. AI Memory
@@ -5131,7 +5131,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 5. **Bộ test** 100–200 câu hỏi thật và kịch bản nhiều lượt (mục 35); KPI mục tiêu và số liệu nền (mục 38, Phase 0).
 6. **Dashboard:** trang *Phân tích* hiện là trang còn sót của fsignai (gọi `/api/v1/admin/dashboard`, lỗi 404). Thay bằng số liệu của bot từ `luot_goi_ai`: chi phí AI, tỷ lệ gửi tự động, tỷ lệ nhân viên sửa nháp.
 7. **Ra khách thật:**
-   - App Review + xác minh doanh nghiệp (3–6 tuần): `pages_messaging`, Business Asset User Profile Access (lấy tên khách để xưng anh / chị); trang chính sách quyền riêng tư và xoá dữ liệu; chuyển webhook sang tên miền công ty.
+   - App Review + xác minh doanh nghiệp (3–6 tuần): `pages_messaging`, `pages_manage_metadata`, `pages_read_engagement` (Advanced Access; hai quyền sau để lấy tên khách qua Conversations API, xưng anh / chị); trang chính sách quyền riêng tư và xoá dữ liệu; chuyển webhook sang tên miền công ty.
    - Token: chuyển Page token sang System User (token hiện gắn với tài khoản cá nhân của người quản trị Trang).
 8. **Phía doanh nghiệp:**
    - Pháp lý dữ liệu cá nhân (mục 59.5).
