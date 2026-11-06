@@ -18,7 +18,7 @@ class AiReplySchemaTest {
     @Test
     void strictSchemasStayUnderUnionLimit() {
         // Tool báo giá không strict nên không tính vào giới hạn; tool strict mới thì phải cộng vào đây
-        CustomerChatTools tools = new CustomerChatTools(null, new ObjectMapper());
+        CustomerChatTools tools = new CustomerChatTools(null, null, new ObjectMapper());
         assertThat(tools.definitions()).allSatisfy(t -> assertThat(t.strict().orElse(false)).isFalse());
 
         assertThat(unions(AiReplySchema.schema())).isLessThanOrEqualTo(AiReplySchema.MAX_UNION_PARAMS);

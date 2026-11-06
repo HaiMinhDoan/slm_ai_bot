@@ -477,11 +477,14 @@ public class PackageAdvisor {
         if (!place.known()) {
             return Optional.empty();
         }
-        String preferred = pricing().productLinkDomains().get(place.province().region().name());
-        List<String> synced = catalog.domains(p.branchCode());
-        String domain = preferred != null && (synced.isEmpty() || synced.contains(preferred)) ? preferred
-                : synced.isEmpty() ? null : synced.get(0);
-        return domain == null ? Optional.empty() : Optional.of("https://" + domain + "/products/" + p.id());
+        return linkDomain(pricing().productLinkDomains().get(place.province().region().name()),
+                catalog.domains(p.branchCode())).map(d -> "https://" + d + "/products/" + p.id());
+    }
+
+    /** Tên miền gửi khách: tên miền rule bao-gia chọn cho miền, nếu slm_v2 có tên miền đó; không thì tên miền đầu */
+    static Optional<String> linkDomain(String preferred, List<String> synced) {
+        return Optional.ofNullable(preferred != null && (synced.isEmpty() || synced.contains(preferred)) ? preferred
+                : synced.isEmpty() ? null : synced.get(0));
     }
 
     private ArrayNode missing(AdviceRequest r, Place place) {

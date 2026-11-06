@@ -108,7 +108,7 @@ class ClaudeChatClientToolLoopTest {
     }
 
     private ClaudeChatClient.ChatRequest request(ClaudeChatClient.ToolHandler handler) {
-        CustomerChatTools tools = new CustomerChatTools(null, objectMapper);
+        CustomerChatTools tools = new CustomerChatTools(null, null, objectMapper);
         return new ClaudeChatClient.ChatRequest("hệ thống", "ngữ cảnh",
                 List.of(new ClaudeChatClient.ChatTurn(true, "Lắp hết bao nhiêu em?")),
                 Map.of("type", "object")).withTools(tools.definitions(), handler);

@@ -320,6 +320,13 @@ Giá, gói và thông số **không** nằm trong prompt. Claude gọi tool, bac
 | `chi_tiet_goi(goi_id)` | Thành phần hiển thị, bảo hành, giá khung sắt nếu có |
 | `tra_cuu_vat_tu(ma hoặc từ khóa)` | Thông số đã chuẩn hóa, bảo hành, giá lẻ theo cơ sở (nếu có) |
 
+**Cập nhật 2026-11-06 (doanh nghiệp yêu cầu AI trả lời được câu hỏi về vật tư):** đã làm `tra_cuu_vat_tu(tu_khoa, nhom, khu_vuc)` (`MaterialAdvisor`). Trước đó khách hỏi giá riêng pin lưu trữ / tấm pin, hãng pin khác, cấu hình tự chọn đều bị chuyển nhân viên vì AI không có dữ liệu.
+- **Giá lẻ chỉ cho thiết bị chính** (nhóm tấm pin, biến tần, pin lưu trữ, vật tư không bị slm_v2 đánh dấu phụ). Giá là giá niêm yết đang công khai trên website (`slmsolar.vn/devices/{vat_tu.id}`, miền Nam `slmsolar.com.vn`), cùng quy tắc thiếu giá miền Nam thì lấy giá miền Bắc. Đã đối chiếu với website: pin Dyness 14.3 kWh 51 tr, inverter Solis 5 kW miền Nam 21,2 tr, pin Huawei 7 kWh 65 tr.
+- **Phụ kiện** (khung, dây, tủ điện, tiếp địa, nhân công) không báo giá lẻ: đã gồm trong giá trọn gói. Giá thiết bị dưới 100 nghìn coi là số giữ chỗ, không báo.
+- **Kết quả tra cứu** gồm thông số, bảo hành, link trang thiết bị khi biết tỉnh, tối đa 3 gói đang bán có thiết bị đó, và `dieu_kien_gia_le` ("giá niêm yết của thiết bị mua lẻ, chưa gồm lắp đặt và vật tư phụ; giá cuối nhân viên xác nhận"). Câu này đang cố định trong code; đưa vào `rules/bao-gia` nếu doanh nghiệp muốn sửa trên admin.
+- **Không cộng giá lẻ** để ra giá hệ hay cấu hình tự chọn: AI giới thiệu gói gần nhất, cấu hình riêng thì xin số điện thoại.
+- **Ngữ cảnh lượt (code) đã hướng dẫn dùng tool mới**, nên bot chạy đúng cả với bản kiến thức #1 đang chạy trên production (đã thử thật trên preview với cùng mã băm kiến thức). Bản gốc trong repo (`core/guardrails`, `playbooks/khach-hoi-gia` bước 9, `prompts/customer-chat`) đã thêm tool. Production muốn đồng bộ chữ thì sửa ba tài liệu đó trên admin rồi phát hành; không bắt buộc.
+
 - Mọi con số về giá, công suất, sản lượng trong câu trả lời phải có nguồn hợp lệ; Policy Engine kiểm tra trước khi gửi theo quy tắc ở mục 33.
 - Mỗi lần báo giá đi kèm điều kiện báo giá do doanh nghiệp chốt (VAT, vận chuyển / lắp đặt ở tỉnh xa, giá cuối sau khảo sát, hiệu lực; mục 4.2.8). Tool trả kèm `hieu_luc_tu` của giá để biết báo giá dựa trên bản catalog nào.
 - Nếu mái cần khung sắt, công thức cộng thêm `gia_khung_sat` (hiện mọi gói đều đang là 0).
@@ -1168,7 +1175,7 @@ Persona lưu thành các phần trong `knowledge/core/voice.md`, kèm vài đo�
 - Không bao giờ khẳng định mình là người thật, không bịa chuyện đời tư, không nhận làm việc chỉ người làm được (gọi điện, khảo sát).
 - Không dùng tên của một nhân viên có thật.
 
-**Xưng hô:** AI gọi khách là anh hoặc chị theo thứ tự: khách tự xưng → tên Facebook rõ giới (chữ đệm "Thị" / "Văn", tên điển hình) → không chắc thì "anh/chị". Tên Facebook lấy một lần từ người tham gia cuộc trò chuyện (`GET /me/conversations?platform=messenger&user_id={psid}&fields=participants`, cần `pages_messaging`, `pages_manage_metadata`, `pages_read_engagement`), lưu ở `dinh_danh_kenh.ten_hien_thi`. **Cập nhật 2026-11-06:** không dùng User Profile API (`GET /{psid}`) nữa: API đó cần tính năng Business Asset User Profile Access mà app chưa có, Meta trả 400 `code=100 subcode=33` cho mọi khách nên chưa khách nào có tên. Khi app lên Live, Conversations API cần Advanced Access của các quyền trên cho khách không có vai trò trong app (xin trong App Review). Không lấy được tên thì AI chỉ dựa vào cách khách tự xưng; cách gọi đã xác định lưu ở `khach_hang.so_thich.danh_xung` và đổi ngay khi khách tự xưng khác (`core/voice.md`).
+**Xưng hô:** AI gọi khách là anh hoặc chị theo thứ tự: khách tự xưng → tên Facebook rõ giới (chữ đệm "Thị" / "Văn", tên điển hình) → không chắc thì "anh/chị". Tên Facebook lấy một lần từ người tham gia cuộc trò chuyện (`GET /me/conversations?platform=messenger&user_id={psid}&fields=participants`, cần `pages_messaging`, `pages_manage_metadata`, `pages_read_engagement`), lưu ở `dinh_danh_kenh.ten_hien_thi`. **Cập nhật 2026-11-06:** không dùng User Profile API (`GET /{psid}`) nữa: API đó cần tính năng Business Asset User Profile Access mà app chưa có, Meta trả 400 `code=100 subcode=33` cho mọi khách nên chưa khách nào có tên. Khi app lên Live, Conversations API cần Advanced Access của các quyền trên cho khách không có vai trò trong app (xin trong App Review). Tên lấy ở lượt AI đầu tiên của khách và ở job quét `ChannelNameBackfillJob` (1 phút sau khởi động, rồi 10 phút một lần) cho khách chưa có tên, kể cả khách do nhân viên giữ; mỗi khách thử một lần trong một tiến trình. Không lấy được tên thì AI chỉ dựa vào cách khách tự xưng; cách gọi đã xác định lưu ở `khach_hang.so_thich.danh_xung` và đổi ngay khi khách tự xưng khác (`core/voice.md`).
 ------------------------------------------------------------------------
 
 # 17. AI Memory
@@ -5174,7 +5181,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 - `CatalogSyncJob` mỗi 10 phút (lần đầu 30 giây sau khởi động) và nút "Đồng bộ ngay" trên trang *Catalog & báo giá → Gói từ slm_v2*. Đọc 12 view `ai_v_*` (tài khoản theo `SLM_V2_DB_USERNAME`, hiện là `postgres` theo quyết định của doanh nghiệp 2026-10-29) trong một transaction REPEATABLE READ, READ ONLY; mỗi lần mở một kết nối rồi đóng.
 - Ghi `dm_thuong_hieu`, `dm_co_so`, `dm_vat_tu`, `dm_tron_goi`, `dm_vat_tu_tron_goi`, `dm_ten_mien`, lịch sử ở `dm_lich_su_dong_bo`. Upsert theo `id_nguon`, bỏ qua dòng có `ma_bam` không đổi; dòng biến mất ở nguồn thì ngừng, không xoá.
 - `dm_tron_goi` có thêm cột tính từ thành phần: `so_tam_pin`, `cong_suat_tam_wp`, `cong_suat_inverter_kw`, `luu_tru_kwh` (cộng `dung_luong` của nhóm `PIN_LUU_TRU`).
-- `dm_gia_vat_tu` (giá lẻ vật tư) và tool `tra_cuu_vat_tu` để sau: chưa có nhu cầu.
+- `dm_gia_vat_tu` (giá lẻ vật tư) và tool `tra_cuu_vat_tu`: đã làm 2026-11-04 (đồng bộ) và 2026-11-06 (tool), xem mục 4.2.6.
 - An toàn: lỗi thì rollback, giữ bản cũ, báo quản trị (`CATALOG_SYNC_FAILED`, tối đa một lần mỗi ngày). Không ghi khi slm_v2 trả 0 gói đang bán hoặc số gói giảm quá một nửa.
 
 **Tỉnh và PV out** (`services/sizing`):

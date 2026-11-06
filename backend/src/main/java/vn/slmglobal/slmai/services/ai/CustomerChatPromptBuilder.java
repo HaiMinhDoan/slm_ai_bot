@@ -129,9 +129,12 @@ public class CustomerChatPromptBuilder {
                     .append("không lặp lại hoặc nói trái với nhân viên.\n");
         }
         if (pricingTools) {
-            sb.append("Công cụ báo giá: có (tim_goi_phu_hop, chi_tiet_goi). Khách hỏi giá, chi phí, nên lắp hệ nào, ")
-                    .append("hoặc vừa cho thêm thông tin tư vấn thì gọi tim_goi_phu_hop trước khi trả lời; chỉ dùng ")
-                    .append("con số và link trong kết quả công cụ (playbooks/khach-hoi-gia).\n");
+            sb.append("Công cụ báo giá: có (tim_goi_phu_hop, chi_tiet_goi, tra_cuu_vat_tu). Khách hỏi giá, chi phí, ")
+                    .append("nên lắp hệ nào, hoặc vừa cho thêm thông tin tư vấn thì gọi tim_goi_phu_hop trước khi trả ")
+                    .append("lời; chỉ dùng con số và link trong kết quả công cụ (playbooks/khach-hoi-gia). Khách hỏi ")
+                    .append("về một thiết bị (giá riêng tấm pin / biến tần / pin lưu trữ, có hãng hay loại nào khác, ")
+                    .append("thông số, bảo hành, gói nào có thiết bị đó) thì gọi tra_cuu_vat_tu và trả lời theo kết ")
+                    .append("quả, không chuyển nhân viên chỉ vì khách hỏi giá thiết bị lẻ.\n");
         } else {
             sb.append("Công cụ báo giá: chưa có (bảng giá chưa đồng bộ). Không đưa con số giá, công suất, sản lượng; ")
                     .append("mời khách để lại số điện thoại để nhân viên gửi báo giá.\n");

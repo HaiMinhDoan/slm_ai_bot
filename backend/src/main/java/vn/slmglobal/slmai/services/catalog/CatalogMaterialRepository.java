@@ -14,8 +14,11 @@ import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -84,6 +87,15 @@ public class CatalogMaterialRepository {
      */
     public record PackageItems(int packageId, String packageName, String branchCode, Double totalPrice,
                                List<PackageItem> items, double lineTotal, Double currentTotal) {
+    }
+
+    /**
+     * Vật tư đang dùng cho tool {@code tra_cuu_vat_tu}. {@code mainDevice}: thuộc nhóm thiết bị chính (tấm pin, biến
+     * tần, pin lưu trữ) và không bị slm_v2 đánh dấu là phụ; website có trang và giá niêm yết cho các thiết bị này.
+     * {@code price}: giá bán hiện hành ở cơ sở được hỏi.
+     */
+    public record QuotableMaterial(int id, String name, String groupCode, String groupName, boolean mainDevice,
+                                   String brand, String unit, Integer warrantyMonths, JsonNode specs, Double price) {
     }
 
     /**
@@ -227,6 +239,41 @@ public class CatalogMaterialRepository {
         }
         return Optional.of(new PackageItems(packageId, (String) head.get(0)[0], branch, (Double) head.get(0)[2],
                 items, lineTotal, currentComplete ? currentTotal : null));
+    }
+
+    /** Vật tư đang dùng kèm giá hiện hành ở một cơ sở, thiết bị chính lên trước */
+    public List<QuotableMaterial> quotableMaterials(String branchCode) {
+        return jdbc.query("""
+                SELECT v.id_nguon, v.ten, v.ma_nhom, nv.ten AS ten_nhom, th.ten AS thuong_hieu, v.don_vi,
+                       v.bao_hanh_thang, COALESCE(nv.vat_tu_chinh, false) AND COALESCE(v.vat_tu_chinh, true) AS chinh,
+                       v.thong_so::text AS thong_so, (gia.gia_ban ->> :coSo)::numeric AS gia
+                FROM dm_vat_tu v
+                LEFT JOIN LATERAL (SELECT ten, vat_tu_chinh FROM dm_nhom_vat_tu WHERE ma = v.ma_nhom
+                                   ORDER BY id_nguon LIMIT 1) nv ON true
+                LEFT JOIN dm_thuong_hieu th ON th.id_nguon = v.thuong_hieu_id
+                """ + CURRENT_PRICE + "WHERE v.dang_dung\n" + ORDER,
+                new MapSqlParameterSource("coSo", branchCode),
+                (rs, i) -> new QuotableMaterial(rs.getInt("id_nguon"), rs.getString("ten"), rs.getString("ma_nhom"),
+                        rs.getString("ten_nhom"), rs.getBoolean("chinh"), rs.getString("thuong_hieu"),
+                        rs.getString("don_vi"), integer(rs, "bao_hanh_thang"), readJson(rs.getString("thong_so")),
+                        decimal(rs, "gia")));
+    }
+
+    /** Vật tư → các gói của một cơ sở có dòng đang dùng là vật tư đó (chưa lọc gói được báo giá) */
+    public Map<Integer, List<Integer>> packagesUsing(Collection<Integer> materialIds, String branchCode) {
+        Map<Integer, List<Integer>> out = new HashMap<>();
+        if (materialIds.isEmpty()) {
+            return out;
+        }
+        jdbc.query("""
+                SELECT DISTINCT i.vat_tu_id, i.tron_goi_id FROM dm_vat_tu_tron_goi i
+                JOIN dm_tron_goi t ON t.id_nguon = i.tron_goi_id
+                WHERE i.dang_dung AND t.ma_co_so = :coSo AND i.vat_tu_id IN (:ids)""",
+                new MapSqlParameterSource("coSo", branchCode).addValue("ids", materialIds),
+                rs -> {
+                    out.computeIfAbsent(rs.getInt("vat_tu_id"), k -> new ArrayList<>()).add(rs.getInt("tron_goi_id"));
+                });
+        return out;
     }
 
     /** Đường dẫn ảnh (MinIO của slm_v2) của một tep_tin_id đã đồng bộ: ảnh vật tư, ảnh gói, logo hãng */

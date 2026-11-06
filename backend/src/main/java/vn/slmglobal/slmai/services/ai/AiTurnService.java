@@ -14,6 +14,7 @@ import vn.slmglobal.slmai.common.util.VietnamesePhone;
 import vn.slmglobal.slmai.services.ai.entity.AiPurpose;
 import vn.slmglobal.slmai.services.ai.entity.AiRun;
 import vn.slmglobal.slmai.services.catalog.CatalogSyncService;
+import vn.slmglobal.slmai.services.conversation.ChannelNameService;
 import vn.slmglobal.slmai.services.conversation.ChannelSender;
 import vn.slmglobal.slmai.services.conversation.entity.ChannelCode;
 import vn.slmglobal.slmai.services.conversation.entity.Message;
@@ -64,11 +65,10 @@ public class AiTurnService {
     private final CatalogSyncService catalogSync;
     private final AiSettingsService settings;
     private final ObjectMapper objectMapper;
+    private final ChannelNameService channelNames;
     private final Map<ChannelCode, ChannelSender> senders = new EnumMap<>(ChannelCode.class);
     /** Số lần gọi Claude lỗi liên tiếp của từng hội thoại (chỉ trong tiến trình này) */
     private final Map<UUID, Integer> failures = new ConcurrentHashMap<>();
-    /** Định danh kênh đã thử lấy tên, để không gọi lại API hồ sơ mỗi lượt khi không lấy được */
-    private final Set<UUID> nameLookups = ConcurrentHashMap.newKeySet();
     /** Bật lại "đang soạn tin" theo chu kỳ trong lúc chờ Claude */
     private final ScheduledExecutorService typingScheduler = Executors.newScheduledThreadPool(2, r -> {
         Thread t = new Thread(r, "ai-typing");
@@ -79,7 +79,7 @@ public class AiTurnService {
     public AiTurnService(AiTurnStore store, CustomerChatPromptBuilder promptBuilder, ClaudeChatClient claude,
                          ReplyPolicy policy, KnowledgeBase knowledgeBase, CustomerChatTools tools,
                          CatalogSyncService catalogSync, AiSettingsService settings, ObjectMapper objectMapper,
-                         List<ChannelSender> channelSenders) {
+                         ChannelNameService channelNames, List<ChannelSender> channelSenders) {
         this.store = store;
         this.promptBuilder = promptBuilder;
         this.claude = claude;
@@ -89,6 +89,7 @@ public class AiTurnService {
         this.catalogSync = catalogSync;
         this.settings = settings;
         this.objectMapper = objectMapper;
+        this.channelNames = channelNames;
         channelSenders.forEach(s -> senders.put(s.channel(), s));
     }
 
@@ -109,7 +110,7 @@ public class AiTurnService {
         boolean businessOpen = properties.businessHours().isOpen(now);
         boolean windowOpen = isWindowOpen(s);
         ChannelSender sender = senders.get(s.channel());
-        s = withChannelName(s, sender);
+        s = withChannelName(s);
 
         boolean pricingTools = tools.available();
         ClaudeChatClient.ChatRequest request = promptBuilder.build(s, knowledge, now, businessOpen, pricingTools)
@@ -187,16 +188,12 @@ public class AiTurnService {
     }
 
     /** Lấy tên Facebook của khách một lần (để AI chọn anh / chị theo core/voice), lưu vào dinh_danh_kenh. */
-    private TurnSnapshot withChannelName(TurnSnapshot s, ChannelSender sender) {
-        if (sender == null || s.identity().getDisplayName() != null || !nameLookups.add(s.identity().getId())) {
+    private TurnSnapshot withChannelName(TurnSnapshot s) {
+        if (s.identity().getDisplayName() != null) {
             return s;
         }
-        String name = sender.fetchDisplayName(s.identity()).orElse(null);
-        if (name == null) {
-            return s;
-        }
-        store.saveDisplayName(s.identity().getId(), name);
-        return s.customerName() == null ? s.withCustomerName(name) : s;
+        String name = channelNames.fetchOnce(s.identity()).orElse(null);
+        return name != null && s.customerName() == null ? s.withCustomerName(name) : s;
     }
 
     /** Trả số tin đã gửi ra kênh (câu báo nhận khi chuyển nhân viên); 0 khi hẹn thử lại. */
