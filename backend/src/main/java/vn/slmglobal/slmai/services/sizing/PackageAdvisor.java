@@ -25,6 +25,8 @@ import java.util.Optional;
  *       dải giá của cả catalog.</li>
  *   <li>Có hoá đơn: tính công suất và pin cần (SizingService), chọn gói rẻ nhất đáp ứng; chưa biết tỉnh hoặc tỷ lệ
  *       ngày / đêm thì trả khoảng (gói nhỏ nhất và lớn nhất có thể).</li>
+ *   <li>Khách tự nêu cấu hình (số tấm, dung lượng pin, 2026-11-09): thêm {@code cau_hinh_khach_hoi} gồm gói đúng cấu
+ *       hình, không có thì gói gần nhất ít tấm hơn và nhiều tấm hơn.</li>
  *   <li>Sản lượng theo PV out EVN của tỉnh; link sản phẩm theo miền (Bắc slmsolar.vn, Nam slmsolar.com.vn).</li>
  * </ul>
  */
@@ -36,6 +38,8 @@ public class PackageAdvisor {
     static final String HYBRID = "HYBRID";
     /** Chưa biết miền: giá tham khảo theo cơ sở HN (giá hai cơ sở gần như bằng nhau), chưa gửi link */
     static final String DEFAULT_BRANCH = "HN";
+    /** Khách nói "pin 5 số" là gói pin 5,12 kWh: lệch dưới mức này coi như đúng dung lượng khách hỏi */
+    static final double STORAGE_MATCH_KWH = 0.5;
 
     private final CatalogRepository catalog;
     private final ProvinceDirectory provinces;
@@ -44,9 +48,25 @@ public class PackageAdvisor {
     private final PricingSource pricingSource;
     private final ObjectMapper objectMapper;
 
-    /** Thông tin khách đã có; trường chưa biết là null */
+    /**
+     * Thông tin khách đã có; trường chưa biết là null.
+     *
+     * @param panelCount số tấm pin khách tự nêu ("12 tấm")
+     * @param storageKwh dung lượng pin lưu trữ khách tự nêu ("pin 5 số" là 5; 0 là hệ không pin)
+     */
     public record AdviceRequest(String province, Integer phases, Long monthlyBillVnd, String dayNight,
-                                String roofType, Double roofAreaM2, String systemType, Boolean backupNeeded) {
+                                String roofType, Double roofAreaM2, String systemType, Boolean backupNeeded,
+                                Integer panelCount, Double storageKwh) {
+
+        public AdviceRequest(String province, Integer phases, Long monthlyBillVnd, String dayNight, String roofType,
+                             Double roofAreaM2, String systemType, Boolean backupNeeded) {
+            this(province, phases, monthlyBillVnd, dayNight, roofType, roofAreaM2, systemType, backupNeeded, null,
+                    null);
+        }
+
+        boolean configurationAsked() {
+            return (panelCount != null && panelCount > 0) || (storageKwh != null && storageKwh >= 0);
+        }
     }
 
     /**
@@ -100,6 +120,13 @@ public class PackageAdvisor {
 
         List<Integer> quoted = new ArrayList<>();
         Long cheapest = null;
+        if (r.configurationAsked()) {
+            for (CatalogPackage p : configuration(out, all, r, place, notes)) {
+                long price = Math.round(p.totalPrice());
+                quoted.add(p.id());
+                cheapest = cheapest == null ? price : Math.min(cheapest, price);
+            }
+        }
         boolean billKnown = r.monthlyBillVnd() != null && r.monthlyBillVnd() > 0;
         if (!billKnown || place.table() == null) {
             if (billKnown) {
@@ -149,8 +176,8 @@ public class PackageAdvisor {
                     maxPrice = Math.max(maxPrice, price);
                 }
             }
-            if (!quoted.isEmpty()) {
-                cheapest = Math.round(minPrice);
+            if (!options.isEmpty()) {
+                cheapest = cheapest == null ? Math.round(minPrice) : Math.min(cheapest, Math.round(minPrice));
                 if (maxPrice > minPrice) {
                     ObjectNode range = out.putObject("khoang_gia");
                     range.put("tu", VnFormat.money(minPrice));
@@ -169,7 +196,7 @@ public class PackageAdvisor {
             out.put("dieu_kien_bao_gia", pricing().quoteConditions());
         }
         out.set("ghi_chu", strings(notes));
-        return new Advice(out, List.copyOf(quoted), cheapest);
+        return new Advice(out, quoted.stream().distinct().toList(), cheapest);
     }
 
     /** chi_tiet_goi: thành phần hiển thị cho khách, bảo hành, giá, link, sản lượng theo tỉnh (nếu biết) */
@@ -294,6 +321,92 @@ public class PackageAdvisor {
         return new Pick(biggestBattery, "Pin lớn nhất của các gói đủ công suất là "
                 + VnFormat.kwh(biggestBattery.storageKwh()) + ", thấp hơn nhu cầu khoảng " + VnFormat.kwh(needBattery)
                 + "; có thể bổ sung pin, nhân viên tư vấn thêm.");
+    }
+
+    /**
+     * Khách tự nêu cấu hình ("12 tấm và pin 5 số bao tiền"): trong các gói có pin gần dung lượng khách nói nhất, gói
+     * đúng số tấm; không có thì gói gần nhất ít tấm hơn và nhiều tấm hơn. Chỉ nêu pin: gói rẻ nhất có pin từ mức đó
+     * trở lên và gói rẻ nhất có pin gần nhất. Không tự cộng trừ giá cho cấu hình riêng.
+     */
+    private List<CatalogPackage> configuration(ObjectNode out, List<CatalogPackage> all, AdviceRequest r, Place place,
+                                               List<String> notes) {
+        Integer panels = r.panelCount() != null && r.panelCount() > 0 ? r.panelCount() : null;
+        Double storage = r.storageKwh() != null && r.storageKwh() >= 0 ? r.storageKwh() : null;
+        String type = storage == null ? normalizeType(r.systemType()) : storage > 0 ? HYBRID : ON_GRID;
+        List<CatalogPackage> pool = all.stream()
+                .filter(p -> p.totalPrice() != null && p.kwp() != null && (panels == null || p.panelCount() != null))
+                .filter(p -> type == null || type.equals(p.systemType()))
+                .filter(p -> r.phases() == null || r.phases().equals(p.phases()))
+                .toList();
+        if (r.phases() == null && pool.stream().anyMatch(p -> Integer.valueOf(1).equals(p.phases()))) {
+            pool = pool.stream().filter(p -> Integer.valueOf(1).equals(p.phases())).toList();
+        }
+        Comparator<CatalogPackage> cheapest = Comparator.comparing(CatalogPackage::totalPrice);
+        List<CatalogPackage> picks = new ArrayList<>();
+        if (panels == null) {
+            // Chỉ nêu pin: gói rẻ nhất có pin từ mức khách nói trở lên, kèm gói rẻ nhất đúng mức pin gần nhất nếu
+            // khác (khách hỏi pin 14,3 kWh: gói 16 kWh 144,2 triệu, không chỉ gói Huawei 14 kWh 292,3 triệu)
+            if (storage != null && storage > 0) {
+                pool.stream().filter(p -> p.storageKwh() >= storage - STORAGE_MATCH_KWH).min(cheapest)
+                        .ifPresent(picks::add);
+            }
+            nearestStorage(pool, storage).stream().min(cheapest).filter(p -> !picks.contains(p))
+                    .ifPresent(picks::add);
+            picks.sort(cheapest);
+        } else {
+            List<CatalogPackage> tier = nearestStorage(pool, storage);
+            Optional<CatalogPackage> same = tier.stream().filter(p -> p.panelCount().equals(panels)).min(cheapest);
+            if (same.isPresent()) {
+                picks.add(same.get());
+            } else {
+                tier.stream().filter(p -> p.panelCount() < panels)
+                        .max(Comparator.comparing(CatalogPackage::panelCount).thenComparing(cheapest.reversed()))
+                        .ifPresent(picks::add);
+                tier.stream().filter(p -> p.panelCount() > panels)
+                        .min(Comparator.comparing(CatalogPackage::panelCount).thenComparing(cheapest))
+                        .ifPresent(picks::add);
+            }
+        }
+        boolean exact = picks.stream().anyMatch(p -> (panels == null || p.panelCount().equals(panels))
+                && (storage == null || Math.abs(p.storageKwh() - storage) < STORAGE_MATCH_KWH));
+
+        ObjectNode cfg = out.putObject("cau_hinh_khach_hoi");
+        List<String> asked = new ArrayList<>();
+        if (panels != null) {
+            asked.add(panels + " tấm");
+        }
+        if (storage != null) {
+            asked.add(storage > 0 ? "pin lưu trữ " + VnFormat.kwh(storage) : "không pin lưu trữ");
+        }
+        cfg.put("yeu_cau", String.join(", ", asked));
+        cfg.put("co_goi_dung_cau_hinh", exact);
+        ArrayNode list = cfg.putArray("goi_gan_nhat");
+        for (CatalogPackage p : picks) {
+            ObjectNode o = summary(p, place);
+            if (panels != null && !p.panelCount().equals(panels)) {
+                int diff = p.panelCount() - panels;
+                o.put("so_voi_yeu_cau", (diff < 0 ? "ít hơn " : "nhiều hơn ") + Math.abs(diff) + " tấm");
+            }
+            addProduction(o, p, place, null, null);
+            list.add(o);
+        }
+        if (picks.isEmpty()) {
+            notes.add("Không có gói nào gần cấu hình khách hỏi: nhân viên sẽ tư vấn hệ riêng.");
+        } else if (!exact) {
+            notes.add("Không có gói đúng cấu hình khách hỏi (" + cfg.path("yeu_cau").asText() + "): báo các gói gần "
+                    + "nhất trong cau_hinh_khach_hoi. Không tự cộng trừ giá cho cấu hình riêng; khách muốn đúng cấu "
+                    + "hình đó thì xin số điện thoại để nhân viên báo giá.");
+        }
+        return picks;
+    }
+
+    /** Các gói có mức pin gần dung lượng khách nói nhất; khách không nêu pin hoặc hệ không pin thì cả danh sách */
+    private static List<CatalogPackage> nearestStorage(List<CatalogPackage> pool, Double storage) {
+        if (storage == null || storage <= 0 || pool.isEmpty()) {
+            return pool;
+        }
+        double gap = pool.stream().mapToDouble(p -> Math.abs(p.storageKwh() - storage)).min().orElseThrow();
+        return pool.stream().filter(p -> Math.abs(p.storageKwh() - storage) <= gap + 1e-9).toList();
     }
 
     private static List<CatalogPackage> pool(List<CatalogPackage> all, int phases, String type) {

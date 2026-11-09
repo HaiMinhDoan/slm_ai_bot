@@ -159,6 +159,9 @@ class InboxIntegrationTest {
         d = inbox.toAi(conv, STAFF);
         assertThat(d.conversation().ownership()).isEqualTo("AI_ACTIVE");
         assertThat(d.conversation().aiReplying()).isTrue();
+        // Lượt AI kế tiếp biết nhân viên vừa giao lại (không chuyển ngược lại ngay)
+        assertThat(jdbc.queryForObject("SELECT nv_giao_lai_luc FROM hoi_thoai WHERE id = ?", OffsetDateTime.class,
+                conv)).isNotNull();
         assertThat(messages.findById(stale).orElseThrow().getStatus()).isEqualTo(MessageStatus.DISCARDED);
         // Hai tin nhắn sau tin trang đã gửi là tin chờ để AI trả lời ngay; tin trước đó coi như đã xử lý
         assertThat(jdbc.queryForList("SELECT noi_dung FROM tin_nhan WHERE hoi_thoai_id = ? AND chieu = 'IN' "

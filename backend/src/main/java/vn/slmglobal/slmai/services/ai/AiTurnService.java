@@ -169,8 +169,8 @@ public class AiTurnService {
             run.setSources(reply.sources() == null ? new String[0] : reply.sources().toArray(String[]::new));
             run.setKnowledgeGap(reply.knowledgeGap() != null && !reply.knowledgeGap().isBlank());
             decision = policy.evaluate(new ReplyPolicy.Input(
-                    reply, s.replyMode(), s.firstTurnAfterHandback(), windowOpen, sender != null,
-                    sender != null ? sender.maxTextLength() : 2000,
+                    reply, s.replyMode(), s.firstTurnAfterHandback(), s.handedBackByStaff(), windowOpen,
+                    sender != null, sender != null ? sender.maxTextLength() : 2000,
                     numberSourceTexts(s, knowledge, toolSession), numberSourceValues(s.profile()),
                     allowedLinks(s, knowledge, toolSession), knowledge.rules().replyPolicy()));
         }

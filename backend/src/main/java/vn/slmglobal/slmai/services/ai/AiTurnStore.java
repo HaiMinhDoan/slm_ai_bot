@@ -103,7 +103,7 @@ public class AiTurnStore {
         return Optional.of(new TurnSnapshot(
                 c.getId(), c.getCustomerId(), c.getChannel(), identity, lease, inboundCount,
                 List.copyOf(history), List.copyOf(pending), c.getReplyMode(), c.getAutoHandbackAt() != null,
-                c.getLastCustomerMessageAt(), profile, customer.getPhone(),
+                c.getStaffHandbackAt() != null, c.getLastCustomerMessageAt(), profile, customer.getPhone(),
                 customer.getName() != null ? customer.getName() : identity.getDisplayName(),
                 prefs != null && prefs.hasNonNull(ConsultSlots.DANH_XUNG) ? prefs.get(ConsultSlots.DANH_XUNG).asText()
                         : null));
@@ -158,6 +158,7 @@ public class AiTurnStore {
         OffsetDateTime now = OffsetDateTime.now();
         c.setReplyDueAt(null);
         c.setAutoHandbackAt(null);
+        c.setStaffHandbackAt(null);
         if (reply != null && reply.intent() != null) {
             c.setIntent(reply.intent());
         }

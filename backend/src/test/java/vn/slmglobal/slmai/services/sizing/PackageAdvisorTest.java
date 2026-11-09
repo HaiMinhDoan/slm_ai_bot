@@ -140,6 +140,41 @@ class PackageAdvisorTest {
     }
 
     @Test
+    void customerConfigurationGetsNearestPackages() {
+        // Hội thoại 2026-11-03: "12 tấm và lưu 5 số, thì bao tiền?" — không có gói 12 tấm, gần nhất 8 và 14 tấm
+        PackageAdvisor.Advice a = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", null, null, null, null,
+                null, null, null, 12, 5.0));
+        JsonNode cfg = a.result().path("cau_hinh_khach_hoi");
+        assertThat(cfg.path("yeu_cau").asText()).isEqualTo("12 tấm, pin lưu trữ 5 kWh");
+        assertThat(cfg.path("co_goi_dung_cau_hinh").asBoolean()).isFalse();
+        assertThat(cfg.path("goi_gan_nhat").findValues("goi_id")).extracting(JsonNode::asInt).containsExactly(98, 101);
+        assertThat(cfg.path("goi_gan_nhat").get(0).path("so_voi_yeu_cau").asText()).isEqualTo("ít hơn 4 tấm");
+        assertThat(cfg.path("goi_gan_nhat").get(1).path("so_voi_yeu_cau").asText()).isEqualTo("nhiều hơn 2 tấm");
+        assertThat(cfg.path("goi_gan_nhat").get(1).path("gia").asText()).isEqualTo("113,2 triệu đồng");
+        assertThat(cfg.path("goi_gan_nhat").get(1).path("san_luong_uoc_tinh").isObject()).isTrue();
+        assertThat(a.result().path("ghi_chu").toString()).contains("Không có gói đúng cấu hình");
+        assertThat(a.quotedPackageIds()).containsExactly(98, 101);
+        assertThat(a.cheapestQuotedVnd()).isEqualTo(90_800_000L);
+
+        JsonNode exact = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", 1, null, null, null, null, null,
+                null, 14, 16.0)).result().path("cau_hinh_khach_hoi");
+        assertThat(exact.path("co_goi_dung_cau_hinh").asBoolean()).isTrue();
+        assertThat(exact.path("goi_gan_nhat").findValues("goi_id")).extracting(JsonNode::asInt).containsExactly(105);
+
+        JsonNode onGrid = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", null, null, null, null, null,
+                null, null, 12, 0.0)).result().path("cau_hinh_khach_hoi");
+        assertThat(onGrid.path("goi_gan_nhat").findValues("goi_id")).extracting(JsonNode::asInt)
+                .containsExactly(158, 160);
+
+        // Chỉ nêu pin: gói rẻ nhất có pin từ 7 kWh trở lên (10,24 kWh) và gói đúng 7 kWh (Huawei, đắt hơn)
+        JsonNode battery = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", null, null, null, null, null,
+                null, null, null, 7.0)).result().path("cau_hinh_khach_hoi");
+        assertThat(battery.path("goi_gan_nhat").findValues("goi_id")).extracting(JsonNode::asInt)
+                .containsExactly(99, 164);
+        assertThat(battery.path("co_goi_dung_cau_hinh").asBoolean()).isTrue();
+    }
+
+    @Test
     void flatRoofAddsFrameNote() {
         JsonNode r = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", 1, 1_500_000L, "CAN_BANG", "BANG",
                 null, null, null)).result();

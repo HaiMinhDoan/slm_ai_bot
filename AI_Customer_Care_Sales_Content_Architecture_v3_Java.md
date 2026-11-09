@@ -327,6 +327,11 @@ Giá, gói và thông số **không** nằm trong prompt. Claude gọi tool, bac
 - **Không cộng giá lẻ** để ra giá hệ hay cấu hình tự chọn: AI giới thiệu gói gần nhất, cấu hình riêng thì xin số điện thoại.
 - **Ngữ cảnh lượt (code) đã hướng dẫn dùng tool mới**, nên bot chạy đúng cả với bản kiến thức #1 đang chạy trên production (đã thử thật trên preview với cùng mã băm kiến thức). Bản gốc trong repo (`core/guardrails`, `playbooks/khach-hoi-gia` bước 9, `prompts/customer-chat`) đã thêm tool. Production muốn đồng bộ chữ thì sửa ba tài liệu đó trên admin rồi phát hành; không bắt buộc.
 
+**Cập nhật 2026-11-09 (hội thoại Lê Huy Sĩ, hai câu AI vẫn không trả lời được):**
+- **Link thiết bị khách gửi:** khách gửi `slmsolar.vn/devices/60` hỏi giá, AI trả lời "em không mở được link". `tra_cuu_vat_tu` nhận cả link trang thiết bị trong `tu_khoa` và tra theo id vật tư (`/devices/{id}`); `chi_tiet_goi` dùng được số cuối của link `/products/{id}`.
+- **Cấu hình khách tự nêu:** "12 tấm và lưu 5 số, thì bao tiền?" — `tim_goi_phu_hop` chỉ chọn gói theo tiền điện nên AI bỏ sót gói gần nhất (14 tấm, pin 5,12 kWh, 113,2 tr). Thêm `so_tam_pin`, `luu_tru_kwh`: kết quả có `cau_hinh_khach_hoi` gồm gói đúng cấu hình, không có thì gói gần nhất ít tấm hơn và nhiều tấm hơn trong mức pin gần nhất. Chỉ nêu pin thì trả gói rẻ nhất có pin từ mức đó trở lên kèm gói đúng mức pin gần nhất (hỏi pin 14,3 kWh: gói 16 kWh 144,2 tr, không chỉ gói Huawei 14 kWh 292,3 tr). Vẫn không cộng trừ giá cho cấu hình riêng.
+- `playbooks/khach-hoi-gia` bước 9–10 và `prompts/customer-chat` trong repo đã cập nhật; production sửa trên admin rồi phát hành.
+
 - Mọi con số về giá, công suất, sản lượng trong câu trả lời phải có nguồn hợp lệ; Policy Engine kiểm tra trước khi gửi theo quy tắc ở mục 33.
 - Mỗi lần báo giá đi kèm điều kiện báo giá do doanh nghiệp chốt (VAT, vận chuyển / lắp đặt ở tỉnh xa, giá cuối sau khảo sát, hiệu lực; mục 4.2.8). Tool trả kèm `hieu_luc_tu` của giá để biết báo giá dựa trên bản catalog nào.
 - Nếu mái cần khung sắt, công thức cộng thêm `gia_khung_sat` (hiện mọi gói đều đang là 0).
@@ -1290,6 +1295,10 @@ Ghi tin_nhan (OUT), luot_goi_ai, media_lan_gui, kt_lo_hong, ho_so_tu_van
 - **Tác dụng phụ của tool chỉ áp dụng khi lượt được chốt.** Tool đọc chạy ngay. Tool ghi (`cap_nhat_ho_so_tu_van`, `tao_lead`, `chuyen_nhan_vien`) chỉ ghi vào danh sách chờ của lượt; khi lượt qua Policy và được chốt (gửi, lưu nháp hoặc chuyển người) thì mới áp dụng, trong cùng transaction với `tin_nhan` (OUT) và `luot_goi_ai`. Lượt bị bỏ thì danh sách chờ bị hủy. Khóa chống trùng của lead tính theo `hoi_thoai_id` + số điện thoại, nên chạy lại không tạo lead trùng.
 - Nhân viên trả lời từ Page Inbox (sự kiện echo) → `HUMAN_OWNED` ngay, kể cả khi AI đang soạn. Echo do chính ứng dụng gửi (cùng `app_id`) **không** tính là nhân viên trả lời.
 - **Trả hội thoại lại cho AI:** nhân viên bấm "Trả lại AI" trên admin; hoặc tự động khi đã quá `N` giờ (cấu hình, ví dụ 24 giờ) kể từ tin cuối của nhân viên (`nhan_vien_tin_cuoi_luc`). Khi tự trả lại, tin tiếp theo của khách đi theo chế độ `DRAFT` và báo nhân viên phụ trách trước, không để AI chen vào giữa lúc nhân viên đang theo.
+- **Không chuyển ngược lại ngay sau khi được giao lại (2026-11-09):** hội thoại Lê Huy Sĩ (03–06/11) bị chuyển sale 9 lần; nhân viên bấm "Chuyển cho AI" 5 lần, lần nào AI cũng chuyển lại trong vài giây. AI đọc lại các câu "đã chuyển nhân viên" của chính nó cùng các tin giục ("alo", "đâu rồi", "trả lời đi") và coi là khách muốn gặp người, trong khi câu khách thật sự chờ (giá pin lẻ, giá cấu hình 12 tấm + pin 5 kWh) chưa ai trả lời. Đã sửa:
+  - "Chuyển cho AI" ghi `hoi_thoai.nv_giao_lai_luc` (V13). Lượt AI đầu tiên sau đó có ngữ cảnh "nhân viên vừa giao lại: lần chuyển trước đã xong, tự trả lời câu khách còn chờ, khách giục chỉ là đang chờ"; lượt đầu sau khi tự trả lại cũng được nhắc tự trả lời câu còn chờ.
+  - Ở lượt đầu sau khi được giao lại (tự trả lại hoặc nhân viên bấm), AI vẫn đặt `handoff.needed` thì Policy cho thành nháp (`HANDOFF_AFTER_HANDBACK`), không chuyển ngay. Loại câu hỏi phải chuyển nhân viên (handoff intents) và lượt không có câu trả lời vẫn chuyển.
+  - `core/guardrails` (kiến thức trên admin): chỉ chuyển khi khách **nói rõ** muốn gặp, gọi điện với nhân viên hoặc hẹn khảo sát; thêm mục "Không chuyển nhân viên khi" (khách chỉ giục; hỏi giá thiết bị lẻ, cấu hình tự nêu, gửi link; trước đó đã báo chuyển mà hội thoại vẫn do AI trả lời).
 - Chế độ `DRAFT`: bản nháp hiện trong inbox admin; nhân viên gửi, sửa (lưu `kt_sua_ban_nhap`) hoặc bỏ.
 - Chế độ mặc định của mỗi loại câu hỏi và các trường hợp một lượt `AUTO` chuyển sang `DRAFT`: mục 35.
 - **Công tắc dừng toàn cục** (mục 33): khi bật, mọi lượt đi theo `DRAFT` bất kể cấu hình.
@@ -2582,6 +2591,7 @@ CREATE TABLE hoi_thoai (
     tin_khach_cuoi_luc     TIMESTAMPTZ,                                     -- [EN: last_customer_message_at] tính cửa sổ 24 giờ / cửa sổ tin tư vấn
     han_tra_loi_luc        TIMESTAMPTZ,                                     -- [EN: reply_due_at] gộp tin: xử lý khi tới hạn (mục 19); trong lúc AI xử lý là hạn giữ lượt
     tu_tra_lai_luc         TIMESTAMPTZ,                                     -- [EN: auto_handback_at] lượt AI đầu tiên sau khi tự trả lại đi theo DRAFT (mục 19)
+    nv_giao_lai_luc        TIMESTAMPTZ,                                     -- [EN: staff_handback_at] nhân viên bấm "Chuyển cho AI" (V13): lượt AI đầu tiên sau đó được báo, AI xin chuyển lại thì thành nháp (mục 19)
     tao_luc                TIMESTAMPTZ NOT NULL DEFAULT now(),              -- [EN: created_at]
     sua_luc                TIMESTAMPTZ NOT NULL DEFAULT now()               -- [EN: updated_at]
 );

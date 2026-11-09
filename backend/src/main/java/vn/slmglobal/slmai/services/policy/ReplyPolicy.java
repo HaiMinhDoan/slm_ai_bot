@@ -20,6 +20,11 @@ import java.util.regex.Pattern;
  *
  * <p>Link: chỉ được gửi link có trong danh sách cho phép của lượt (link trong kết quả tool, link trang đã gửi
  * trước đó, trang chủ website theo miền); link khác (AI tự nghĩ ra, email) thì DRAFT, lý do LINK_NOT_ALLOWED.
+ *
+ * <p>Lượt đầu sau khi hội thoại được giao lại cho AI (tự trả lại hoặc nhân viên bấm "Chuyển cho AI"): AI đề nghị
+ * chuyển nhân viên thì thành DRAFT (HANDOFF_AFTER_HANDBACK), không chuyển ngay. Trước đây AI đọc lại các câu "đã
+ * chuyển nhân viên" của chính nó rồi chuyển lại trong vài giây, nhân viên bấm bao nhiêu lần cũng vậy (2026-11-06).
+ * Loại câu hỏi phải chuyển nhân viên (handoff intents) và lượt không có câu trả lời vẫn chuyển ngay.
  */
 @Component
 @RequiredArgsConstructor
@@ -38,6 +43,7 @@ public class ReplyPolicy {
     public static final String FORCE_DRAFT = "FORCE_DRAFT";
     public static final String CONVERSATION_DRAFT_MODE = "CONVERSATION_DRAFT_MODE";
     public static final String FIRST_TURN_AFTER_HANDBACK = "FIRST_TURN_AFTER_HANDBACK";
+    public static final String HANDOFF_AFTER_HANDBACK = "HANDOFF_AFTER_HANDBACK";
     public static final String INTENT_NOT_AUTO = "INTENT_NOT_AUTO";
     public static final String NUMBER_CHECK_FAILED = "NUMBER_CHECK_FAILED";
     public static final String LINK_NOT_ALLOWED = "LINK_NOT_ALLOWED";
@@ -55,11 +61,14 @@ public class ReplyPolicy {
     private final AiSettingsService settings;
 
     /**
-     * @param maxTextLength giới hạn của kênh; lấy min với {@link ReplyPolicyRule#maxLength()}
-     * @param rule          rule rules/kiem-tra-truoc-khi-gui của bản phát hành mà lượt này dùng
+     * @param firstTurnAfterHandback lượt đầu sau khi hội thoại tự trả lại AI: luôn là nháp
+     * @param handedBackByStaff      lượt đầu sau khi nhân viên bấm "Chuyển cho AI": gửi như thường
+     * @param maxTextLength          giới hạn của kênh; lấy min với {@link ReplyPolicyRule#maxLength()}
+     * @param rule                   rule rules/kiem-tra-truoc-khi-gui của bản phát hành mà lượt này dùng
      */
-    public record Input(AiReply reply, ReplyMode replyMode, boolean firstTurnAfterHandback, boolean windowOpen,
-                        boolean channelSupported, int maxTextLength, Collection<String> numberSourceTexts,
+    public record Input(AiReply reply, ReplyMode replyMode, boolean firstTurnAfterHandback, boolean handedBackByStaff,
+                        boolean windowOpen, boolean channelSupported, int maxTextLength,
+                        Collection<String> numberSourceTexts,
                         Collection<NumberChecker.Quantity> numberSourceValues, Collection<String> allowedLinks,
                         ReplyPolicyRule rule) {
     }
@@ -78,7 +87,8 @@ public class ReplyPolicy {
         if (properties.handoffIntents() != null && properties.handoffIntents().contains(reply.intent())) {
             return Decision.handoff(HANDOFF_INTENT);
         }
-        if (reply.handoffNeeded()) {
+        boolean justHandedBack = in.firstTurnAfterHandback() || in.handedBackByStaff();
+        if (reply.handoffNeeded() && !justHandedBack) {
             return Decision.handoff(HANDOFF_REQUESTED);
         }
         if (!reply.hasReply()) {
@@ -86,6 +96,9 @@ public class ReplyPolicy {
         }
 
         List<String> reasons = new ArrayList<>();
+        if (reply.handoffNeeded()) {
+            reasons.add(HANDOFF_AFTER_HANDBACK);
+        }
         if (properties.forceDraft()) {
             reasons.add(FORCE_DRAFT);
         }

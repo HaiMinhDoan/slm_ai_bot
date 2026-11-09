@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Chọn vật tư khớp từ khoá khách nói cho tool {@code tra_cuu_vat_tu}. So không dấu, tách chữ và số ("5kwh" → "5",
@@ -24,7 +26,19 @@ final class MaterialMatcher {
             "bi", "nao", "khong", "co", "la", "cac", "nhung", "hang", "rieng", "le", "mot", "cai", "ben", "em", "anh",
             "chi", "minh", "the", "nhu", "vay", "a", "nha");
 
+    /** Link trang thiết bị khách gửi (slmsolar.vn/devices/60, slmsolar.com.vn/devices/60): id vật tư ở slm_v2 */
+    private static final Pattern DEVICE_LINK = Pattern.compile("(?i)/devices/(\\d+)");
+
     private MaterialMatcher() {
+    }
+
+    /** Id vật tư trong link trang thiết bị; null nếu từ khoá không có link */
+    static Integer linkedId(String keyword) {
+        if (keyword == null) {
+            return null;
+        }
+        Matcher m = DEVICE_LINK.matcher(keyword);
+        return m.find() ? Integer.valueOf(m.group(1)) : null;
     }
 
     /**

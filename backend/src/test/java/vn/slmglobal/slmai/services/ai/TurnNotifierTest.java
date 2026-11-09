@@ -90,6 +90,6 @@ class TurnNotifierTest {
                 .direction(MessageDirection.IN).senderType(SenderType.CUSTOMER).status(MessageStatus.RECEIVED).build();
         return new TurnSnapshot(conversation.getId(), conversation.getCustomerId(), ChannelCode.MESSENGER, identity,
                 OffsetDateTime.now(), 1, List.of(inbound), List.of(inbound), ReplyMode.AUTO, firstAfterHandback,
-                OffsetDateTime.now(), null, null, "Lan", null);
+                false, OffsetDateTime.now(), null, null, "Lan", null);
     }
 }

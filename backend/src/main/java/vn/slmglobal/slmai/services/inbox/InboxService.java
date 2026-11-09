@@ -198,6 +198,7 @@ public class InboxService {
     /**
      * "Chuyển cho AI": AI phụ trách lại ngay, không đi theo nháp như khi tự trả lại. Nháp / tin lỗi chưa gửi bị bỏ
      * (đã cũ). Tin khách nhắn sau tin cuối trang đã gửi là tin còn chờ: AI trả lời ngay; tin cũ hơn coi như đã xử lý.
+     * Lượt AI đầu tiên sau đó biết nhân viên vừa giao lại; AI vẫn đề nghị chuyển nhân viên thì thành nháp.
      */
     @Transactional
     public Detail toAi(UUID id, AuthInfo actor) {
@@ -232,6 +233,7 @@ public class InboxService {
         }
         c.setOwnership(Ownership.AI_ACTIVE);
         c.setAutoHandbackAt(null);
+        c.setStaffHandbackAt(now());
         c.setReplyDueAt(waiting > 0 ? now() : null);
         audit.record(actor.id(), "conversation.to_ai", TARGET, id, Map.of("ownership", Ownership.HUMAN_OWNED.name()),
                 Map.of("ownership", Ownership.AI_ACTIVE.name(), "waitingMessages", waiting,

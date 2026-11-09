@@ -43,7 +43,7 @@ public class MaterialAdvisor {
     private final ObjectMapper objectMapper;
 
     /**
-     * @param keyword      thiết bị khách hỏi (rỗng: liệt kê theo nhóm)
+     * @param keyword      thiết bị khách hỏi (rỗng: liệt kê theo nhóm), hoặc link trang thiết bị khách gửi
      * @param group        TAM_PIN / BIEN_TAN / PIN_LUU_TRU / PHU_KIEN hoặc null
      * @param provinceText tỉnh khách nói; chưa biết thì giá miền Bắc, không link
      */
@@ -68,7 +68,10 @@ public class MaterialAdvisor {
         }
 
         String g = group != null && GROUPS.contains(group) ? group : null;
-        List<QuotableMaterial> found = MaterialMatcher.match(materials.quotableMaterials(branch), keyword, g);
+        Integer linked = MaterialMatcher.linkedId(keyword);
+        List<QuotableMaterial> all = materials.quotableMaterials(branch);
+        List<QuotableMaterial> found = linked == null ? MaterialMatcher.match(all, keyword, g)
+                : all.stream().filter(m -> m.id() == linked).toList();
         List<QuotableMaterial> shown = found.subList(0, Math.min(MAX_RESULTS, found.size()));
         List<CatalogPackage> selling = catalog.recommendablePackages(branch);
         Map<Integer, List<Integer>> using = materials.packagesUsing(
@@ -81,13 +84,17 @@ public class MaterialAdvisor {
             notes.add("Còn " + (found.size() - shown.size()) + " thiết bị khác khớp: hỏi khách cụ thể hơn (hãng, "
                     + "công suất / dung lượng, số pha) rồi tra lại.");
         }
-        if (found.isEmpty()) {
+        if (found.isEmpty() && linked != null) {
+            notes.add("Thiết bị trong link khách gửi không còn bán hoặc không có trong bảng giá: không bịa tên, hãng "
+                    + "hay giá; nói nhân viên sẽ kiểm tra thiết bị đó.");
+        } else if (found.isEmpty()) {
             notes.add("Không có thiết bị đang bán khớp \"" + (keyword == null ? "" : keyword) + "\": không bịa tên, "
                     + "hãng hay giá; nói bên em chưa có thiết bị đó hoặc hỏi lại khách.");
         }
         out.put("dieu_kien_gia_le", DEVICE_CONDITIONS);
         notes.add("Không cộng giá lẻ các thiết bị để ra giá một hệ hay cấu hình tự chọn (thêm / bớt tấm, đổi pin, đổi "
-                + "inverter): giá hệ chỉ lấy từ tim_goi_phu_hop / chi_tiet_goi; cấu hình khác gói có sẵn thì xin số "
+                + "inverter): giá hệ chỉ lấy từ tim_goi_phu_hop / chi_tiet_goi; cấu hình tự chọn thì gọi "
+                + "tim_goi_phu_hop với so_tam_pin / luu_tru_kwh để báo gói gần nhất, đúng cấu hình đó thì xin số "
                 + "điện thoại để nhân viên báo giá.");
         ArrayNode n = out.putArray("ghi_chu");
         notes.forEach(n::add);

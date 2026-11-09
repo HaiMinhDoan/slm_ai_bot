@@ -85,6 +85,10 @@ public class Conversation {
     @Column(name = "tu_tra_lai_luc")
     private OffsetDateTime autoHandbackAt;
 
+    /** Lúc nhân viên bấm "Chuyển cho AI" (V13): báo AI ở lượt đầu tiên sau đó; xoá khi lượt đó được chốt */
+    @Column(name = "nv_giao_lai_luc")
+    private OffsetDateTime staffHandbackAt;
+
     @Column(name = "tao_luc", nullable = false, updatable = false)
     @Builder.Default
     private OffsetDateTime createdAt = OffsetDateTime.now();
@@ -105,6 +109,7 @@ public class Conversation {
         lastStaffMessageAt = at;
         replyDueAt = null;
         autoHandbackAt = null;
+        staffHandbackAt = null;
     }
 
     /**
@@ -118,5 +123,6 @@ public class Conversation {
         }
         replyDueAt = null;
         autoHandbackAt = null;
+        staffHandbackAt = null;
     }
 }

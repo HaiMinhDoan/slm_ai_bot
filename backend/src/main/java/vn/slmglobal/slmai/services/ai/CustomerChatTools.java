@@ -134,7 +134,8 @@ public class CustomerChatTools {
                     text(in, ConsultSlots.LOAI_MAI, slots),
                     number(in, ConsultSlots.DIEN_TICH_MAI, slots),
                     text(in, "loai_he_thong", null),
-                    in.path("can_du_phong_mat_dien").isBoolean() ? in.get("can_du_phong_mat_dien").asBoolean() : null));
+                    in.path("can_du_phong_mat_dien").isBoolean() ? in.get("can_du_phong_mat_dien").asBoolean() : null,
+                    integer(in, "so_tam_pin", null), number(in, "luu_tru_kwh", null)));
             advice.quotedPackageIds().forEach(id -> {
                 if (!quotedPackageIds.contains(id)) {
                     quotedPackageIds.add(id);
@@ -216,9 +217,15 @@ public class CustomerChatTools {
                 "Chỉ điền khi khách nói rõ muốn hệ hòa lưới (ON_GRID) hay hệ có pin lưu trữ (HYBRID)")));
         find.put("can_du_phong_mat_dien", nullable(described(type("boolean"),
                 "true khi khách cần có điện lúc lưới mất điện")));
+        find.put("so_tam_pin", nullable(described(type("integer"),
+                "Số tấm pin khi khách tự nêu cấu hình muốn hỏi (\"12 tấm\" là 12)")));
+        find.put("luu_tru_kwh", nullable(described(type("number"),
+                "Dung lượng pin lưu trữ khi khách tự nêu cấu hình, kWh (\"pin 5 số\" là 5; 0 khi khách muốn hệ "
+                        + "không pin)")));
 
         Map<String, Object> detail = new LinkedHashMap<>();
-        detail.put("goi_id", described(type("integer"), "goi_id trong kết quả tim_goi_phu_hop"));
+        detail.put("goi_id", described(type("integer"),
+                "goi_id trong kết quả tim_goi_phu_hop, hoặc số cuối trong link /products/{id} khách gửi"));
         detail.put(ConsultSlots.KHU_VUC, nullable(described(type("string"),
                 "Tỉnh / thành phố của khách nếu đã biết, để chọn đúng bảng giá, link và tính sản lượng")));
 
@@ -226,7 +233,8 @@ public class CustomerChatTools {
         material.put("tu_khoa", described(type("string"), """
                 Thiết bị khách hỏi, viết như tên thiết bị: loại, hãng, công suất / dung lượng, số pha, On-Grid / \
                 Hy-Brid (vd "pin lưu trữ Dyness 5.12 kWh", "inverter Solis Hy-Brid 1 pha 8 kW", "tấm pin JA 625 \
-                Wp"). Chuỗi rỗng khi chỉ cần liệt kê theo nhom."""));
+                Wp"). Khách gửi link trang thiết bị (…/devices/60) thì truyền nguyên link. Chuỗi rỗng khi chỉ \
+                cần liệt kê theo nhom."""));
         material.put("nhom", nullable(described(enumOf(MaterialAdvisor.GROUPS),
                 "TAM_PIN tấm pin, BIEN_TAN biến tần (inverter), PIN_LUU_TRU pin lưu trữ, PHU_KIEN khung, dây, tủ "
                         + "điện, tiếp địa, nhân công")));
@@ -239,8 +247,10 @@ public class CustomerChatTools {
                         hệ nào, hoặc khi khách vừa cho thêm thông tin (tỉnh, tiền điện, 1 pha hay 3 pha, dùng điện \
                         ngày hay đêm, loại mái). Điền mọi thông tin đã biết từ hồ sơ tư vấn và hội thoại, chưa biết \
                         thì null. Chưa có tiền điện: trả giá khởi điểm của từng loại hệ. Có tiền điện: trả gói đề \
-                        xuất, giá, sản lượng, tiết kiệm ước tính và link sản phẩm. Mọi con số giá, công suất, sản \
-                        lượng, tiết kiệm nói với khách phải lấy từ kết quả này, chép đúng cách viết.""", find),
+                        xuất, giá, sản lượng, tiết kiệm ước tính và link sản phẩm. Khách hỏi giá một cấu hình tự nêu \
+                        (số tấm, dung lượng pin): điền so_tam_pin / luu_tru_kwh, kết quả có cau_hinh_khach_hoi là \
+                        gói đúng cấu hình hoặc các gói gần nhất. Mọi con số giá, công suất, sản lượng, tiết kiệm nói \
+                        với khách phải lấy từ kết quả này, chép đúng cách viết.""", find),
                 tool(PACKAGE_DETAIL, """
                         Chi tiết một gói theo goi_id trong kết quả tim_goi_phu_hop: thành phần (tấm pin, inverter, \
                         pin lưu trữ, nhân công), hãng, bảo hành, giá, link, sản lượng theo tỉnh. Gọi khi khách hỏi \
@@ -248,9 +258,9 @@ public class CustomerChatTools {
                 tool(MATERIAL_LOOKUP, """
                         Tra thiết bị lẻ: giá niêm yết của tấm pin, biến tần (inverter), pin lưu trữ theo miền, \
                         hãng, thông số, bảo hành, link trang thiết bị và các gói đang bán có thiết bị đó. Gọi khi \
-                        khách hỏi giá riêng một thiết bị, bên mình có những loại / hãng nào, thông số hay bảo hành \
-                        của một thiết bị, hoặc gói nào có thiết bị đó. Phụ kiện (khung, dây, tủ điện, tiếp địa, \
-                        nhân công) không có giá lẻ. Giá thiết bị lẻ nói với khách chỉ lấy từ kết quả này, kèm \
+                        khách hỏi giá riêng một thiết bị, gửi link trang thiết bị, bên mình có những loại / hãng \
+                        nào, thông số hay bảo hành của một thiết bị, hoặc gói nào có thiết bị đó. Phụ kiện (khung, \
+                        dây, tủ điện, tiếp địa, nhân công) không có giá lẻ. Giá thiết bị lẻ nói với khách chỉ lấy từ kết quả này, kèm \
                         dieu_kien_gia_le; không cộng giá lẻ để ra giá một hệ hay cấu hình tự chọn.""", material));
     }
 

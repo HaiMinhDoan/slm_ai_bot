@@ -124,17 +124,26 @@ public class CustomerChatPromptBuilder {
         sb.append("Phân loại đến lượt trước: ")
                 .append(p == null || p.getQualification().isEmpty() ? "chưa có" : p.getQualification().toString())
                 .append(".\n");
-        if (s.firstTurnAfterHandback()) {
+        if (s.handedBackByStaff()) {
+            sb.append("Nhân viên vừa chủ động giao lại hội thoại cho bạn: lần chuyển nhân viên trước đã xong, không ")
+                    .append("nhắc lại là đã chuyển nhân viên. Tự trả lời câu khách còn đang chờ trong lịch sử; khách ")
+                    .append("giục (alo, đâu rồi, trả lời đi) chỉ là đang chờ câu trả lời. Chỉ đặt handoff.needed khi ")
+                    .append("khách nêu yêu cầu mới thuộc mục chuyển nhân viên hoặc nói rõ muốn gặp, gọi điện với ")
+                    .append("người.\n");
+        } else if (s.firstTurnAfterHandback()) {
             sb.append("Hội thoại vừa được trả lại cho bạn sau khi nhân viên theo: đọc kỹ các tin nhân viên đã nhắn, ")
-                    .append("không lặp lại hoặc nói trái với nhân viên.\n");
+                    .append("không lặp lại hoặc nói trái với nhân viên. Tự trả lời câu khách còn đang chờ; khách nhắn ")
+                    .append("lại không có nghĩa là muốn gặp nhân viên.\n");
         }
         if (pricingTools) {
             sb.append("Công cụ báo giá: có (tim_goi_phu_hop, chi_tiet_goi, tra_cuu_vat_tu). Khách hỏi giá, chi phí, ")
                     .append("nên lắp hệ nào, hoặc vừa cho thêm thông tin tư vấn thì gọi tim_goi_phu_hop trước khi trả ")
                     .append("lời; chỉ dùng con số và link trong kết quả công cụ (playbooks/khach-hoi-gia). Khách hỏi ")
                     .append("về một thiết bị (giá riêng tấm pin / biến tần / pin lưu trữ, có hãng hay loại nào khác, ")
-                    .append("thông số, bảo hành, gói nào có thiết bị đó) thì gọi tra_cuu_vat_tu và trả lời theo kết ")
-                    .append("quả, không chuyển nhân viên chỉ vì khách hỏi giá thiết bị lẻ.\n");
+                    .append("thông số, bảo hành, gói nào có thiết bị đó) hoặc gửi link trang thiết bị (/devices/…) ")
+                    .append("thì gọi tra_cuu_vat_tu và trả lời theo kết quả, không chuyển nhân viên chỉ vì khách hỏi ")
+                    .append("giá thiết bị lẻ. Khách hỏi giá một cấu hình tự nêu (số tấm, dung lượng pin) thì gọi ")
+                    .append("tim_goi_phu_hop với so_tam_pin / luu_tru_kwh và báo gói đúng hoặc gần nhất.\n");
         } else {
             sb.append("Công cụ báo giá: chưa có (bảng giá chưa đồng bộ). Không đưa con số giá, công suất, sản lượng; ")
                     .append("mời khách để lại số điện thoại để nhân viên gửi báo giá.\n");

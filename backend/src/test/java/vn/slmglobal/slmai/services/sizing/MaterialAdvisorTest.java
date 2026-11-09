@@ -136,6 +136,19 @@ class MaterialAdvisorTest {
     }
 
     @Test
+    void deviceLinkFromCustomerLooksUpThatDevice() {
+        // Hội thoại 2026-11-03: khách gửi link pin 14,3 kWh, AI trả lời "em không mở được link"
+        JsonNode r = advisor.lookup("https://slmsolar.vn/devices/60", null, "Hà Nội");
+        assertThat(ids(r)).containsExactly(60);
+        assertThat(r.path("vat_tu").get(0).path("gia_niem_yet").asText()).isEqualTo("51 triệu đồng");
+        assertThat(r.path("vat_tu").get(0).path("link").asText()).isEqualTo("https://slmsolar.vn/devices/60");
+
+        JsonNode gone = advisor.lookup("slmsolar.com.vn/devices/999", null, "Hà Nội");
+        assertThat(gone.path("vat_tu")).isEmpty();
+        assertThat(gone.path("ghi_chu").toString()).contains("link khách gửi");
+    }
+
+    @Test
     void tokensSplitNumbersAndUnits() {
         assertThat(MaterialMatcher.tokens("Pin 5,12kWh Hy-Brid")).containsExactly("pin", "5.12", "kwh", "hy", "brid");
     }

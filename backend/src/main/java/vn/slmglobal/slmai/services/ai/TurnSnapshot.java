@@ -19,6 +19,8 @@ import java.util.UUID;
  * @param inboundCount    số tin của khách lúc nhận lượt; lúc chốt mà tăng nghĩa là khách vừa nhắn thêm
  * @param history         các tin gần nhất, cũ trước
  * @param pendingInbound  tin của khách chưa được AI xử lý (RECEIVED), sẽ chuyển PROCESSED khi lượt được chốt
+ * @param firstTurnAfterHandback lượt đầu sau khi hội thoại tự trả lại AI (tu_tra_lai_luc)
+ * @param handedBackByStaff      lượt đầu sau khi nhân viên bấm "Chuyển cho AI" (nv_giao_lai_luc)
  * @param profile         hồ sơ tư vấn trước lượt này; null nếu chưa có
  */
 public record TurnSnapshot(
@@ -32,6 +34,7 @@ public record TurnSnapshot(
         List<Message> pendingInbound,
         ReplyMode replyMode,
         boolean firstTurnAfterHandback,
+        boolean handedBackByStaff,
         OffsetDateTime lastCustomerMessageAt,
         ConsultProfile profile,
         String customerPhone,
@@ -58,7 +61,7 @@ public record TurnSnapshot(
     /** Bản sao có tên khách (vừa lấy từ kênh) */
     public TurnSnapshot withCustomerName(String name) {
         return new TurnSnapshot(conversationId, customerId, channel, identity, leaseUntil, inboundCount, history,
-                pendingInbound, replyMode, firstTurnAfterHandback, lastCustomerMessageAt, profile, customerPhone, name,
-                salutation);
+                pendingInbound, replyMode, firstTurnAfterHandback, handedBackByStaff, lastCustomerMessageAt, profile,
+                customerPhone, name, salutation);
     }
 }

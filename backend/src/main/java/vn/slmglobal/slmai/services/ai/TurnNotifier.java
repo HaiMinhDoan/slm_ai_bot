@@ -35,6 +35,7 @@ public class TurnNotifier {
             Map.entry(ReplyPolicy.FORCE_DRAFT, "công tắc dừng AI đang bật"),
             Map.entry(ReplyPolicy.CONVERSATION_DRAFT_MODE, "hội thoại đang ở chế độ nháp"),
             Map.entry(ReplyPolicy.FIRST_TURN_AFTER_HANDBACK, "lượt đầu sau khi trả lại AI"),
+            Map.entry(ReplyPolicy.HANDOFF_AFTER_HANDBACK, "AI muốn chuyển lại nhân viên ngay sau khi được giao lại"),
             Map.entry(ReplyPolicy.INTENT_NOT_AUTO, "loại câu hỏi không được gửi tự động"),
             Map.entry(ReplyPolicy.NUMBER_CHECK_FAILED, "có con số chưa có nguồn"),
             Map.entry(ReplyPolicy.LINK_NOT_ALLOWED, "có đường link"),
@@ -73,7 +74,9 @@ public class TurnNotifier {
                     .type(NotificationType.HANDBACK_REPLY)
                     .severity(NotificationSeverity.WARNING)
                     .title("Khách nhắn lại sau khi trả AI: " + customer)
-                    .body("Hội thoại vừa tự trả lại AI, nháp trả lời đang chờ nhân viên xem.")
+                    .body("Hội thoại vừa tự trả lại AI, nháp trả lời đang chờ nhân viên xem"
+                            + (decision.reasons().contains(ReplyPolicy.HANDOFF_AFTER_HANDBACK)
+                            ? "; AI muốn chuyển lại nhân viên." : "."))
                     .data(data)
                     .conversationId(c.getId())
                     .customerId(c.getCustomerId())
