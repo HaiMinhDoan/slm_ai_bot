@@ -135,7 +135,8 @@ public class CustomerChatTools {
                     number(in, ConsultSlots.DIEN_TICH_MAI, slots),
                     text(in, "loai_he_thong", null),
                     in.path("can_du_phong_mat_dien").isBoolean() ? in.get("can_du_phong_mat_dien").asBoolean() : null,
-                    integer(in, "so_tam_pin", null), number(in, "luu_tru_kwh", null)));
+                    integer(in, "so_tam_pin", null), number(in, "luu_tru_kwh", null),
+                    in.path("de_xuat_ngay").asBoolean(false)));
             advice.quotedPackageIds().forEach(id -> {
                 if (!quotedPackageIds.contains(id)) {
                     quotedPackageIds.add(id);
@@ -222,6 +223,9 @@ public class CustomerChatTools {
         find.put("luu_tru_kwh", nullable(described(type("number"),
                 "Dung lượng pin lưu trữ khi khách tự nêu cấu hình, kWh (\"pin 5 số\" là 5; 0 khi khách muốn hệ "
                         + "không pin)")));
+        find.put("de_xuat_ngay", nullable(described(type("boolean"),
+                "true khi chưa đủ thông tin tối thiểu nhưng khách không biết hoặc không muốn trả lời phần còn thiếu, "
+                        + "hoặc hỏi giá lại: đề xuất gói theo thông tin đang có")));
 
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("goi_id", described(type("integer"),
@@ -244,10 +248,11 @@ public class CustomerChatTools {
         return List.of(
                 tool(FIND_PACKAGES, """
                         Tra bảng giá và chọn gói điện mặt trời cho khách. Gọi khi khách hỏi giá, chi phí, nên lắp \
-                        hệ nào, hoặc khi khách vừa cho thêm thông tin (tỉnh, tiền điện, 1 pha hay 3 pha, dùng điện \
-                        ngày hay đêm, loại mái). Điền mọi thông tin đã biết từ hồ sơ tư vấn và hội thoại, chưa biết \
-                        thì null. Chưa có tiền điện: trả giá khởi điểm của từng loại hệ. Có tiền điện: trả gói đề \
-                        xuất, giá, sản lượng, tiết kiệm ước tính và link sản phẩm. Khách hỏi giá một cấu hình tự nêu \
+                        hệ nào, hoặc khi vừa thu đủ thông tin tối thiểu (tỉnh, 1 pha hay 3 pha, tiền điện, dùng điện \
+                        ngày hay đêm, loại mái) để đề xuất gói. Điền mọi thông tin đã biết từ hồ sơ tư vấn và hội \
+                        thoại, chưa biết thì null. Chưa đủ thông tin tối thiểu: chỉ trả giá khởi điểm của từng loại \
+                        hệ, chưa đề xuất gói. Đủ thông tin: trả gói đề xuất, giá, sản lượng, tiết kiệm ước tính và \
+                        link sản phẩm. Khách hỏi giá một cấu hình tự nêu \
                         (số tấm, dung lượng pin): điền so_tam_pin / luu_tru_kwh, kết quả có cau_hinh_khach_hoi là \
                         gói đúng cấu hình hoặc các gói gần nhất. Mọi con số giá, công suất, sản lượng, tiết kiệm nói \
                         với khách phải lấy từ kết quả này, chép đúng cách viết.""", find),

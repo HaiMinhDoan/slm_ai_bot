@@ -151,9 +151,12 @@ public class CustomerChatPromptBuilder {
                 .append("đoạn đầu là một câu ngắn lịch sự đứng riêng (ví dụ \"Dạ em đây ạ\", \"Em xin lỗi đã để anh đợi ")
                 .append("lâu ạ\"), rồi mới tới nội dung.\n");
         if (pricingTools) {
-            sb.append("Công cụ báo giá: có (tim_goi_phu_hop, chi_tiet_goi, tra_cuu_vat_tu). Khách hỏi giá, chi phí, ")
-                    .append("nên lắp hệ nào, hoặc vừa cho thêm thông tin tư vấn thì gọi tim_goi_phu_hop trước khi trả ")
-                    .append("lời; chỉ dùng con số và link trong kết quả công cụ (playbooks/khach-hoi-gia). Khách hỏi ")
+            sb.append("Công cụ báo giá: có (tim_goi_phu_hop, chi_tiet_goi, tra_cuu_vat_tu). Chưa đủ thông tin tối ")
+                    .append("thiểu thì chưa đề xuất gói: hỏi lần lượt thông tin còn thiếu, mỗi tin một câu; khách hỏi ")
+                    .append("giá thì gọi tim_goi_phu_hop và chỉ nói giá khởi điểm một lần. Vừa đủ thông tin tối thiểu ")
+                    .append("thì gọi tim_goi_phu_hop để đề xuất gói. Đã đề xuất rồi thì không nhắc lại gói ở mỗi tin, ")
+                    .append("chỉ báo lại khi khách hỏi hoặc khách đổi thông tin làm đổi gói. Chỉ dùng con số và link ")
+                    .append("trong kết quả công cụ (playbooks/khach-hoi-gia). Khách hỏi ")
                     .append("về một thiết bị (giá riêng tấm pin / biến tần / pin lưu trữ, có hãng hay loại nào khác, ")
                     .append("thông số, bảo hành, gói nào có thiết bị đó) hoặc gửi link trang thiết bị (/devices/…) ")
                     .append("thì gọi tra_cuu_vat_tu và trả lời theo kết quả, không chuyển nhân viên chỉ vì khách hỏi ")

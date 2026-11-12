@@ -21,10 +21,12 @@ import java.util.Optional;
  * về giá, công suất, sản lượng, tiết kiệm đều do lớp này tính, kèm chuỗi hiển thị để AI chép nguyên văn.
  *
  * <ul>
- *   <li>Chưa có hoá đơn: trả giá khởi điểm theo loại hệ / số pha của miền khách (báo khoảng giá sớm), không trả
- *       dải giá của cả catalog.</li>
- *   <li>Có hoá đơn: tính công suất và pin cần (SizingService), chọn gói rẻ nhất đáp ứng; chưa biết tỉnh hoặc tỷ lệ
- *       ngày / đêm thì trả khoảng (gói nhỏ nhất và lớn nhất có thể).</li>
+ *   <li>Chưa đủ thông tin tối thiểu (ConsultSlots.REQUIRED: tỉnh, số pha, tiền điện, ngày / đêm, loại mái): chỉ trả
+ *       giá khởi điểm theo loại hệ / số pha của miền khách, không đề xuất gói (2026-11-12: trước đây khách cho thêm
+ *       một thông tin là AI báo gói một lần). AI đặt {@code de_xuat_ngay} khi khách không biết / không muốn trả lời
+ *       phần còn thiếu.</li>
+ *   <li>Đủ thông tin: tính công suất và pin cần (SizingService), chọn gói rẻ nhất đáp ứng; đề xuất ngay khi còn
+ *       thiếu tỉnh hoặc tỷ lệ ngày / đêm thì trả khoảng (gói nhỏ nhất và lớn nhất có thể).</li>
  *   <li>Khách tự nêu cấu hình (số tấm, dung lượng pin, 2026-11-09): thêm {@code cau_hinh_khach_hoi} gồm gói đúng cấu
  *       hình, không có thì gói gần nhất ít tấm hơn và nhiều tấm hơn.</li>
  *   <li>Sản lượng theo PV out EVN của tỉnh; link sản phẩm theo miền (Bắc slmsolar.vn, Nam slmsolar.com.vn).</li>
@@ -51,17 +53,19 @@ public class PackageAdvisor {
     /**
      * Thông tin khách đã có; trường chưa biết là null.
      *
-     * @param panelCount số tấm pin khách tự nêu ("12 tấm")
-     * @param storageKwh dung lượng pin lưu trữ khách tự nêu ("pin 5 số" là 5; 0 là hệ không pin)
+     * @param panelCount   số tấm pin khách tự nêu ("12 tấm")
+     * @param storageKwh   dung lượng pin lưu trữ khách tự nêu ("pin 5 số" là 5; 0 là hệ không pin)
+     * @param recommendNow đề xuất gói dù chưa đủ thông tin tối thiểu (khách không biết / không muốn trả lời phần
+     *                     còn thiếu, hoặc hỏi giá lại)
      */
     public record AdviceRequest(String province, Integer phases, Long monthlyBillVnd, String dayNight,
                                 String roofType, Double roofAreaM2, String systemType, Boolean backupNeeded,
-                                Integer panelCount, Double storageKwh) {
+                                Integer panelCount, Double storageKwh, boolean recommendNow) {
 
         public AdviceRequest(String province, Integer phases, Long monthlyBillVnd, String dayNight, String roofType,
                              Double roofAreaM2, String systemType, Boolean backupNeeded) {
             this(province, phases, monthlyBillVnd, dayNight, roofType, roofAreaM2, systemType, backupNeeded, null,
-                    null);
+                    null, false);
         }
 
         boolean configurationAsked() {
@@ -128,13 +132,25 @@ public class PackageAdvisor {
             }
         }
         boolean billKnown = r.monthlyBillVnd() != null && r.monthlyBillVnd() > 0;
-        if (!billKnown || place.table() == null) {
-            if (billKnown) {
+        ArrayNode missing = missing(r, place);
+        // Hỏi đủ thông tin tối thiểu rồi mới đề xuất gói (2026-11-12): trước đó chỉ có giá khởi điểm
+        boolean ready = missing.isEmpty() || r.recommendNow();
+        if (!ready || !billKnown || place.table() == null) {
+            startingPrices(out, all, r.phases(), preferred, place);
+            if (!ready) {
+                List<String> keys = new ArrayList<>();
+                missing.forEach(k -> keys.add(k.asText()));
+                notes.add("Chưa đủ thông tin tối thiểu để đề xuất gói (còn thiếu " + String.join(", ", keys) + "): "
+                        + "không nêu gói, công suất hay giá của gói cụ thể. Khách hỏi giá thì chỉ nói giá khởi điểm "
+                        + "trong gia_khoi_diem (một câu, không nhắc lại nếu đã nói), rồi hỏi một thông tin còn "
+                        + "thiếu. Khách không biết hoặc không muốn trả lời phần còn thiếu, hoặc hỏi giá lại, thì gọi "
+                        + "lại với de_xuat_ngay = true.");
+            } else if (!billKnown) {
+                notes.add("Chưa biết tiền điện mỗi tháng: đây là giá khởi điểm của từng loại hệ. Hỏi tiền điện để "
+                        + "chọn đúng gói.");
+            } else {
                 notes.add("Chưa có bảng PV out để tính công suất: tạm đưa giá khởi điểm.");
             }
-            startingPrices(out, all, r.phases(), preferred, place);
-            notes.add("Chưa biết tiền điện mỗi tháng: đây là giá khởi điểm của từng loại hệ. Hỏi tiền điện để chọn "
-                    + "đúng gói.");
         } else {
             out.put("che_do", "DE_XUAT");
             SizingService.Sizing s = sizing.size(r.monthlyBillVnd(), r.dayNight(),
@@ -191,7 +207,7 @@ public class PackageAdvisor {
                         + "nhu cầu vượt gói 1 pha lớn nhất.");
             }
         }
-        out.set("con_thieu", missing(r, place));
+        out.set("con_thieu", missing);
         if (pricing().quoteConditions() != null) {
             out.put("dieu_kien_bao_gia", pricing().quoteConditions());
         }
@@ -460,11 +476,6 @@ public class PackageAdvisor {
                 });
             }
         }
-        ArrayNode best = out.putArray("goi_ban_chay");
-        all.stream().filter(CatalogPackage::bestSeller)
-                .filter(p -> phases == null || phases.equals(p.phases()))
-                .filter(p -> preferred == null || preferred.equals(p.systemType()))
-                .limit(3).forEach(p -> best.add(summary(p, place)));
     }
 
     // ------------------------------------------------------------------ dựng kết quả

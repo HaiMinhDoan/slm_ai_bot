@@ -89,9 +89,26 @@ class PackageAdvisorTest {
     }
 
     @Test
-    void dayHeavyGetsOnGridAndSmallBatteryHybrid() {
+    void noPackageUntilMinimumInfoIsComplete() {
+        // Đã biết tiền điện nhưng chưa biết loại mái: chỉ giá khởi điểm, chưa đề xuất gói (2026-11-12)
         PackageAdvisor.Advice a = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", 1, 2_000_000L,
                 "NGAY_NHIEU", null, null, null, null));
+        JsonNode r = a.result();
+        assertThat(r.path("che_do").asText()).isEqualTo("GIA_KHOI_DIEM");
+        assertThat(r.has("goi_de_xuat")).isFalse();
+        assertThat(r.has("goi_ban_chay")).isFalse();
+        assertThat(r.path("gia_khoi_diem").get(0).path("gia_tu").asText()).isEqualTo("53,6 triệu đồng");
+        assertThat(r.path("con_thieu").toString()).isEqualTo("[\"loai_mai\"]");
+        assertThat(r.path("ghi_chu").toString()).contains("Chưa đủ thông tin tối thiểu", "loai_mai", "de_xuat_ngay");
+        assertThat(a.quotedPackageIds()).isEmpty();
+        assertThat(a.cheapestQuotedVnd()).isNull();
+    }
+
+    @Test
+    void dayHeavyGetsOnGridAndSmallBatteryHybrid() {
+        // Khách không biết loại mái: đề xuất ngay theo thông tin đang có
+        PackageAdvisor.Advice a = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", 1, 2_000_000L,
+                "NGAY_NHIEU", null, null, null, null, null, null, true));
         List<Integer> ids = new ArrayList<>();
         a.result().path("goi_de_xuat").forEach(o -> ids.add(o.path("goi_id").asInt()));
         // On-Grid 8,75 kWp; Hybrid 8,75 kWp với pin ≥ 6,35 kWh (10,24 kWh)
@@ -120,7 +137,7 @@ class PackageAdvisorTest {
     @Test
     void unknownProvinceGivesRangeWithoutLinks() {
         PackageAdvisor.Advice a = advisor.advise(new PackageAdvisor.AdviceRequest(null, null, 2_000_000L, null,
-                null, null, null, null));
+                null, null, null, null, null, null, true));
         JsonNode r = a.result();
         assertThat(r.path("uoc_tinh").path("cong_suat_can").asText()).contains(" đến ");
         assertThat(r.path("goi_de_xuat").size()).isGreaterThanOrEqualTo(2);
@@ -143,7 +160,7 @@ class PackageAdvisorTest {
     void customerConfigurationGetsNearestPackages() {
         // Hội thoại 2026-11-03: "12 tấm và lưu 5 số, thì bao tiền?" — không có gói 12 tấm, gần nhất 8 và 14 tấm
         PackageAdvisor.Advice a = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", null, null, null, null,
-                null, null, null, 12, 5.0));
+                null, null, null, 12, 5.0, false));
         JsonNode cfg = a.result().path("cau_hinh_khach_hoi");
         assertThat(cfg.path("yeu_cau").asText()).isEqualTo("12 tấm, pin lưu trữ 5 kWh");
         assertThat(cfg.path("co_goi_dung_cau_hinh").asBoolean()).isFalse();
@@ -157,18 +174,18 @@ class PackageAdvisorTest {
         assertThat(a.cheapestQuotedVnd()).isEqualTo(90_800_000L);
 
         JsonNode exact = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", 1, null, null, null, null, null,
-                null, 14, 16.0)).result().path("cau_hinh_khach_hoi");
+                null, 14, 16.0, false)).result().path("cau_hinh_khach_hoi");
         assertThat(exact.path("co_goi_dung_cau_hinh").asBoolean()).isTrue();
         assertThat(exact.path("goi_gan_nhat").findValues("goi_id")).extracting(JsonNode::asInt).containsExactly(105);
 
         JsonNode onGrid = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", null, null, null, null, null,
-                null, null, 12, 0.0)).result().path("cau_hinh_khach_hoi");
+                null, null, 12, 0.0, false)).result().path("cau_hinh_khach_hoi");
         assertThat(onGrid.path("goi_gan_nhat").findValues("goi_id")).extracting(JsonNode::asInt)
                 .containsExactly(158, 160);
 
         // Chỉ nêu pin: gói rẻ nhất có pin từ 7 kWh trở lên (10,24 kWh) và gói đúng 7 kWh (Huawei, đắt hơn)
         JsonNode battery = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", null, null, null, null, null,
-                null, null, null, 7.0)).result().path("cau_hinh_khach_hoi");
+                null, null, null, 7.0, false)).result().path("cau_hinh_khach_hoi");
         assertThat(battery.path("goi_gan_nhat").findValues("goi_id")).extracting(JsonNode::asInt)
                 .containsExactly(99, 164);
         assertThat(battery.path("co_goi_dung_cau_hinh").asBoolean()).isTrue();

@@ -4888,6 +4888,15 @@ Cách tư vấn:
 
 **Thay đổi so với thiết kế trước:** playbook "khách hỏi giá" ở mục 13 trước đây là "không báo giá ngay". Chiến lược này thay thế bằng "báo khoảng giá sớm và hỏi một câu"; mục 13 đã được cập nhật theo.
 
+**Cập nhật 2026-11-12 (doanh nghiệp yêu cầu):**
+- **Vấn đề:** cứ mỗi lần khách trả lời một câu hỏi, AI lại báo gói, vì ngữ cảnh lượt và prompt bảo gọi `tim_goi_phu_hop` mỗi khi khách cho thêm thông tin.
+- **Giờ:** hỏi đủ thông tin tối thiểu (mục 58.4: tỉnh, số pha, tiền điện, ngày / đêm, loại mái) rồi mới đề xuất gói.
+- **Chặn trong code:** chưa đủ thông tin thì `tim_goi_phu_hop` chỉ trả giá khởi điểm (`GIA_KHOI_DIEM`, bỏ `goi_ban_chay`), không trả gói đề xuất. Việc này không phụ thuộc vào câu chữ của prompt.
+- **Khách hỏi giá sớm:** AI báo giá khởi điểm một lần, rồi hỏi tiếp thông tin còn thiếu.
+- **Khách không biết, không muốn trả lời, hoặc hỏi giá lại:** AI gọi lại với `de_xuat_ngay = true` để đề xuất theo thông tin đang có.
+- **Sau khi đã đề xuất:** không nhắc lại gói ở mỗi tin.
+- **Tài liệu đã sửa:** `playbooks/khach-hoi-gia` (bước 1–5), `playbooks/tu-van-lap-moi`, `prompts/customer-chat`, cùng ngữ cảnh lượt và mô tả tool.
+
 ## 58.3 Ba câu hỏi cần trả lời sau khi tư vấn
 
 | Câu hỏi | Trường lưu | Cách AI xác định |
