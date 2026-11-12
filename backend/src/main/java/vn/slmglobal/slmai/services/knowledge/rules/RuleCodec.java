@@ -78,7 +78,15 @@ public final class RuleCodec {
         }
         m.put("night_share", night);
         m.put("battery_depth", p.batteryDepth());
-        m.put("capacity_tolerance", p.capacityTolerance());
+        m.put("coverage", p.coverage());
+        m.put("cheaper_coverage", p.cheaperCoverage());
+        Map<String, Object> battery = new LinkedHashMap<>();
+        for (String k : ConsultSlots.DAY_NIGHT_VALUES) {
+            if (p.batteryPerMillion().containsKey(k)) {
+                battery.put(k, p.batteryPerMillion().get(k));
+            }
+        }
+        m.put("battery_per_million", battery);
         m.put("roof_area_per_kwp", p.roofAreaPerKwp());
         m.put("large_system_kwp", p.largeSystemKwp());
         Map<String, Object> domains = new LinkedHashMap<>();
@@ -151,8 +159,10 @@ public final class RuleCodec {
         }
         JsonNode n = t.value();
         List<String> errors = new ArrayList<>();
-        unknown(n, Set.of("price_per_kwh", "night_share", "battery_depth", "capacity_tolerance", "roof_area_per_kwp",
-                "large_system_kwp", "product_link_domains", "quote_conditions", "flat_roof_note"), errors);
+        // capacity_tolerance: bỏ từ 2026-11-12 (chọn gói gần nhất); bản phát hành cũ còn trường này vẫn đọc được
+        unknown(n, Set.of("price_per_kwh", "night_share", "battery_depth", "coverage", "cheaper_coverage",
+                "battery_per_million", "capacity_tolerance", "roof_area_per_kwp", "large_system_kwp",
+                "product_link_domains", "quote_conditions", "flat_roof_note"), errors);
         double price = number(n, "price_per_kwh", 500, 20_000, errors);
         Map<String, Double> night = new LinkedHashMap<>();
         JsonNode ns = n.path("night_share");
@@ -167,7 +177,28 @@ public final class RuleCodec {
             errors.add("night_share: tỷ lệ điện đêm phải tăng dần: khách dùng ngày nhiều ≤ cân bằng ≤ dùng đêm nhiều");
         }
         double depth = number(n, "battery_depth", 0.1, 1, errors);
-        double tolerance = number(n, "capacity_tolerance", 0.5, 1, errors);
+        // Ba trường dưới có từ 2026-11-12: bản phát hành cũ thiếu thì dùng mặc định của PricingProperties
+        double coverage = n.has("coverage") ? number(n, "coverage", 0.3, 1.5, errors) : 0;
+        double cheaper = n.has("cheaper_coverage") ? number(n, "cheaper_coverage", 0.3, 1.5, errors) : 0;
+        if (!Double.isNaN(coverage) && !Double.isNaN(cheaper)
+                && (cheaper > 0 ? cheaper : 0.8) >= (coverage > 0 ? coverage : 1)) {
+            errors.add("cheaper_coverage: mức bù khi khách chê đắt phải nhỏ hơn mức bù của đề xuất đầu");
+        }
+        Map<String, Double> battery = null;
+        if (n.has("battery_per_million")) {
+            battery = new LinkedHashMap<>();
+            JsonNode bp = n.path("battery_per_million");
+            for (String k : ConsultSlots.DAY_NIGHT_VALUES) {
+                battery.put(k, number(bp, k, 0, 20, errors, "battery_per_million." + k));
+            }
+            unknown(bp, Set.copyOf(ConsultSlots.DAY_NIGHT_VALUES), errors, "battery_per_million");
+            if (battery.values().stream().noneMatch(v -> Double.isNaN(v))
+                    && !(battery.get("NGAY_NHIEU") <= battery.get("CAN_BANG")
+                    && battery.get("CAN_BANG") <= battery.get("DEM_NHIEU"))) {
+                errors.add("battery_per_million: pin phải tăng dần: khách dùng ngày nhiều ≤ cân bằng ≤ dùng đêm "
+                        + "nhiều");
+            }
+        }
         double roof = number(n, "roof_area_per_kwp", 1, 20, errors);
         double large = number(n, "large_system_kwp", 1, 1000, errors);
         Map<String, String> domains = new LinkedHashMap<>();
@@ -185,8 +216,8 @@ public final class RuleCodec {
         if (!errors.isEmpty()) {
             return new Parsed<>(null, errors);
         }
-        return new Parsed<>(new PricingProperties((long) price, night, depth, tolerance, roof, large, domains,
-                conditions, flatRoof), List.of());
+        return new Parsed<>(new PricingProperties((long) price, night, depth, coverage, cheaper, battery, roof, large,
+                domains, conditions, flatRoof), List.of());
     }
 
     public static Parsed<LeadScoringRule> leadScoring(String yaml) {

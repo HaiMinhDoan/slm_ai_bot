@@ -153,7 +153,14 @@ app:
       CAN_BANG: 0.5
       DEM_NHIEU: 0.7
     battery-depth: 0.9
-    capacity-tolerance: 0.9
+    # Chọn gói (2026-11-12): công suất để hệ làm ra coverage × điện nhà dùng, lấy gói gần nhất; khách chê đắt thì
+    # cheaper-coverage. Pin = tiền điện (triệu) × battery-per-million theo ngày / đêm (0 = không cần pin)
+    coverage: 1.0
+    cheaper-coverage: 0.8
+    battery-per-million:
+      NGAY_NHIEU: 0
+      CAN_BANG: 2.5
+      DEM_NHIEU: 4
     roof-area-per-kwp: 5
     large-system-kwp: 30
     # Link sản phẩm theo miền khách: https://<tên miền>/products/<id gói của cơ sở giá miền đó>

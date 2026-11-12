@@ -127,6 +127,9 @@
         ...values,
         province: province.value,
         backupNeeded: values.backupNeeded == null ? undefined : values.backupNeeded === 'true',
+        cheaper: values.cheaper === 'true',
+        // Trang thử luôn đề xuất gói theo thông tin đã nhập, kể cả khi AI còn phải hỏi thêm
+        recommendNow: true,
       });
     } finally {
       setProps({ submitButtonOptions: { loading: false } });

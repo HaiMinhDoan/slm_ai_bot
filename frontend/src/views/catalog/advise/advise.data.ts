@@ -23,6 +23,7 @@ export const KEY_LABELS: Record<string, string> = {
   dien_dung_thang: 'Điện dùng mỗi tháng',
   ty_le_dung_dem: 'Tỷ lệ dùng đêm',
   cong_suat_can: 'Công suất cần',
+  muc_bu: 'Mức bù',
   pin_can_neu_dung_hybrid: 'Pin cần (Hybrid)',
   cong_suat_toi_da_theo_mai: 'Tối đa theo mái',
   pvout: 'PV out',
@@ -92,6 +93,18 @@ export const adviseFormSchema: FormSchema[] = [
     componentProps: {
       options: [
         { label: 'Có', value: 'true' },
+        { label: 'Không', value: 'false' },
+      ],
+      allowClear: true,
+    },
+  },
+  {
+    field: 'cheaper',
+    label: 'Khách chê đắt',
+    component: 'Select',
+    componentProps: {
+      options: [
+        { label: 'Có: tìm gói nhỏ hơn', value: 'true' },
         { label: 'Không', value: 'false' },
       ],
       allowClear: true,

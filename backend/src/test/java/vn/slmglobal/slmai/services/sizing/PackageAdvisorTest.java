@@ -28,7 +28,7 @@ class PackageAdvisorTest {
 
     @BeforeEach
     void setUp() {
-        PricingProperties pricing = new PricingProperties(3500, null, 0, 0, 0, 0,
+        PricingProperties pricing = new PricingProperties(3500, null, 0, 0, 0, null, 0, 0,
                 Map.of("BAC", "slmsolar.vn", "NAM", "slmsolar.com.vn"),
                 "Đây là giá niêm yết của gói trọn gói; giá cuối cùng nhân viên báo sau khi khảo sát thực tế.",
                 "Mái bằng cần thêm phần khung, chi phí khung nhân viên báo sau khi khảo sát.");
@@ -63,29 +63,64 @@ class PackageAdvisorTest {
     }
 
     @Test
-    void planExampleHanoiTwoMillionEveningHeavy() {
-        // Mục 60.3 bước 6: E ≈ 19 kWh/ngày, pin ≈ 14,8 kWh → 16 kWh, kWp ≈ 7,6 → gói 105 (144,2 triệu)
+    void hanoiTwoMillionEveningHeavyGetsTheNearestPackage() {
+        // 2026-11-12: E ≈ 19 kWh/ngày, công suất cho 100% điện dùng ≈ 7,62 kWp → mức gần nhất 8,75 kWp (gói Huawei
+        // 6,4 kWp + 7 kWh 186,7 triệu bị loại vì gói 104 lớn hơn mà rẻ hơn); pin 2 × 4 = 8 kWh → 10,24 kWh
         PackageAdvisor.Advice a = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", 1, 2_000_000L,
                 "DEM_NHIEU", "TON", null, null, null));
         JsonNode r = a.result();
         assertThat(r.path("che_do").asText()).isEqualTo("DE_XUAT");
         assertThat(r.path("goi_de_xuat")).hasSize(1);
         JsonNode best = r.path("goi_de_xuat").get(0);
-        assertThat(best.path("goi_id").asInt()).isEqualTo(105);
-        assertThat(best.path("gia").asText()).isEqualTo("144,2 triệu đồng");
-        assertThat(best.path("gia_day_du").asText()).isEqualTo("144.200.000 đ");
+        assertThat(best.path("goi_id").asInt()).isEqualTo(104);
+        assertThat(best.path("gia").asText()).isEqualTo("136,2 triệu đồng");
+        assertThat(best.path("gia_day_du").asText()).isEqualTo("136.200.000 đ");
         assertThat(best.path("cong_suat").asText()).isEqualTo("8,75 kWp");
-        assertThat(best.path("luu_tru").asText()).isEqualTo("16 kWh");
-        assertThat(best.path("link").asText()).isEqualTo("https://slmsolar.vn/products/105");
+        assertThat(best.path("luu_tru").asText()).isEqualTo("10,24 kWh");
+        assertThat(best.has("luu_y")).isFalse();
+        assertThat(best.path("link").asText()).isEqualTo("https://slmsolar.vn/products/104");
         assertThat(best.path("san_luong_uoc_tinh").path("trung_binh").asText()).isEqualTo("khoảng 665 kWh/tháng");
         assertThat(best.path("san_luong_uoc_tinh").path("thang_thap_nhat").asText()).contains("tháng 2");
         assertThat(best.path("tiet_kiem_uoc_tinh").path("hoan_von").asText()).startsWith("khoảng ");
         assertThat(r.path("uoc_tinh").path("dien_dung_ngay").asText()).isEqualTo("khoảng 19 kWh/ngày");
         assertThat(r.path("uoc_tinh").path("cong_suat_can").asText()).isEqualTo("khoảng 7,62 kWp");
-        assertThat(r.path("uoc_tinh").path("pin_can_neu_dung_hybrid").asText()).isEqualTo("khoảng 14,81 kWh");
+        assertThat(r.path("uoc_tinh").path("muc_bu").asText()).isEqualTo("hệ làm ra khoảng 100% điện nhà dùng");
+        assertThat(r.path("uoc_tinh").path("pin_can_neu_dung_hybrid").asText()).isEqualTo("khoảng 8 kWh");
         assertThat(r.path("con_thieu")).isEmpty();
-        assertThat(a.quotedPackageIds()).containsExactly(105);
-        assertThat(a.cheapestQuotedVnd()).isEqualTo(144_200_000L);
+        assertThat(r.path("ghi_chu").toString()).contains("re_hon = true");
+        assertThat(a.quotedPackageIds()).containsExactly(104);
+        assertThat(a.cheapestQuotedVnd()).isEqualTo(136_200_000L);
+    }
+
+    @Test
+    void customerFindingItExpensiveGetsACheaperNearestPackage() {
+        // Ca Lê Huy Sĩ: 3 triệu, tối dùng nhiều. 100%: 11,43 kWp → 10,63 kWp + 16 kWh (167,9 triệu); chê đắt, 80%:
+        // 9,15 kWp → 8,75 kWp, pin 12 kWh gần 10,24 kWh nhất → 136,2 triệu
+        JsonNode first = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", 1, 3_000_000L, "DEM_NHIEU", "TON",
+                null, null, null)).result();
+        assertThat(first.path("goi_de_xuat").get(0).path("goi_id").asInt()).isEqualTo(111);
+
+        PackageAdvisor.Advice a = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", 1, 3_000_000L,
+                "DEM_NHIEU", "TON", null, null, null, null, null, false, true));
+        JsonNode r = a.result();
+        assertThat(r.path("goi_de_xuat")).hasSize(1);
+        assertThat(r.path("goi_de_xuat").get(0).path("goi_id").asInt()).isEqualTo(104);
+        assertThat(r.path("goi_de_xuat").get(0).has("luu_y")).isFalse();
+        assertThat(r.path("uoc_tinh").path("muc_bu").asText()).isEqualTo("hệ làm ra khoảng 80% điện nhà dùng");
+        assertThat(r.path("ghi_chu").toString()).contains("Phương án rẻ hơn", "80%");
+        assertThat(a.cheapestQuotedVnd()).isEqualTo(136_200_000L);
+
+        // 2 triệu: gói rẻ hơn 5 kWp nhỏ hơn mức 80% (6,1 kWp) là chủ ý, không ghi "lớn hơn gói lớn nhất"
+        JsonNode two = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", 1, 2_000_000L, "DEM_NHIEU", "TON",
+                null, null, null, null, null, false, true)).result().path("goi_de_xuat").get(0);
+        assertThat(two.path("goi_id").asInt()).isEqualTo(99);
+        assertThat(two.has("luu_y")).isFalse();
+
+        // Gói hòa lưới nhỏ nhất: không còn gói rẻ hơn thì giữ gói đó kèm lưu ý
+        JsonNode smallest = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", 1, 1_000_000L, "NGAY_NHIEU",
+                "TON", null, "ON_GRID", null, null, null, false, true)).result().path("goi_de_xuat").get(0);
+        assertThat(smallest.path("goi_id").asInt()).isEqualTo(158);
+        assertThat(smallest.path("luu_y").asText()).contains("Không có gói", "rẻ hơn");
     }
 
     @Test
@@ -108,11 +143,11 @@ class PackageAdvisorTest {
     void dayHeavyGetsOnGridAndSmallBatteryHybrid() {
         // Khách không biết loại mái: đề xuất ngay theo thông tin đang có
         PackageAdvisor.Advice a = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", 1, 2_000_000L,
-                "NGAY_NHIEU", null, null, null, null, null, null, true));
+                "NGAY_NHIEU", null, null, null, null, null, null, true, false));
         List<Integer> ids = new ArrayList<>();
         a.result().path("goi_de_xuat").forEach(o -> ids.add(o.path("goi_id").asInt()));
-        // On-Grid 8,75 kWp; Hybrid 8,75 kWp với pin ≥ 6,35 kWh (10,24 kWh)
-        assertThat(ids).containsExactly(160, 104);
+        // Không cần pin: On-Grid 8,75 kWp; Hybrid 8,75 kWp pin nhỏ nhất (5,12 kWh)
+        assertThat(ids).containsExactly(160, 101);
         assertThat(a.cheapestQuotedVnd()).isEqualTo(84_200_000L);
         assertThat(a.result().path("khoang_gia").path("tu").asText()).isEqualTo("84,2 triệu đồng");
         assertThat(a.result().path("con_thieu").toString()).contains("loai_mai");
@@ -137,7 +172,7 @@ class PackageAdvisorTest {
     @Test
     void unknownProvinceGivesRangeWithoutLinks() {
         PackageAdvisor.Advice a = advisor.advise(new PackageAdvisor.AdviceRequest(null, null, 2_000_000L, null,
-                null, null, null, null, null, null, true));
+                null, null, null, null, null, null, true, false));
         JsonNode r = a.result();
         assertThat(r.path("uoc_tinh").path("cong_suat_can").asText()).contains(" đến ");
         assertThat(r.path("goi_de_xuat").size()).isGreaterThanOrEqualTo(2);
@@ -160,7 +195,7 @@ class PackageAdvisorTest {
     void customerConfigurationGetsNearestPackages() {
         // Hội thoại 2026-11-03: "12 tấm và lưu 5 số, thì bao tiền?" — không có gói 12 tấm, gần nhất 8 và 14 tấm
         PackageAdvisor.Advice a = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", null, null, null, null,
-                null, null, null, 12, 5.0, false));
+                null, null, null, 12, 5.0, false, false));
         JsonNode cfg = a.result().path("cau_hinh_khach_hoi");
         assertThat(cfg.path("yeu_cau").asText()).isEqualTo("12 tấm, pin lưu trữ 5 kWh");
         assertThat(cfg.path("co_goi_dung_cau_hinh").asBoolean()).isFalse();
@@ -174,18 +209,18 @@ class PackageAdvisorTest {
         assertThat(a.cheapestQuotedVnd()).isEqualTo(90_800_000L);
 
         JsonNode exact = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", 1, null, null, null, null, null,
-                null, 14, 16.0, false)).result().path("cau_hinh_khach_hoi");
+                null, 14, 16.0, false, false)).result().path("cau_hinh_khach_hoi");
         assertThat(exact.path("co_goi_dung_cau_hinh").asBoolean()).isTrue();
         assertThat(exact.path("goi_gan_nhat").findValues("goi_id")).extracting(JsonNode::asInt).containsExactly(105);
 
         JsonNode onGrid = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", null, null, null, null, null,
-                null, null, 12, 0.0, false)).result().path("cau_hinh_khach_hoi");
+                null, null, 12, 0.0, false, false)).result().path("cau_hinh_khach_hoi");
         assertThat(onGrid.path("goi_gan_nhat").findValues("goi_id")).extracting(JsonNode::asInt)
                 .containsExactly(158, 160);
 
         // Chỉ nêu pin: gói rẻ nhất có pin từ 7 kWh trở lên (10,24 kWh) và gói đúng 7 kWh (Huawei, đắt hơn)
         JsonNode battery = advisor.advise(new PackageAdvisor.AdviceRequest("Hà Nội", null, null, null, null, null,
-                null, null, null, 7.0, false)).result().path("cau_hinh_khach_hoi");
+                null, null, null, 7.0, false, false)).result().path("cau_hinh_khach_hoi");
         assertThat(battery.path("goi_gan_nhat").findValues("goi_id")).extracting(JsonNode::asInt)
                 .containsExactly(99, 164);
         assertThat(battery.path("co_goi_dung_cau_hinh").asBoolean()).isTrue();

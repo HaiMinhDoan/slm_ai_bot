@@ -25,8 +25,9 @@ import java.util.Optional;
  *       giá khởi điểm theo loại hệ / số pha của miền khách, không đề xuất gói (2026-11-12: trước đây khách cho thêm
  *       một thông tin là AI báo gói một lần). AI đặt {@code de_xuat_ngay} khi khách không biết / không muốn trả lời
  *       phần còn thiếu.</li>
- *   <li>Đủ thông tin: tính công suất và pin cần (SizingService), chọn gói rẻ nhất đáp ứng; đề xuất ngay khi còn
- *       thiếu tỉnh hoặc tỷ lệ ngày / đêm thì trả khoảng (gói nhỏ nhất và lớn nhất có thể).</li>
+ *   <li>Đủ thông tin: tính công suất (hệ làm ra 100% điện nhà dùng) và pin cần (SizingService), chọn gói gần nhất
+ *       (2026-11-12). Khách chê đắt ({@code re_hon}): tính lại với mức bù 80%, gói gần nhất rẻ hơn gói đề xuất đầu.
+ *       Đề xuất ngay khi còn thiếu tỉnh hoặc tỷ lệ ngày / đêm thì trả khoảng (gói nhỏ nhất và lớn nhất có thể).</li>
  *   <li>Khách tự nêu cấu hình (số tấm, dung lượng pin, 2026-11-09): thêm {@code cau_hinh_khach_hoi} gồm gói đúng cấu
  *       hình, không có thì gói gần nhất ít tấm hơn và nhiều tấm hơn.</li>
  *   <li>Sản lượng theo PV out EVN của tỉnh; link sản phẩm theo miền (Bắc slmsolar.vn, Nam slmsolar.com.vn).</li>
@@ -42,6 +43,10 @@ public class PackageAdvisor {
     static final String DEFAULT_BRANCH = "HN";
     /** Khách nói "pin 5 số" là gói pin 5,12 kWh: lệch dưới mức này coi như đúng dung lượng khách hỏi */
     static final double STORAGE_MATCH_KWH = 0.5;
+    /** Gói gần nhất vẫn nhỏ hơn công suất cần quá mức này (vì mái hoặc hết gói lớn hơn) thì ghi chú */
+    static final double SHORT_OF_NEED = 1.15;
+    /** Pin của gói gần nhất thấp hơn mức này so với pin cần thì ghi chú có thể bổ sung pin */
+    static final double BATTERY_SHORT = 0.75;
 
     private final CatalogRepository catalog;
     private final ProvinceDirectory provinces;
@@ -57,15 +62,16 @@ public class PackageAdvisor {
      * @param storageKwh   dung lượng pin lưu trữ khách tự nêu ("pin 5 số" là 5; 0 là hệ không pin)
      * @param recommendNow đề xuất gói dù chưa đủ thông tin tối thiểu (khách không biết / không muốn trả lời phần
      *                     còn thiếu, hoặc hỏi giá lại)
+     * @param cheaper      khách chê đắt / ngân sách thấp: mức bù thấp hơn, gói rẻ hơn gói đề xuất đầu
      */
     public record AdviceRequest(String province, Integer phases, Long monthlyBillVnd, String dayNight,
                                 String roofType, Double roofAreaM2, String systemType, Boolean backupNeeded,
-                                Integer panelCount, Double storageKwh, boolean recommendNow) {
+                                Integer panelCount, Double storageKwh, boolean recommendNow, boolean cheaper) {
 
         public AdviceRequest(String province, Integer phases, Long monthlyBillVnd, String dayNight, String roofType,
                              Double roofAreaM2, String systemType, Boolean backupNeeded) {
             this(province, phases, monthlyBillVnd, dayNight, roofType, roofAreaM2, systemType, backupNeeded, null,
-                    null, false);
+                    null, false, false);
         }
 
         boolean configurationAsked() {
@@ -153,10 +159,18 @@ public class PackageAdvisor {
             }
         } else {
             out.put("che_do", "DE_XUAT");
-            SizingService.Sizing s = sizing.size(r.monthlyBillVnd(), r.dayNight(),
-                    place.pvMonthly() == null ? null : PvoutRepository.Table.annual(place.pvMonthly()),
-                    nationalRange(place.table()), r.roofAreaM2());
+            Double annual = place.pvMonthly() == null ? null : PvoutRepository.Table.annual(place.pvMonthly());
+            SizingService.Sizing full = sizing.size(r.monthlyBillVnd(), r.dayNight(), annual,
+                    nationalRange(place.table()), r.roofAreaM2(), pricing().coverage());
+            SizingService.Sizing s = !r.cheaper() ? full : sizing.size(r.monthlyBillVnd(), r.dayNight(), annual,
+                    nationalRange(place.table()), r.roofAreaM2(), pricing().cheaperCoverage());
             out.set("uoc_tinh", estimate(s, place, r));
+            if (r.cheaper()) {
+                notes.add("Phương án rẻ hơn: hệ làm ra khoảng " + VnFormat.percent(s.coverage()) + " điện nhà dùng, "
+                        + "phần còn lại vẫn dùng điện lưới; nói rõ với khách.");
+            } else {
+                notes.add("Khách chê đắt hoặc nêu ngân sách thấp hơn: gọi lại với re_hon = true để có gói nhỏ hơn.");
+            }
             if (s.requiredKwp().max() > pricing().largeSystemKwp()) {
                 notes.add("Nhu cầu lớn (trên " + VnFormat.kwp(pricing().largeSystemKwp())
                         + "): nên để nhân viên khảo sát và báo giá riêng.");
@@ -166,14 +180,9 @@ public class PackageAdvisor {
             double maxPrice = 0;
             for (String type : types(preferred, r)) {
                 List<Pick> picks = new ArrayList<>();
-                if (s.requiredKwp().exact() && s.batteryKwh().exact()) {
-                    picks.add(pick(all, r.phases(), type, s.requiredKwp().max(), s.batteryKwh().max(),
-                            s.maxKwpByRoof()));
-                } else {
-                    picks.add(pick(all, r.phases(), type, s.requiredKwp().min(), s.batteryKwh().min(),
-                            s.maxKwpByRoof()));
-                    picks.add(pick(all, r.phases(), type, s.requiredKwp().max(), s.batteryKwh().max(),
-                            s.maxKwpByRoof()));
+                for (boolean high : s.requiredKwp().exact() && s.batteryKwh().exact() ? List.of(true)
+                        : List.of(false, true)) {
+                    picks.add(pick(all, r.phases(), type, full, s, high, r.cheaper()));
                 }
                 for (Pick p : distinct(picks)) {
                     if (p.pkg() == null) {
@@ -277,27 +286,49 @@ public class PackageAdvisor {
     // ------------------------------------------------------------------ chọn gói
 
     /**
-     * Gói rẻ nhất có kWp ≥ dung sai × công suất cần (và vừa mái), Hybrid thì pin ≥ pin cần. Chưa biết số pha thì
-     * chọn trong gói 1 pha trước, không có gói 1 pha đủ lớn mới sang 3 pha.
+     * Gói cho một đầu (thấp / cao) của khoảng nhu cầu. Khách chê đắt: gói gần mức bù thấp hơn trong các gói rẻ hơn
+     * gói đề xuất đầu (cùng số pha); không còn gói rẻ hơn thì giữ gói đầu kèm ghi chú.
      */
-    private Pick pick(List<CatalogPackage> all, Integer phases, String type, double needKwp, double needBattery,
-                      Double roofCap) {
-        if (phases != null) {
-            return pickIn(pool(all, phases, type), type, needKwp, needBattery, roofCap);
+    private Pick pick(List<CatalogPackage> all, Integer phases, String type, SizingService.Sizing full,
+                      SizingService.Sizing s, boolean high, boolean cheaper) {
+        double battery = high ? s.batteryKwh().max() : s.batteryKwh().min();
+        Pick first = pick(all, phases, type, high ? full.requiredKwp().max() : full.requiredKwp().min(), battery,
+                full.maxKwpByRoof(), null);
+        if (!cheaper || first.pkg() == null) {
+            return first;
         }
-        Pick one = pickIn(pool(all, 1, type), type, needKwp, needBattery, roofCap);
+        Pick lower = pick(all, first.pkg().phases(), type, high ? s.requiredKwp().max() : s.requiredKwp().min(),
+                battery, s.maxKwpByRoof(), first.pkg().totalPrice());
+        return lower.pkg() != null ? lower : new Pick(first.pkg(), "Không có gói " + typeLabel(type)
+                + " nào rẻ hơn gói này; giới thiệu hệ hòa lưới nếu có trong kết quả, hoặc xin số điện thoại để "
+                + "nhân viên tư vấn theo ngân sách của khách.");
+    }
+
+    /** Chưa biết số pha thì chọn trong gói 1 pha trước, gói 1 pha không đủ lớn mới sang 3 pha */
+    private Pick pick(List<CatalogPackage> all, Integer phases, String type, double needKwp, double needBattery,
+                      Double roofCap, Double priceBelow) {
+        if (phases != null) {
+            return pickIn(pool(all, phases, type), type, needKwp, needBattery, roofCap, priceBelow);
+        }
+        Pick one = pickIn(pool(all, 1, type), type, needKwp, needBattery, roofCap, priceBelow);
         if (one.pkg() != null && one.note() == null) {
             return one;
         }
-        Pick three = pickIn(pool(all, 3, type), type, needKwp, needBattery, roofCap);
+        Pick three = pickIn(pool(all, 3, type), type, needKwp, needBattery, roofCap, priceBelow);
         if (three.pkg() != null && three.note() == null) {
             return three;
         }
         return one.pkg() != null ? one : three;
     }
 
-    private Pick pickIn(List<CatalogPackage> pool, String type, double needKwp, double needBattery,
-                        Double roofCap) {
+    /**
+     * Gói gần công suất cần nhất (2026-11-12; trước đây là gói rẻ nhất có kWp ≥ 90% công suất cần và pin ≥ pin cần,
+     * hay bị đẩy lên gói lớn). Chỉ xét gói vừa mái và bỏ gói có gói khác không kém mà không đắt hơn (Huawei 6,4 kWp
+     * + 7 kWh 186,7 triệu so với 8,75 kWp + 10,24 kWh 136,2 triệu). Cách đều hai mức công suất thì lấy mức nhỏ;
+     * Hybrid lấy pin gần pin cần nhất trong mức công suất đó. {@code priceBelow}: chỉ xét gói rẻ hơn mức này.
+     */
+    private Pick pickIn(List<CatalogPackage> pool, String type, double needKwp, double needBattery, Double roofCap,
+                        Double priceBelow) {
         if (pool.isEmpty()) {
             return new Pick(null, null);
         }
@@ -306,37 +337,47 @@ public class PackageAdvisor {
         if (fitsRoof.isEmpty()) {
             CatalogPackage smallest = pool.stream().min(Comparator.comparing(CatalogPackage::kwp)
                     .thenComparing(CatalogPackage::totalPrice)).orElseThrow();
-            return new Pick(smallest, "Diện tích mái khách nói chỉ đủ khoảng " + VnFormat.kwp(roofCap)
-                    + ", nhỏ hơn gói nhỏ nhất; nhân viên sẽ khảo sát mái.");
+            return new Pick(priceBelow == null ? smallest : null, "Diện tích mái khách nói chỉ đủ khoảng "
+                    + VnFormat.kwp(roofCap) + ", nhỏ hơn gói nhỏ nhất; nhân viên sẽ khảo sát mái.");
         }
-        double min = needKwp * pricing().capacityTolerance();
-        List<CatalogPackage> enough = fitsRoof.stream().filter(p -> p.kwp() >= min - 1e-9).toList();
-        if (enough.isEmpty()) {
-            CatalogPackage largest = fitsRoof.stream().max(Comparator.comparing(CatalogPackage::kwp)
-                    .thenComparing(CatalogPackage::storageKwh)
-                    .thenComparing(Comparator.comparing(CatalogPackage::totalPrice).reversed())).orElseThrow();
-            boolean roofLimited = roofCap != null && pool.stream().anyMatch(p -> p.kwp() >= min - 1e-9);
-            return new Pick(largest, roofLimited
+        List<CatalogPackage> candidates = undominated(fitsRoof).stream()
+                .filter(p -> priceBelow == null || p.totalPrice() < priceBelow - 1).toList();
+        if (candidates.isEmpty()) {
+            return new Pick(null, null);
+        }
+        double gap = candidates.stream().mapToDouble(p -> Math.abs(p.kwp() - needKwp)).min().orElseThrow();
+        double kwp = candidates.stream().filter(p -> Math.abs(p.kwp() - needKwp) <= gap + 1e-9)
+                .mapToDouble(CatalogPackage::kwp).min().orElseThrow();
+        Comparator<CatalogPackage> cheapest = Comparator.comparing(CatalogPackage::totalPrice);
+        Comparator<CatalogPackage> order = HYBRID.equals(type)
+                ? Comparator.comparingDouble((CatalogPackage p) -> Math.abs(p.storageKwh() - needBattery))
+                .thenComparing(cheapest) : cheapest;
+        CatalogPackage best = candidates.stream().filter(p -> Math.abs(p.kwp() - kwp) < 1e-9).min(order)
+                .orElseThrow();
+        // Phương án rẻ hơn chủ ý chọn gói nhỏ; chỉ ghi chú khi gói đã là gói lớn nhất (vừa mái) mà vẫn thiếu
+        double largest = fitsRoof.stream().mapToDouble(CatalogPackage::kwp).max().orElseThrow();
+        if (priceBelow == null && best.kwp() >= largest - 1e-9 && needKwp > best.kwp() * SHORT_OF_NEED) {
+            boolean roofLimited = roofCap != null && pool.stream().anyMatch(p -> p.kwp() > roofCap + 1e-9);
+            return new Pick(best, roofLimited
                     ? "Mái chỉ đủ khoảng " + VnFormat.kwp(roofCap) + ": đây là gói lớn nhất vừa mái, chưa đủ nhu cầu "
                     + "khoảng " + VnFormat.kwp(needKwp) + "."
                     : "Nhu cầu khoảng " + VnFormat.kwp(needKwp) + " lớn hơn gói lớn nhất loại này; nhân viên sẽ tư "
                     + "vấn hệ riêng.");
         }
-        Comparator<CatalogPackage> cheapest = Comparator.comparing(CatalogPackage::totalPrice)
-                .thenComparing(CatalogPackage::kwp);
-        if (!HYBRID.equals(type)) {
-            return new Pick(enough.stream().min(cheapest).orElseThrow(), null);
+        if (HYBRID.equals(type) && best.storageKwh() < needBattery * BATTERY_SHORT) {
+            return new Pick(best, "Pin của gói này là " + VnFormat.kwh(best.storageKwh()) + ", thấp hơn nhu cầu "
+                    + "khoảng " + VnFormat.kwh(needBattery) + "; có thể bổ sung pin, nhân viên tư vấn thêm.");
         }
-        Optional<CatalogPackage> withBattery = enough.stream()
-                .filter(p -> p.storageKwh() >= needBattery - 1e-9).min(cheapest);
-        if (withBattery.isPresent()) {
-            return new Pick(withBattery.get(), null);
-        }
-        CatalogPackage biggestBattery = enough.stream().max(Comparator.comparing(CatalogPackage::storageKwh)
-                .thenComparing(cheapest.reversed())).orElseThrow();
-        return new Pick(biggestBattery, "Pin lớn nhất của các gói đủ công suất là "
-                + VnFormat.kwh(biggestBattery.storageKwh()) + ", thấp hơn nhu cầu khoảng " + VnFormat.kwh(needBattery)
-                + "; có thể bổ sung pin, nhân viên tư vấn thêm.");
+        return new Pick(best, null);
+    }
+
+    /** Bỏ gói có gói khác công suất và pin không kém mà giá không cao hơn (gói đó luôn là lựa chọn tốt hơn) */
+    private static List<CatalogPackage> undominated(List<CatalogPackage> pool) {
+        return pool.stream().filter(p -> pool.stream().noneMatch(q -> q != p
+                && q.kwp() >= p.kwp() - 1e-9 && q.storageKwh() >= p.storageKwh() - 1e-9
+                && q.totalPrice() <= p.totalPrice()
+                && (q.totalPrice() < p.totalPrice() || q.kwp() > p.kwp() + 1e-9
+                || q.storageKwh() > p.storageKwh() + 1e-9))).toList();
     }
 
     /**
@@ -431,15 +472,16 @@ public class PackageAdvisor {
     }
 
     /**
-     * Loại hệ đề xuất (mục 60.3 bước 5): khách chỉ định thì theo khách; dùng đêm từ 50% hoặc cần dự phòng mất điện
-     * thì Hybrid; ban ngày nhiều thì On-Grid (rẻ hơn) kèm Hybrid pin nhỏ; chưa biết thì cả hai.
+     * Loại hệ đề xuất (mục 60.3 bước 5): khách chỉ định thì theo khách; cần pin (hệ số pin theo ngày / đêm lớn hơn
+     * 0) hoặc cần dự phòng mất điện thì Hybrid; không cần pin (ban ngày nhiều) thì On-Grid (rẻ hơn) kèm Hybrid pin
+     * nhỏ; chưa biết thì cả hai.
      */
     private List<String> types(String preferred, AdviceRequest r) {
         if (preferred != null) {
             return List.of(preferred);
         }
-        Double share = r.dayNight() == null ? null : pricing().nightShare().get(r.dayNight());
-        if (Boolean.TRUE.equals(r.backupNeeded()) || (share != null && share >= 0.5)) {
+        Double perMillion = r.dayNight() == null ? null : pricing().batteryPerMillion().get(r.dayNight());
+        if (Boolean.TRUE.equals(r.backupNeeded()) || (perMillion != null && perMillion > 0)) {
             return List.of(HYBRID);
         }
         return List.of(ON_GRID, HYBRID);
@@ -453,7 +495,7 @@ public class PackageAdvisor {
         if (Boolean.TRUE.equals(r.backupNeeded())) {
             return "Hệ Hybrid có pin lưu trữ: dùng được buổi tối và có điện dự phòng khi lưới mất điện.";
         }
-        return "Hệ Hybrid có pin lưu trữ " + (s.batteryKwh().exact() ? "(cần khoảng "
+        return "Hệ Hybrid có pin lưu trữ " + (s.batteryKwh().exact() && s.batteryKwh().max() > 0 ? "(cần khoảng "
                 + VnFormat.kwh(s.batteryKwh().max()) + ")" : "") + ": trữ điện ban ngày để dùng buổi tối.";
     }
 
@@ -515,7 +557,9 @@ public class PackageAdvisor {
         e.put("ty_le_dung_dem", range(s.nightShare(), VnFormat::percent)
                 + (s.nightShare().exact() ? "" : " (chưa biết dùng ngày / đêm)"));
         e.put("cong_suat_can", "khoảng " + range(s.requiredKwp(), VnFormat::kwp));
-        e.put("pin_can_neu_dung_hybrid", "khoảng " + range(s.batteryKwh(), VnFormat::kwh));
+        e.put("muc_bu", "hệ làm ra khoảng " + VnFormat.percent(s.coverage()) + " điện nhà dùng");
+        e.put("pin_can_neu_dung_hybrid", s.batteryKwh().max() <= 0 ? "không cần pin (dùng điện ban ngày nhiều)"
+                : "khoảng " + range(s.batteryKwh(), VnFormat::kwh));
         if (s.maxKwpByRoof() != null) {
             e.put("cong_suat_toi_da_theo_mai", "khoảng " + VnFormat.kwp(s.maxKwpByRoof()));
         }

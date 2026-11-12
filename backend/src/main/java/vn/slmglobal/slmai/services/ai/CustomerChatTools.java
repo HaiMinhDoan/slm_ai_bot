@@ -136,7 +136,7 @@ public class CustomerChatTools {
                     text(in, "loai_he_thong", null),
                     in.path("can_du_phong_mat_dien").isBoolean() ? in.get("can_du_phong_mat_dien").asBoolean() : null,
                     integer(in, "so_tam_pin", null), number(in, "luu_tru_kwh", null),
-                    in.path("de_xuat_ngay").asBoolean(false)));
+                    in.path("de_xuat_ngay").asBoolean(false), in.path("re_hon").asBoolean(false)));
             advice.quotedPackageIds().forEach(id -> {
                 if (!quotedPackageIds.contains(id)) {
                     quotedPackageIds.add(id);
@@ -226,6 +226,8 @@ public class CustomerChatTools {
         find.put("de_xuat_ngay", nullable(described(type("boolean"),
                 "true khi chưa đủ thông tin tối thiểu nhưng khách không biết hoặc không muốn trả lời phần còn thiếu, "
                         + "hoặc hỏi giá lại: đề xuất gói theo thông tin đang có")));
+        find.put("re_hon", nullable(described(type("boolean"),
+                "true khi khách chê đắt hoặc nêu ngân sách thấp hơn gói đã đề xuất: tìm gói nhỏ hơn, rẻ hơn")));
 
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("goi_id", described(type("integer"),
@@ -252,7 +254,8 @@ public class CustomerChatTools {
                         ngày hay đêm, loại mái) để đề xuất gói. Điền mọi thông tin đã biết từ hồ sơ tư vấn và hội \
                         thoại, chưa biết thì null. Chưa đủ thông tin tối thiểu: chỉ trả giá khởi điểm của từng loại \
                         hệ, chưa đề xuất gói. Đủ thông tin: trả gói đề xuất, giá, sản lượng, tiết kiệm ước tính và \
-                        link sản phẩm. Khách hỏi giá một cấu hình tự nêu \
+                        link sản phẩm. Khách chê đắt hoặc nêu ngân sách thấp hơn: gọi lại với re_hon = true để có \
+                        gói nhỏ hơn, rẻ hơn. Khách hỏi giá một cấu hình tự nêu \
                         (số tấm, dung lượng pin): điền so_tam_pin / luu_tru_kwh, kết quả có cau_hinh_khach_hoi là \
                         gói đúng cấu hình hoặc các gói gần nhất. Mọi con số giá, công suất, sản lượng, tiết kiệm nói \
                         với khách phải lấy từ kết quả này, chép đúng cách viết.""", find),

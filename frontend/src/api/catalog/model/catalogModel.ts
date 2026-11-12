@@ -128,6 +128,10 @@ export interface AdviceRequestModel {
   roofAreaM2?: number;
   systemType?: SystemType;
   backupNeeded?: boolean;
+  /** Đề xuất gói dù chưa đủ thông tin tối thiểu */
+  recommendNow?: boolean;
+  /** Khách chê đắt: gói nhỏ hơn, rẻ hơn gói đề xuất đầu */
+  cheaper?: boolean;
 }
 
 export interface PvoutTableInfoModel {

@@ -29,7 +29,7 @@ class MaterialAdvisorTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        PricingProperties pricing = new PricingProperties(3500, null, 0, 0, 0, 0,
+        PricingProperties pricing = new PricingProperties(3500, null, 0, 0, 0, null, 0, 0,
                 Map.of("BAC", "slmsolar.vn", "NAM", "slmsolar.com.vn"), "Giá trọn gói niêm yết.", null);
         advisor = new MaterialAdvisor(materials, catalog, new ProvinceDirectory(objectMapper), () -> pricing,
                 objectMapper);

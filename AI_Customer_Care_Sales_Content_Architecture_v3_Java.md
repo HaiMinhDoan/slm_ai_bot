@@ -5202,6 +5202,23 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 5. Loại hệ: dùng đêm ≥ 50% hoặc khách cần dự phòng mất điện → Hybrid; ban ngày nhiều → On-Grid (rẻ hơn), kèm phương án Hybrid pin nhỏ.
 6. Ví dụ: Hà Nội, hoá đơn 2 triệu, dùng tối nhiều → E ≈ 19 kWh/ngày; pin ≈ 14,8 kWh → 16 kWh; kWp ≈ 7,6 → gói 8,75 kWp 1 pha Hybrid 16 kWh (gói 105, 144,2 triệu).
 
+**Thay công thức chọn gói (doanh nghiệp yêu cầu 2026-11-12):**
+- **Vấn đề:** công thức trên đề xuất gói thừa. Pin phải bù đủ điện đêm và là điều kiện cứng, bậc pin trong bảng gói thưa (5,12 / 10,24 / 16 / 32 kWh), lại thêm luật "≥ 90% công suất cần". Ví dụ khách Hà Nội 3 triệu, tối dùng nhiều: cần 11,4 kWp và 22,2 kWh, nên bị đẩy lên 15,63 kWp + 32 kWh, giá 255,9 triệu.
+- **Công thức mới.** Câu hỏi ngày / đêm chỉ dùng để chọn pin. Các con số sửa được ở `rules/bao-gia`.
+  1. Công suất cần `kWp = E × mức bù / (PVout năm của tỉnh / 365)`. Mức bù `coverage` = 100% ở đề xuất đầu, `cheaper_coverage` = 80% khi khách chê đắt.
+  2. Pin cần `= tiền điện (triệu) × battery_per_million`: ngày nhiều 0 (không cần pin), cân bằng 2,5 kWh, tối nhiều 4 kWh.
+  3. Chọn gói **gần** công suất cần nhất, không còn luật "≥":
+     - Hybrid lấy pin gần pin cần nhất trong mức công suất đó.
+     - Bỏ gói có gói khác lớn bằng hoặc hơn mà không đắt hơn (ví dụ Huawei 6,4 kWp + 7 kWh, 186,7 triệu).
+     - Cách đều hai mức công suất thì lấy mức nhỏ.
+  4. Loại hệ: hệ số pin lớn hơn 0 hoặc khách cần dự phòng mất điện → Hybrid. Hệ số pin bằng 0 → On-Grid kèm Hybrid pin nhỏ.
+  5. Khách chê đắt hoặc nêu ngân sách thấp: AI gọi lại `tim_goi_phu_hop` với `re_hon = true`. Tool tính ở mức bù 80% và chọn gói gần nhất trong các gói rẻ hơn gói đề xuất đầu. Không còn gói rẻ hơn thì giữ gói đầu, kèm lưu ý.
+  6. Tỷ lệ dùng đêm (30 / 50 / 70%) và độ xả sâu 0,9 chỉ còn dùng để ước tính tiền tiết kiệm.
+- **Ví dụ trên bảng gói Hà Nội:** khách 3 triệu, tối dùng nhiều.
+  - Đề xuất đầu: 11,25 kWp + 16 kWh, 161,8 triệu.
+  - Khách chê đắt: 8,75 kWp + 10,24 kWh, 136,2 triệu.
+- **Tương thích:** bản `rules/bao-gia` cũ (còn `capacity_tolerance`, chưa có ba trường mới) vẫn đọc được và dùng giá trị mặc định.
+
 **Sản lượng nói với khách (đã chốt):** tính theo PV out EVN của tỉnh (nhất quán, có nguồn chính thức), kể cả sản lượng của từng gói = kWp của gói × PV out; không đọc `san_luong_toi_thieu / toi_da` của slm_v2 cho tới khi được rà lại.
 
 
