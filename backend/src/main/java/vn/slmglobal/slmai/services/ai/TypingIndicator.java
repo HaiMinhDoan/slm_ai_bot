@@ -22,15 +22,25 @@ final class TypingIndicator {
     private final ScheduledFuture<?> refresher;
     private boolean stopped;
 
-    private TypingIndicator(ChannelSender sender, ChannelIdentity recipient, ScheduledExecutorService scheduler) {
+    private TypingIndicator(ChannelSender sender, ChannelIdentity recipient, ScheduledExecutorService scheduler,
+                            boolean markSeen) {
         this.sender = sender;
         this.recipient = recipient;
-        sender.markSeen(recipient);
+        if (markSeen) {
+            sender.markSeen(recipient);
+        }
         this.refresher = scheduler.scheduleAtFixedRate(this::refresh, 0, REFRESH.toMillis(), TimeUnit.MILLISECONDS);
     }
 
+    /** Đánh dấu đã xem tin của khách rồi bật "đang soạn tin" (đầu lượt) */
     static TypingIndicator start(ChannelSender sender, ChannelIdentity recipient, ScheduledExecutorService scheduler) {
-        return new TypingIndicator(sender, recipient, scheduler);
+        return new TypingIndicator(sender, recipient, scheduler, true);
+    }
+
+    /** Bật lại "đang soạn tin" giữa các tin của cùng một câu trả lời */
+    static TypingIndicator resume(ChannelSender sender, ChannelIdentity recipient,
+                                  ScheduledExecutorService scheduler) {
+        return new TypingIndicator(sender, recipient, scheduler, false);
     }
 
     private synchronized void refresh() {

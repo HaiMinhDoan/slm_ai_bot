@@ -116,8 +116,8 @@ class ClaudeChatClientToolLoopTest {
 
     private ClaudeChatClient client(int maxToolRounds) {
         AiProperties p = new AiProperties("test-key", "claude-sonnet-5-5", "low", 2000, Duration.ofSeconds(10),
-                false, false, false, 1, 40, 3, Duration.ofSeconds(1), Duration.ofMinutes(1), false, "SolarMax",
-                "Huyền", List.of(), List.of(), null, null, maxToolRounds,
+                false, false, false, 1, 40, 3, Duration.ofSeconds(1), Duration.ofMinutes(1), false, null, null,
+                "SolarMax", "Huyền", List.of(), List.of(), null, null, maxToolRounds,
                 "http://127.0.0.1:" + server.getAddress().getPort());
         return new ClaudeChatClient(p);
     }

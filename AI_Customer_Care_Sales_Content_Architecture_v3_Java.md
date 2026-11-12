@@ -1323,6 +1323,14 @@ Khách VIP hoặc trường hợp phức tạp được chuyển cho người th
 
 **Thử nghiệm ngày 2026-10-24:** 4 lượt đầu trên Opus 5.5 (effort `medium`) mất 8, 112, 11 và 82 giây cho cùng cỡ đầu ra (800–1.200 token): tốc độ sinh của API lúc nhanh lúc chậm, quá lâu với chat bán hàng. Chuyển sang thử **Sonnet 5.5, effort `low`** (tài liệu Anthropic khuyên `low` cho chat), giá bằng một nửa. Theo dõi `luot_goi_ai.do_tre_ms` và chất lượng trả lời; quay lại Opus bằng `AI_MODEL` / `AI_EFFORT` nếu chất lượng giảm rõ. Trong lúc chờ Claude, "đang soạn tin" được bật lại mỗi 10 giây.
 
+**Tách tin và tốc độ gõ (2026-11-12, doanh nghiệp yêu cầu):**
+- **Tách tin:** mỗi đoạn AI viết cách nhau một dòng trống được gửi thành một tin nhắn riêng (`ReplyParts`). Đoạn dài quá 400 ký tự được tách tiếp ở cuối câu; tối đa 5 tin, phần thừa gộp vào tin cuối. Ngữ cảnh lượt (code) và `core/voice` hướng dẫn AI: trả lời dài thì chia 2–3 đoạn, mỗi đoạn một ý, câu hỏi ở đoạn cuối; khách giục hoặc đã chờ lâu thì đoạn đầu là một câu xin lỗi / thưa gửi đứng riêng ("Dạ em đây ạ", "Em xin lỗi đã để anh đợi lâu ạ").
+- **Thời gian chờ của khách:** khi khách đã chờ từ 2 phút trở lên (tính từ tin đầu tiên chưa được trả lời), ngữ cảnh lượt ghi rõ số phút / giờ khách đã chờ.
+- **Tốc độ gõ:** trước mỗi tin hiện "đang soạn tin" và chờ số ký tự / tốc độ gõ (mặc định 5 ký tự/giây, ít nhất 1 giây, nhiều nhất 30 giây mỗi tin; sửa trong Cài đặt AI). Tin đầu được trừ đi thời gian đã chờ Claude.
+- **Gửi lỗi giữa chừng:** tin đã ghi giữ phần đã tới khách; phần còn lại thành tin lỗi để nhân viên gửi lại.
+- **Nhân viên gửi nháp của AI:** cũng tách theo dòng trống, chờ cố định 1,5 giây giữa các tin.
+- **Ảnh hưởng tới worker:** hội thoại giữ lượt của worker trong lúc gửi lần lượt, nên tin khách nhắn thêm chờ gửi xong mới tới lượt AI kế tiếp. `worker-concurrency` tăng từ 4 lên 8.
+
 ## 20.2 Model khác cho việc khác
 
 | Việc | Model gợi ý | Lý do |

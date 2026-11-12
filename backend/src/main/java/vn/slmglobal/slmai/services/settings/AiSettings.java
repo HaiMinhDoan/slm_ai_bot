@@ -22,6 +22,8 @@ import java.util.List;
  * @param personaName          tên tư vấn viên AI tự xưng
  * @param companyName          tên công ty
  * @param typingIndicator      gửi "đang soạn tin" trong lúc chờ AI
+ * @param typingCharsPerSecond tốc độ gõ giả lập: trước mỗi tin chờ số ký tự / tốc độ này
+ * @param typingMaxSeconds     chờ tối đa trước mỗi tin (giây)
  * @param debounceSeconds      gộp tin: chờ thêm khoảng này sau tin mới nhất của khách
  * @param autoHandbackHours    tự trả hội thoại lại cho AI sau khoảng này không có tin của nhân viên (0 = không tự trả)
  * @param model                model trả lời khách
@@ -44,6 +46,8 @@ public record AiSettings(
         String personaName,
         String companyName,
         boolean typingIndicator,
+        double typingCharsPerSecond,
+        double typingMaxSeconds,
         double debounceSeconds,
         double autoHandbackHours,
         String model,

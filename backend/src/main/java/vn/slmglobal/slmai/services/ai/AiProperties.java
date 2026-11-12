@@ -26,6 +26,8 @@ import java.util.List;
  * @param retryBackoff       chờ trước lần thử lại đầu tiên; các lần sau gấp đôi
  * @param turnLease          giữ lượt trong lúc gọi Claude; tiến trình chết giữa chừng thì hết hạn này lượt được chạy lại
  * @param typingIndicator    gửi "đang soạn tin" trước khi gọi Claude
+ * @param typingCharsPerSecond tốc độ gõ giả lập (ký tự / giây): mỗi tin chờ số ký tự / tốc độ này rồi mới gửi
+ * @param typingMaxDelay     chờ tối đa trước mỗi tin
  * @param companyName        tên công ty AI dùng khi tự giới thiệu
  * @param personaName        tên tư vấn viên AI dùng khi tự giới thiệu (core/identity); khách hỏi thẳng thì vẫn nói là AI
  * @param autoIntents        loại câu hỏi được gửi tự động (mục 35)
@@ -49,6 +51,8 @@ public record AiProperties(
         Duration retryBackoff,
         Duration turnLease,
         boolean typingIndicator,
+        Double typingCharsPerSecond,
+        Duration typingMaxDelay,
         String companyName,
         String personaName,
         List<String> autoIntents,
@@ -62,6 +66,12 @@ public record AiProperties(
     public AiProperties {
         if (maxToolRounds == null || maxToolRounds < 0) {
             maxToolRounds = 3;
+        }
+        if (typingCharsPerSecond == null || typingCharsPerSecond <= 0) {
+            typingCharsPerSecond = 5.0;
+        }
+        if (typingMaxDelay == null || typingMaxDelay.isNegative()) {
+            typingMaxDelay = Duration.ofSeconds(30);
         }
     }
 

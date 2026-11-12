@@ -226,7 +226,8 @@ public class AiSettingsService {
         return new AiProperties(baseAi.apiKey(), s.model(), s.effort(), baseAi.maxTokens(), baseAi.timeout(),
                 baseAi.serverSideFallback(), s.killSwitch() != null && s.killSwitch().on(), baseAi.workerEnabled(),
                 baseAi.workerConcurrency(), baseAi.historyLimit(), s.maxAttempts(), seconds(s.retryBackoffSeconds()),
-                baseAi.turnLease(), s.typingIndicator(), s.companyName(), s.personaName(), s.autoIntents(),
+                baseAi.turnLease(), s.typingIndicator(), s.typingCharsPerSecond(), seconds(s.typingMaxSeconds()),
+                s.companyName(), s.personaName(), s.autoIntents(),
                 s.handoffIntents(),
                 new AiProperties.BusinessHours(bh == null ? null : bh.zone(), s.businessStart(), s.businessEnd(),
                         s.businessDays()),
@@ -257,6 +258,8 @@ public class AiSettingsService {
                 a.personaName(),
                 a.companyName(),
                 a.typingIndicator(),
+                a.typingCharsPerSecond(),
+                a.typingMaxDelay().toMillis() / 1000.0,
                 c.debounce() == null ? 0 : c.debounce().toMillis() / 1000.0,
                 c.autoHandback() == null ? 0 : c.autoHandback().toMillis() / 3_600_000.0,
                 a.model(),
@@ -302,6 +305,8 @@ public class AiSettingsService {
         if (s.companyName() == null || s.companyName().isBlank() || s.companyName().length() > 100) {
             errors.add("Tên công ty bắt buộc, tối đa 100 ký tự");
         }
+        range(errors, "Tốc độ gõ (ký tự / giây)", s.typingCharsPerSecond(), 1, 30);
+        range(errors, "Chờ tối đa trước mỗi tin (giây)", s.typingMaxSeconds(), 0, 120);
         range(errors, "Thời gian gộp tin (giây)", s.debounceSeconds(), 0, 120);
         range(errors, "Tự trả lại AI sau (giờ)", s.autoHandbackHours(), 0, 720);
         if (!MODELS.contains(s.model())) {
@@ -349,8 +354,9 @@ public class AiSettingsService {
     private static AiSettings merge(AiSettings s, AiSettings.KillSwitch ks) {
         return new AiSettings(ks, s.autoIntents(), s.handoffIntents(), s.businessStart(), s.businessEnd(),
                 s.businessDays(), s.outOfHoursAck(), s.handoffAck(), s.ackCooldownHours(), s.personaName(),
-                s.companyName(), s.typingIndicator(), s.debounceSeconds(), s.autoHandbackHours(), s.model(),
-                s.effort(), s.assistantModel(), s.maxAttempts(), s.retryBackoffSeconds());
+                s.companyName(), s.typingIndicator(), s.typingCharsPerSecond(), s.typingMaxSeconds(),
+                s.debounceSeconds(), s.autoHandbackHours(), s.model(), s.effort(), s.assistantModel(), s.maxAttempts(),
+                s.retryBackoffSeconds());
     }
 
     private Map<String, Object> withoutKillSwitch(AiSettings s) {
@@ -368,9 +374,9 @@ public class AiSettingsService {
                 strip(s.businessStart()), strip(s.businessEnd()),
                 s.businessDays() == null ? List.of() : s.businessDays().stream().distinct().sorted().toList(),
                 blankToNull(strip(s.outOfHoursAck())), blankToNull(strip(s.handoffAck())), s.ackCooldownHours(),
-                strip(s.personaName()), strip(s.companyName()), s.typingIndicator(), s.debounceSeconds(),
-                s.autoHandbackHours(), strip(s.model()), strip(s.effort()), strip(s.assistantModel()), s.maxAttempts(),
-                s.retryBackoffSeconds());
+                strip(s.personaName()), strip(s.companyName()), s.typingIndicator(), s.typingCharsPerSecond(),
+                s.typingMaxSeconds(), s.debounceSeconds(), s.autoHandbackHours(), strip(s.model()), strip(s.effort()),
+                strip(s.assistantModel()), s.maxAttempts(), s.retryBackoffSeconds());
     }
 
     private static List<String> ordered(List<String> intents) {

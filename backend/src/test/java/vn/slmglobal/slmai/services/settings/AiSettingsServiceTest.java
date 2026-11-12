@@ -20,7 +20,8 @@ import static org.mockito.Mockito.when;
 class AiSettingsServiceTest {
 
     private final AiProperties base = new AiProperties("k", "claude-sonnet-5-5", "low", 8000, Duration.ofSeconds(120),
-            true, false, true, 4, 40, 3, Duration.ofSeconds(20), Duration.ofMinutes(3), true, "SolarMax", "Huyền",
+            true, false, true, 4, 40, 3, Duration.ofSeconds(20), Duration.ofMinutes(3), true, 5.0,
+            Duration.ofSeconds(30), "SolarMax", "Huyền",
             List.of("CHAO_HOI", "HOI_GIA"), List.of("KHIEU_NAI"),
             new AiProperties.BusinessHours("Asia/Ho_Chi_Minh", "08:00", "17:30",
                     List.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY)),
@@ -67,8 +68,9 @@ class AiSettingsServiceTest {
         assertThat(AiSettingsService.validate(ok)).isEmpty();
 
         AiSettings bad = new AiSettings(ok.killSwitch(), List.of("CHAO_HOI", "KHONG_CO"), List.of("CHAO_HOI"), "18:00",
-                "08:00", List.of(), null, null, 0, " ", "SolarMax", true, 500, 24, "gpt-5", "low", "claude-opus-5-5", 0,
-                20);
-        assertThat(AiSettingsService.validate(bad)).hasSizeGreaterThanOrEqualTo(7);
+                "08:00", List.of(), null, null, 0, " ", "SolarMax", true, 0, -1, 500, 24, "gpt-5", "low",
+                "claude-opus-5-5", 0, 20);
+        assertThat(AiSettingsService.validate(bad)).hasSizeGreaterThanOrEqualTo(9)
+                .anyMatch(e -> e.startsWith("Tốc độ gõ")).anyMatch(e -> e.startsWith("Chờ tối đa trước mỗi tin"));
     }
 }

@@ -55,6 +55,8 @@ public class AiTurnService {
 
     /** Lỗi do request sai hoặc khoá API sai: thử lại cũng vậy */
     private static final Set<Integer> NON_RETRYABLE_STATUS = Set.of(400, 401, 403, 404, 413, 422);
+    /** Tin ngắn nhất cũng chờ chừng này giữa hai tin, như người gõ */
+    static final Duration MIN_TYPING = Duration.ofSeconds(1);
 
     private final AiTurnStore store;
     private final CustomerChatPromptBuilder promptBuilder;
@@ -99,6 +101,7 @@ public class AiTurnService {
     }
 
     public void process(UUID conversationId) {
+        long started = System.nanoTime();
         TurnSnapshot s = store.claim(conversationId).orElse(null);
         if (s == null) {
             return;
@@ -144,19 +147,23 @@ public class AiTurnService {
             run.setToolCalls(toolCallsJson(toolSession.calls()));
         }
         int sent = failure != null
-                ? onCallFailed(s, run, failure, businessOpen, windowOpen, sender)
-                : finish(s, knowledge, run, completion, toolSession, businessOpen, windowOpen, sender);
+                ? onCallFailed(s, run, failure, businessOpen, windowOpen, sender, started)
+                : finish(s, knowledge, run, completion, toolSession, businessOpen, windowOpen, sender, started);
         // Không gửi gì (nháp, bỏ lượt, chờ thử lại): tắt bong bóng thay vì để khách thấy "đang soạn" thêm 20 giây
         if (typing != null && sent == 0) {
             sender.stopTyping(s.identity());
         }
     }
 
-    /** Phần sau khi Claude trả lời: đọc kết quả, Policy, chốt, gửi. Trả số tin đã gửi ra kênh. */
+    /**
+     * Phần sau khi Claude trả lời: đọc kết quả, Policy, chốt, gửi. Trả số tin đã gửi ra kênh.
+     *
+     * @param started lúc bắt đầu lượt (System.nanoTime): thời gian chờ AI tính vào thời gian gõ tin đầu
+     */
     private int finish(TurnSnapshot s, KnowledgeSnapshot knowledge, AiRun run,
                        ClaudeChatClient.ChatCompletion completion,
                        CustomerChatTools.Session toolSession, boolean businessOpen, boolean windowOpen,
-                       ChannelSender sender) {
+                       ChannelSender sender, long started) {
         UUID conversationId = s.conversationId();
         failures.remove(conversationId);
         fillUsage(run, completion);
@@ -184,7 +191,7 @@ public class AiTurnService {
                     toolSession == null ? 0 : toolSession.calls().size(), run.getCacheReadTokens(),
                     run.getCacheWriteTokens());
         }
-        return deliver(s, sender, commit.outgoing());
+        return deliver(s, sender, commit.outgoing(), started);
     }
 
     /** Lấy tên Facebook của khách một lần (để AI chọn anh / chị theo core/voice), lưu vào dinh_danh_kenh. */
@@ -198,7 +205,7 @@ public class AiTurnService {
 
     /** Trả số tin đã gửi ra kênh (câu báo nhận khi chuyển nhân viên); 0 khi hẹn thử lại. */
     private int onCallFailed(TurnSnapshot s, AiRun run, RuntimeException e, boolean businessOpen,
-                             boolean windowOpen, ChannelSender sender) {
+                             boolean windowOpen, ChannelSender sender, long started) {
         AiProperties properties = settings.ai();
         int attempt = failures.merge(s.conversationId(), 1, Integer::sum);
         run.setError(truncate(describe(e)));
@@ -217,7 +224,7 @@ public class AiTurnService {
                 run.getError());
         AiTurnStore.Commit commit = store.commit(s, run, null, ReplyPolicy.Decision.handoff("AI_ERROR"), null,
                 businessOpen, windowOpen, sender != null);
-        return deliver(s, sender, commit.outgoing());
+        return deliver(s, sender, commit.outgoing(), started);
     }
 
     /** null khi không dùng được: model từ chối, hết token giữa chừng, JSON hỏng. Lý do ghi vào luot_goi_ai.loi. */
@@ -240,23 +247,68 @@ public class AiTurnService {
         }
     }
 
-    /** Gửi các tin đã chốt; trả số tin gửi thành công. */
-    private int deliver(TurnSnapshot s, ChannelSender sender, List<AiTurnStore.Outgoing> outgoing) {
+    /**
+     * Gửi các tin đã chốt; trả số tin gửi thành công. Câu trả lời của AI tách thành nhiều tin ({@link ReplyParts});
+     * trước mỗi tin hiện "đang soạn tin" và chờ theo tốc độ gõ, tin đầu trừ đi thời gian đã chờ AI. Trong lúc này
+     * hội thoại vẫn nằm trong lượt của worker nên lượt sau (khách nhắn thêm) chờ gửi xong mới chạy.
+     */
+    private int deliver(TurnSnapshot s, ChannelSender sender, List<AiTurnStore.Outgoing> outgoing, long started) {
         if (sender == null) {
             return 0;
         }
+        AiProperties properties = settings.ai();
         int sent = 0;
         for (AiTurnStore.Outgoing o : outgoing) {
+            List<String> parts = o.aiReply() ? ReplyParts.split(o.text()) : List.of(o.text());
+            int done = 0;
+            String externalId = null;
             try {
-                String externalId = sender.sendText(s.identity(), o.text());
+                for (String part : parts) {
+                    if (o.aiReply()) {
+                        Duration wait = typingDelay(part, properties);
+                        pause(sender, s, done == 0 ? wait.minusNanos(System.nanoTime() - started) : wait,
+                                properties.typingIndicator());
+                    }
+                    externalId = sender.sendText(s.identity(), part);
+                    done++;
+                    sent++;
+                }
                 store.markSent(o.messageId(), externalId);
-                sent++;
             } catch (RuntimeException e) {
-                log.warn("Gửi tin {} của hội thoại {} thất bại: {}", o.messageId(), s.conversationId(), e.getMessage());
-                store.markFailed(o.messageId(), e.getMessage());
+                log.warn("Gửi tin {} của hội thoại {} thất bại sau {}/{} đoạn: {}", o.messageId(), s.conversationId(),
+                        done, parts.size(), e.getMessage());
+                if (done == 0) {
+                    store.markFailed(o.messageId(), e.getMessage());
+                } else {
+                    store.markPartlySent(o.messageId(), String.join("\n\n", parts.subList(0, done)), externalId,
+                            String.join("\n\n", parts.subList(done, parts.size())), e.getMessage());
+                }
             }
         }
         return sent;
+    }
+
+    /** Thời gian gõ một tin: số ký tự / tốc độ gõ, ít nhất {@link #MIN_TYPING}, nhiều nhất typingMaxDelay */
+    static Duration typingDelay(String text, AiProperties properties) {
+        long ms = Math.round(text.length() * 1000.0 / properties.typingCharsPerSecond());
+        return Duration.ofMillis(Math.min(Math.max(ms, MIN_TYPING.toMillis()), properties.typingMaxDelay().toMillis()));
+    }
+
+    /** Chờ trước một tin, hiện "đang soạn tin" nếu bật; bị ngắt (tắt máy) thì gửi luôn */
+    private void pause(ChannelSender sender, TurnSnapshot s, Duration wait, boolean typing) {
+        if (wait.isNegative() || wait.isZero()) {
+            return;
+        }
+        TypingIndicator indicator = typing ? TypingIndicator.resume(sender, s.identity(), typingScheduler) : null;
+        try {
+            Thread.sleep(wait.toMillis());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            if (indicator != null) {
+                indicator.stop();
+            }
+        }
     }
 
     private AiRun newRun(TurnSnapshot s, KnowledgeSnapshot knowledge, AiProperties properties) {

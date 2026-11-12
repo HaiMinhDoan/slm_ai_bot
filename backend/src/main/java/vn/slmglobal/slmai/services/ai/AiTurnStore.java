@@ -61,8 +61,13 @@ public class AiTurnStore {
     private final TurnNotifier notifier;
     private final AiSettingsService settings;
 
-    /** Tin cần gửi ra kênh sau khi chốt */
-    public record Outgoing(UUID messageId, String text) {
+    /**
+     * Tin cần gửi ra kênh sau khi chốt.
+     *
+     * @param aiReply câu trả lời của AI: tách thành nhiều tin và chờ theo tốc độ gõ ({@link ReplyParts}); câu báo
+     *                nhận của hệ thống thì gửi nguyên
+     */
+    public record Outgoing(UUID messageId, String text, boolean aiReply) {
     }
 
     /** Kết quả báo giá của lượt (tool tim_goi_phu_hop): gói đề xuất và giá thấp nhất */
@@ -205,7 +210,7 @@ public class AiTurnStore {
                     .aiRunId(run.getId())
                     .build());
             if (decision.action() == ReplyPolicy.Action.AUTO) {
-                outgoing.add(new Outgoing(aiMessage.getId(), aiMessage.getContent()));
+                outgoing.add(new Outgoing(aiMessage.getId(), aiMessage.getContent(), true));
             }
         }
         if (decision.action() == ReplyPolicy.Action.HANDOFF) {
@@ -226,7 +231,7 @@ public class AiTurnStore {
                     .content(ack)
                     .status(MessageStatus.DRAFT)
                     .build());
-            outgoing.add(new Outgoing(ackMessage.getId(), ack));
+            outgoing.add(new Outgoing(ackMessage.getId(), ack, false));
         }
         return new Commit(true, null, List.copyOf(outgoing));
     }
@@ -237,6 +242,30 @@ public class AiTurnStore {
             m.setStatus(MessageStatus.SENT);
             m.setSentAt(OffsetDateTime.now());
             m.setExternalMessageId(externalMessageId);
+        });
+    }
+
+    /**
+     * Câu trả lời nhiều tin gửi được một phần: tin đã ghi giữ phần đã tới khách (SENT); phần còn lại thành một tin
+     * lỗi riêng để nhân viên gửi lại.
+     */
+    @Transactional
+    public void markPartlySent(UUID messageId, String sentText, String externalMessageId, String remainingText,
+                               String error) {
+        messageRepository.findById(messageId).ifPresent(m -> {
+            m.setContent(sentText);
+            m.setStatus(MessageStatus.SENT);
+            m.setSentAt(OffsetDateTime.now());
+            m.setExternalMessageId(externalMessageId);
+            Message rest = messageRepository.save(Message.builder()
+                    .conversationId(m.getConversationId())
+                    .direction(MessageDirection.OUT)
+                    .senderType(m.getSenderType())
+                    .content(remainingText)
+                    .status(MessageStatus.FAILED)
+                    .aiRunId(m.getAiRunId())
+                    .build());
+            notifier.sendFailed(rest, error);
         });
     }
 

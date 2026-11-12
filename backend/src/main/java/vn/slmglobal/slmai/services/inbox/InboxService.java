@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import vn.slmglobal.slmai.common.exception.CommonException;
 import vn.slmglobal.slmai.common.security.AuthInfo;
 import vn.slmglobal.slmai.common.web.PageResponse;
+import vn.slmglobal.slmai.services.ai.ReplyParts;
 import vn.slmglobal.slmai.services.ai.TurnNotifier;
 import vn.slmglobal.slmai.services.ai.entity.AiRun;
 import vn.slmglobal.slmai.services.ai.repository.AiRunRepository;
@@ -62,6 +63,8 @@ public class InboxService {
 
     private static final String TARGET = "conversation";
     private static final int MESSAGE_LIMIT = 500;
+    /** Nhân viên gửi nháp nhiều đoạn: chờ ngắn giữa các tin (không giả lập tốc độ gõ, để trang không phải chờ lâu) */
+    private static final Duration STAFF_PART_PAUSE = Duration.ofMillis(1500);
 
     private final InboxRepository inbox;
     private final ConversationRepository conversations;
@@ -272,12 +275,26 @@ public class InboxService {
                     + "đa " + sender.maxTextLength());
         }
         ChannelIdentity identity = identities.findById(c.getChannelIdentityId()).orElseThrow();
-        String externalId;
+        // Nháp của AI: mỗi đoạn cách nhau một dòng trống là một tin, như khi AI tự gửi
+        List<String> parts = m.getSenderType() == SenderType.AI ? ReplyParts.split(text) : List.of(text);
+        String externalId = null;
+        int done = 0;
+        String failedRest = null;
         try {
-            externalId = sender.sendText(identity, text);
+            for (String part : parts) {
+                if (done > 0) {
+                    pauseTyping(sender, identity);
+                }
+                externalId = sender.sendText(identity, part);
+                done++;
+            }
         } catch (RuntimeException e) {
-            log.warn("Gửi nháp {} của hội thoại {} lỗi: {}", messageId, c.getId(), e.getMessage());
-            throw new CommonException(HttpStatus.BAD_GATEWAY, "Gửi không thành công: " + e.getMessage());
+            log.warn("Gửi nháp {} của hội thoại {} lỗi sau {}/{} đoạn: {}", messageId, c.getId(), done, parts.size(),
+                    e.getMessage());
+            if (done == 0) {
+                throw new CommonException(HttpStatus.BAD_GATEWAY, "Gửi không thành công: " + e.getMessage());
+            }
+            failedRest = String.join("\n\n", parts.subList(done, parts.size()));
         }
         boolean edited = !text.equals(m.getContent());
         if (edited && m.getSenderType() == SenderType.AI && m.getContent() != null) {
@@ -290,11 +307,17 @@ public class InboxService {
                     .build());
         }
         OffsetDateTime now = now();
-        m.setContent(text);
+        m.setContent(failedRest == null ? text : String.join("\n\n", parts.subList(0, done)));
         m.setStatus(MessageStatus.SENT);
         m.setSentAt(now);
         m.setExternalMessageId(externalId);
         m.setStaffId(actor.email());
+        if (failedRest != null) {
+            // Phần đã tới khách giữ là SENT; phần còn lại thành tin lỗi để bấm gửi lại
+            messages.save(Message.builder().conversationId(c.getId()).direction(MessageDirection.OUT)
+                    .senderType(m.getSenderType()).content(failedRest).status(MessageStatus.FAILED)
+                    .aiRunId(m.getAiRunId()).build());
+        }
         if (c.getOwnership() == Ownership.HUMAN_OWNED) {
             c.setLastStaffMessageAt(now);
         }
@@ -378,6 +401,16 @@ public class InboxService {
         run.getPolicyResult().path("reasons")
                 .forEach(r -> out.add(TurnNotifier.REASON_LABELS.getOrDefault(r.asText(), r.asText())));
         return out;
+    }
+
+    /** Giữa hai tin của một nháp nhiều đoạn: hiện "đang soạn tin" một chút rồi mới gửi tin sau */
+    private static void pauseTyping(ChannelSender sender, ChannelIdentity identity) {
+        sender.typing(identity);
+        try {
+            Thread.sleep(STAFF_PART_PAUSE.toMillis());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private Message pendingDraft(UUID messageId) {

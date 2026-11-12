@@ -21,6 +21,8 @@ export interface AiSettings {
   personaName: string;
   companyName: string;
   typingIndicator: boolean;
+  typingCharsPerSecond: number;
+  typingMaxSeconds: number;
   debounceSeconds: number;
   autoHandbackHours: number;
   model: string;

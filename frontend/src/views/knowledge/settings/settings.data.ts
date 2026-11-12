@@ -16,6 +16,8 @@ export const SNAKE: Record<string, string> = {
   personaName: 'persona_name',
   companyName: 'company_name',
   typingIndicator: 'typing_indicator',
+  typingCharsPerSecond: 'typing_chars_per_second',
+  typingMaxSeconds: 'typing_max_seconds',
   debounceSeconds: 'debounce_seconds',
   autoHandbackHours: 'auto_handback_hours',
   model: 'model',
@@ -126,6 +128,20 @@ export const settingsSchema: FormSchema[] = [
     field: 'typingIndicator',
     label: 'Hiện "đang soạn tin" khi chờ AI',
     component: 'Switch',
+  },
+  {
+    field: 'typingCharsPerSecond',
+    label: 'Tốc độ gõ giả lập',
+    helpMessage:
+      'Câu trả lời dài được tách thành nhiều tin; trước mỗi tin chờ số ký tự chia cho tốc độ này',
+    component: 'InputNumber',
+    componentProps: num({ min: 1, max: 30, step: 0.5, addonAfter: 'ký tự / giây' }),
+  },
+  {
+    field: 'typingMaxSeconds',
+    label: 'Chờ tối đa trước mỗi tin',
+    component: 'InputNumber',
+    componentProps: num({ min: 0, max: 120, addonAfter: 'giây' }),
   },
   { field: 'd6', label: 'Model AI', component: 'Divider', colProps: { span: 24 } },
   {

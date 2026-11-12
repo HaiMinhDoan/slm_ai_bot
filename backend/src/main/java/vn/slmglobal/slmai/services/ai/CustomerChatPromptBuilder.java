@@ -15,6 +15,7 @@ import vn.slmglobal.slmai.services.lead.entity.ConsultProfile;
 import vn.slmglobal.slmai.services.settings.AiSettingsService;
 
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -39,6 +40,8 @@ import java.util.stream.Collectors;
 public class CustomerChatPromptBuilder {
 
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    /** Khách chờ từ mức này (tính từ tin đầu tiên chưa được trả lời) thì báo AI để mở đầu bằng câu xin lỗi riêng */
+    static final Duration LONG_WAIT = Duration.ofMinutes(2);
     private static final Map<DayOfWeek, String> DAY_NAMES = Map.of(
             DayOfWeek.MONDAY, "thứ Hai", DayOfWeek.TUESDAY, "thứ Ba", DayOfWeek.WEDNESDAY, "thứ Tư",
             DayOfWeek.THURSDAY, "thứ Năm", DayOfWeek.FRIDAY, "thứ Sáu", DayOfWeek.SATURDAY, "thứ Bảy",
@@ -135,6 +138,18 @@ public class CustomerChatPromptBuilder {
                     .append("không lặp lại hoặc nói trái với nhân viên. Tự trả lời câu khách còn đang chờ; khách nhắn ")
                     .append("lại không có nghĩa là muốn gặp nhân viên.\n");
         }
+        if (!s.pendingInbound().isEmpty() && s.pendingInbound().get(0).getCreatedAt() != null) {
+            Duration waited = Duration.between(s.pendingInbound().get(0).getCreatedAt(), now);
+            if (waited.compareTo(LONG_WAIT) >= 0) {
+                sb.append("Khách đã chờ khoảng ").append(waitText(waited))
+                        .append(" kể từ tin đầu tiên chưa được trả lời.\n");
+            }
+        }
+        sb.append("Cách gửi: mỗi đoạn cách nhau một dòng trống được gửi thành một tin nhắn riêng, giữa các tin có hiện ")
+                .append("đang soạn tin. Trả lời dài (giải thích, báo giá kèm điều kiện) thì chia 2–3 đoạn ngắn, mỗi đoạn ")
+                .append("một ý, câu hỏi ở đoạn cuối; các dòng liệt kê để chung một đoạn. Khách giục hoặc đã chờ lâu thì ")
+                .append("đoạn đầu là một câu ngắn lịch sự đứng riêng (ví dụ \"Dạ em đây ạ\", \"Em xin lỗi đã để anh đợi ")
+                .append("lâu ạ\"), rồi mới tới nội dung.\n");
         if (pricingTools) {
             sb.append("Công cụ báo giá: có (tim_goi_phu_hop, chi_tiet_goi, tra_cuu_vat_tu). Khách hỏi giá, chi phí, ")
                     .append("nên lắp hệ nào, hoặc vừa cho thêm thông tin tư vấn thì gọi tim_goi_phu_hop trước khi trả ")
@@ -150,6 +165,17 @@ public class CustomerChatPromptBuilder {
         }
         sb.append("</ngu_canh_luot>");
         return sb.toString();
+    }
+
+    /** "5 phút", "2 giờ 10 phút", "3 ngày" */
+    static String waitText(Duration d) {
+        if (d.toDays() >= 1) {
+            return d.toDays() + " ngày";
+        }
+        if (d.toHours() >= 1) {
+            return d.toHours() + " giờ" + (d.toMinutesPart() > 0 ? " " + d.toMinutesPart() + " phút" : "");
+        }
+        return d.toMinutes() + " phút";
     }
 
     /** Chuyển tin_nhan thành các lượt user / assistant xen kẽ, bắt đầu bằng user. */

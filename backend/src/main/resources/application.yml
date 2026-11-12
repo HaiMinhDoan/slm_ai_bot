@@ -104,12 +104,16 @@ app:
     # Công tắc dừng toàn cục (mục 33.2): true = mọi lượt đi theo DRAFT
     force-draft: ${AI_FORCE_DRAFT:false}
     worker-enabled: ${AI_WORKER_ENABLED:true}
-    worker-concurrency: 4
+    # Mỗi lượt giữ một luồng cả lúc chờ "đang soạn" giữa các tin, nên để dư
+    worker-concurrency: 8
     history-limit: 40
     max-attempts: 3
     retry-backoff: 20s
     turn-lease: 3m
     typing-indicator: true
+    # Câu trả lời tách thành nhiều tin; trước mỗi tin chờ số ký tự / tốc độ gõ (tối đa typing-max-delay)
+    typing-chars-per-second: 5
+    typing-max-delay: 30s
     company-name: ${AI_COMPANY_NAME:SolarMax}
     # Tên tư vấn viên khi tự giới thiệu; khách hỏi thẳng có phải bot không thì AI vẫn nói thật (core/identity)
     persona-name: ${AI_PERSONA_NAME:Huyền}

@@ -89,13 +89,16 @@
     await setFieldsValue(v.values);
     // Ghi giá trị mặc định vào chú thích từng ô, đánh dấu ô đang khác mặc định
     await updateSchema(
-      Object.keys(SNAKE).map((field) => ({
-        field,
-        helpMessage: `Mặc định: ${defaultText(field, (v.defaults as Recordable)[field])}`,
-        label:
-          (settingsSchema.find((s) => s.field === field)?.label as string) +
-          (v.overridden.includes(SNAKE[field]) ? ' (đang đổi)' : ''),
-      })),
+      Object.keys(SNAKE).map((field) => {
+        const schema = settingsSchema.find((s) => s.field === field);
+        const fallback = `Mặc định: ${defaultText(field, (v.defaults as Recordable)[field])}`;
+        return {
+          field,
+          // Ô có giải thích riêng thì giữ giải thích, thêm dòng mặc định
+          helpMessage: schema?.helpMessage ? [schema.helpMessage as string, fallback] : fallback,
+          label: (schema?.label as string) + (v.overridden.includes(SNAKE[field]) ? ' (đang đổi)' : ''),
+        };
+      }),
     );
   }
 
