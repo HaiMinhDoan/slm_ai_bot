@@ -4918,6 +4918,7 @@ AI trả các tín hiệu này trong trường `qualification` của kết quả
 | Loại mái | Mái tôn, mái ngói: trọn gói 100%. Mái bằng: phát sinh phần khung (`gia_khung_sat`) |
 
 - **Diện tích mái** không bắt buộc ở bước đầu; chỉ hỏi khi cần kiểm tra mái đủ chỗ cho gói đề xuất (theo công thức của doanh nghiệp).
+- **Cập nhật 2026-11-12 (doanh nghiệp yêu cầu):** tỷ lệ ngày / đêm hỏi sau cùng, khi đã hỏi xong các thông tin kia. Hỏi loại mái thì hỏi kèm diện tích mái trong cùng một câu; diện tích vẫn không bắt buộc, khách không biết thì thôi. Thứ tự trong `ConsultSlots.REQUIRED` và `con_thieu`: tỉnh, số pha, tiền điện, loại mái, ngày / đêm.
 - **Lưu ý dữ liệu:** `tron_goi.gia_khung_sat` hiện bằng 0 ở mọi gói. Trước khi có số liệu ở `slm_v2`, với mái bằng AI chỉ nói "có phát sinh phần khung, nhân viên sẽ báo sau khảo sát" và không đưa con số.
 
 ## 58.5 Phân loại mức độ tiềm năng

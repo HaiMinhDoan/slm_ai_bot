@@ -21,7 +21,7 @@ import java.util.Optional;
  * về giá, công suất, sản lượng, tiết kiệm đều do lớp này tính, kèm chuỗi hiển thị để AI chép nguyên văn.
  *
  * <ul>
- *   <li>Chưa đủ thông tin tối thiểu (ConsultSlots.REQUIRED: tỉnh, số pha, tiền điện, ngày / đêm, loại mái): chỉ trả
+ *   <li>Chưa đủ thông tin tối thiểu (ConsultSlots.REQUIRED: tỉnh, số pha, tiền điện, loại mái, ngày / đêm): chỉ trả
  *       giá khởi điểm theo loại hệ / số pha của miền khách, không đề xuất gói (2026-11-12: trước đây khách cho thêm
  *       một thông tin là AI báo gói một lần). AI đặt {@code de_xuat_ngay} khi khách không biết / không muốn trả lời
  *       phần còn thiếu.</li>
@@ -622,11 +622,11 @@ public class PackageAdvisor {
         if (r.monthlyBillVnd() == null || r.monthlyBillVnd() <= 0) {
             a.add(ConsultSlots.HOA_DON_THANG);
         }
-        if (r.dayNight() == null) {
-            a.add(ConsultSlots.TY_LE_NGAY_DEM);
-        }
         if (r.roofType() == null) {
             a.add(ConsultSlots.LOAI_MAI);
+        }
+        if (r.dayNight() == null) {
+            a.add(ConsultSlots.TY_LE_NGAY_DEM);
         }
         return a;
     }

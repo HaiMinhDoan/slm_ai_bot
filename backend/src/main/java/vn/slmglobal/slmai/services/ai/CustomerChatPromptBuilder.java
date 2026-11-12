@@ -118,8 +118,17 @@ public class CustomerChatPromptBuilder {
         sb.append("Khách đã cho số điện thoại: ").append(s.hasPhone() ? "có" : "chưa").append(".\n");
         sb.append("Hồ sơ tư vấn đã thu: ").append(p == null ? "chưa có" : slots(p.getSlots())).append(".\n");
         List<String> missing = p == null ? ConsultSlots.REQUIRED : List.of(p.getMissingSlots());
-        sb.append("Thông tin tối thiểu còn thiếu: ")
-                .append(missing.isEmpty() ? "đã đủ" : String.join(", ", missing)).append(".\n");
+        sb.append("Thông tin tối thiểu còn thiếu: ").append(missing.isEmpty() ? "đã đủ" : String.join(", ", missing));
+        if (missing.size() > 1 && missing.contains(ConsultSlots.TY_LE_NGAY_DEM)) {
+            sb.append(" (ty_le_ngay_dem hỏi sau cùng, khi đã hỏi xong các thông tin kia)");
+        }
+        sb.append(".\n");
+        if (missing.contains(ConsultSlots.LOAI_MAI)
+                && (p == null || !p.getSlots().hasNonNull(ConsultSlots.DIEN_TICH_MAI))) {
+            sb.append("Hỏi loại mái thì hỏi kèm diện tích mái trong cùng một câu (ví dụ \"Mái nhà mình là mái tôn, ")
+                    .append("ngói hay mái bằng, rộng khoảng bao nhiêu m2 ạ?\"); khách không biết diện tích thì thôi, ")
+                    .append("không hỏi lại.\n");
+        }
         sb.append("Câu bạn hỏi ở tin trước: ")
                 .append(p == null || p.getLastQuestionAsked() == null ? "không có" : p.getLastQuestionAsked())
                 .append(".\n");

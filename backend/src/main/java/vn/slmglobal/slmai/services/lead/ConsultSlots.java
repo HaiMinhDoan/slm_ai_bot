@@ -18,8 +18,8 @@ public final class ConsultSlots {
     public static final String TEN_KHACH = "ten_khach";
     public static final String DANH_XUNG = "danh_xung";
 
-    /** Thông tin tối thiểu để đưa giải pháp (mục 58.4) */
-    public static final List<String> REQUIRED = List.of(KHU_VUC, SO_PHA, HOA_DON_THANG, TY_LE_NGAY_DEM, LOAI_MAI);
+    /** Thông tin tối thiểu để đưa giải pháp (mục 58.4), theo thứ tự hỏi: ngày / đêm hỏi sau cùng */
+    public static final List<String> REQUIRED = List.of(KHU_VUC, SO_PHA, HOA_DON_THANG, LOAI_MAI, TY_LE_NGAY_DEM);
 
     /** Các khoá của {@code collected} trong kết quả AI */
     public static final List<String> COLLECTED_KEYS =
