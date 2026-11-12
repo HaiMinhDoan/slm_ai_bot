@@ -42,12 +42,16 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
     /**
      * Tự trả hội thoại lại cho AI sau N giờ không có tin của nhân viên (mục 19). Giữ người phụ trách để báo họ
      * khi khách nhắn lại; lượt đầu tiên sau đó đi theo DRAFT nhờ cột tu_tra_lai_luc.
+     *
+     * <p>Tính từ mốc muộn hơn giữa tin cuối của nhân viên và lúc chuyển nhân viên: tin nhân viên của đợt trước đã
+     * cũ thì vẫn chờ đủ N giờ kể từ lần chuyển mới (trước đây hội thoại bị trả lại AI vài phút sau khi AI chuyển
+     * nhân viên, 2026-11-09).
      */
     @Modifying
     @Query(nativeQuery = true, value = """
             UPDATE hoi_thoai
             SET nguoi_phu_trach = 'AI_ACTIVE', tu_tra_lai_luc = now()
             WHERE nguoi_phu_trach = 'HUMAN_OWNED' AND trang_thai = 'OPEN'
-              AND COALESCE(nhan_vien_tin_cuoi_luc, tiep_quan_luc, sua_luc) < :cutoff""")
+              AND COALESCE(GREATEST(nhan_vien_tin_cuoi_luc, tiep_quan_luc), sua_luc) < :cutoff""")
     int handBackIdleSince(OffsetDateTime cutoff);
 }

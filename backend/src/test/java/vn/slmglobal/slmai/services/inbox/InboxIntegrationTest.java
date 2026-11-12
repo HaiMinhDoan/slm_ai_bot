@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -24,6 +25,7 @@ import vn.slmglobal.slmai.services.conversation.entity.Message;
 import vn.slmglobal.slmai.services.conversation.entity.MessageDirection;
 import vn.slmglobal.slmai.services.conversation.entity.MessageStatus;
 import vn.slmglobal.slmai.services.conversation.entity.SenderType;
+import vn.slmglobal.slmai.services.conversation.repository.ConversationRepository;
 import vn.slmglobal.slmai.services.conversation.repository.MessageRepository;
 
 import java.io.IOException;
@@ -79,6 +81,10 @@ class InboxIntegrationTest {
     MessageRepository messages;
     @Autowired
     JdbcTemplate jdbc;
+    @Autowired
+    ConversationRepository conversationRepository;
+    @Autowired
+    TransactionTemplate tx;
 
     @Test
     void listsByChannelAndSendsEditedDraft() {
@@ -169,6 +175,30 @@ class InboxIntegrationTest {
                 .containsExactly("Alo shop ơi", "Có ai không ạ");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM nhat_ky_thao_tac WHERE hanh_dong IN "
                 + "('conversation.to_staff', 'conversation.to_ai')", Integer.class)).isGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    void autoHandbackCountsFromTheLatestHandoff() {
+        UUID conv = customerSays("psid-4", "Cho em gặp nhân viên");
+        // Nhân viên nhắn lần cuối 3 ngày trước; AI vừa chuyển nhân viên lại (hội thoại Lê Huy Sĩ, 2026-11-09)
+        jdbc.update("UPDATE hoi_thoai SET nguoi_phu_trach = 'HUMAN_OWNED', nhan_vien_tin_cuoi_luc = now() - "
+                + "interval '3 days', tiep_quan_luc = now() - interval '2 minutes' WHERE id = ?", conv);
+        handBackIdle();
+        assertThat(ownership(conv)).isEqualTo("HUMAN_OWNED");
+
+        jdbc.update("UPDATE hoi_thoai SET tiep_quan_luc = now() - interval '25 hours' WHERE id = ?", conv);
+        assertThat(handBackIdle()).isPositive();
+        assertThat(ownership(conv)).isEqualTo("AI_ACTIVE");
+    }
+
+    /** Như AutoHandbackJob với 24 giờ */
+    private int handBackIdle() {
+        return tx.execute(t -> conversationRepository.handBackIdleSince(OffsetDateTime.now().minusHours(24)));
+    }
+
+    private String ownership(UUID conversationId) {
+        return jdbc.queryForObject("SELECT nguoi_phu_trach FROM hoi_thoai WHERE id = ?", String.class,
+                conversationId);
     }
 
     private UUID customerSays(String psid, String text) {

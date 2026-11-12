@@ -1299,6 +1299,9 @@ Ghi tin_nhan (OUT), luot_goi_ai, media_lan_gui, kt_lo_hong, ho_so_tu_van
   - "Chuyển cho AI" ghi `hoi_thoai.nv_giao_lai_luc` (V13). Lượt AI đầu tiên sau đó có ngữ cảnh "nhân viên vừa giao lại: lần chuyển trước đã xong, tự trả lời câu khách còn chờ, khách giục chỉ là đang chờ"; lượt đầu sau khi tự trả lại cũng được nhắc tự trả lời câu còn chờ.
   - Ở lượt đầu sau khi được giao lại (tự trả lại hoặc nhân viên bấm), AI vẫn đặt `handoff.needed` thì Policy cho thành nháp (`HANDOFF_AFTER_HANDBACK`), không chuyển ngay. Loại câu hỏi phải chuyển nhân viên (handoff intents) và lượt không có câu trả lời vẫn chuyển.
   - `core/guardrails` (kiến thức trên admin): chỉ chuyển khi khách **nói rõ** muốn gặp, gọi điện với nhân viên hoặc hẹn khảo sát; thêm mục "Không chuyển nhân viên khi" (khách chỉ giục; hỏi giá thiết bị lẻ, cấu hình tự nêu, gửi link; trước đó đã báo chuyển mà hội thoại vẫn do AI trả lời).
+- **Sửa 2026-11-12:**
+  - Job tự trả lại AI tính từ mốc muộn hơn giữa tin cuối của nhân viên và lúc chuyển nhân viên (`GREATEST(nhan_vien_tin_cuoi_luc, tiep_quan_luc)`). Trước đó job lấy tin nhân viên của đợt cũ (06/11), nên ngày 09/11 hội thoại Lê Huy Sĩ bị trả lại AI khoảng 2 phút sau khi AI chuyển nhân viên. Lượt kế tiếp thành nháp không ai gửi, và khách chờ gần 2 tiếng.
+  - `core/guardrails`: bỏ "nhiều công trình" khỏi dự án lớn (còn nhà xưởng, trang trại, khu công nghiệp, chuỗi cửa hàng hoặc nhiều chi nhánh). Khách hỏi thêm cho một công trình khác (nhà người thân, hàng xóm, cửa hàng, nhà hàng) thì AI tư vấn riêng như một nhu cầu mới. Nhu cầu lớn thì làm theo playbook: báo khoảng giá, xin số điện thoại để khảo sát.
 - Chế độ `DRAFT`: bản nháp hiện trong inbox admin; nhân viên gửi, sửa (lưu `kt_sua_ban_nhap`) hoặc bỏ.
 - Chế độ mặc định của mỗi loại câu hỏi và các trường hợp một lượt `AUTO` chuyển sang `DRAFT`: mục 35.
 - **Công tắc dừng toàn cục** (mục 33): khi bật, mọi lượt đi theo `DRAFT` bất kể cấu hình.
