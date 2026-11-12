@@ -9,6 +9,7 @@ import vn.slmglobal.slmai.services.media.entity.LinkTargetType;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -65,6 +66,11 @@ public class MediaLinkRepository {
                 .addValue("mediaId", mediaId)
                 .addValue("type", targetType.name())
                 .addValue("key", targetKey));
+    }
+
+    /** Bỏ mọi liên kết của một media (trước khi ghi lại danh sách mới từ trang admin) */
+    public void deleteByMedia(UUID mediaId) {
+        jdbc.update("DELETE FROM media_lien_ket WHERE media_id = :mediaId", Map.of("mediaId", mediaId));
     }
 
     /** Media gắn với một đối tượng (lọc danh sách theo gói) */

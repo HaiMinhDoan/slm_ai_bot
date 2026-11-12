@@ -1,11 +1,8 @@
 package vn.slmglobal.slmai.services.media;
 
 import org.springframework.stereotype.Component;
+import vn.slmglobal.slmai.services.media.entity.MediaType;
 
-import javax.imageio.ImageIO;
-import javax.imageio.ImageReader;
-import javax.imageio.stream.ImageInputStream;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,11 +10,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.util.HexFormat;
-import java.util.Iterator;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
@@ -131,9 +124,11 @@ public class DriveImageFetcher {
                             "Drive trả trang web thay vì ảnh: file chưa chia sẻ \"Bất kỳ ai có đường liên kết\"");
                 }
                 byte[] bytes = readLimited(in);
-                Format format = sniff(bytes);
-                int[] size = dimensions(bytes);
-                return new Image(fileId, bytes, format.mimeType, format.extension, sha256(bytes),
+                MediaFiles.Format format = MediaFiles.sniff(bytes)
+                        .filter(f -> f.mediaType == MediaType.IMAGE)
+                        .orElseThrow(() -> new DriveFetchException("File trên Drive không phải ảnh JPEG / PNG / WebP"));
+                int[] size = MediaFiles.dimensions(bytes);
+                return new Image(fileId, bytes, format.mimeType, format.extension, MediaFiles.sha256(bytes),
                         size == null ? null : size[0], size == null ? null : size[1]);
             } catch (IOException e) {
                 throw new DriveFetchException("Lỗi đọc dữ liệu từ Drive: " + e.getMessage());
@@ -181,60 +176,6 @@ public class DriveImageFetcher {
             out.write(buf, 0, n);
         }
         return out.toByteArray();
-    }
-
-    private enum Format {
-        JPEG("image/jpeg", "jpg"), PNG("image/png", "png"), WEBP("image/webp", "webp");
-
-        final String mimeType;
-        final String extension;
-
-        Format(String mimeType, String extension) {
-            this.mimeType = mimeType;
-            this.extension = extension;
-        }
-    }
-
-    private static Format sniff(byte[] b) {
-        if (b.length >= 3 && (b[0] & 0xFF) == 0xFF && (b[1] & 0xFF) == 0xD8 && (b[2] & 0xFF) == 0xFF) {
-            return Format.JPEG;
-        }
-        if (b.length >= 8 && (b[0] & 0xFF) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G'
-                && b[4] == 0x0D && b[5] == 0x0A && b[6] == 0x1A && b[7] == 0x0A) {
-            return Format.PNG;
-        }
-        if (b.length >= 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F'
-                && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P') {
-            return Format.WEBP;
-        }
-        throw new DriveFetchException("File trên Drive không phải ảnh JPEG / PNG / WebP");
-    }
-
-    /** Kích thước đọc từ header, không giải mã cả ảnh; WebP (ImageIO không hỗ trợ sẵn) thì null. */
-    private static int[] dimensions(byte[] bytes) {
-        try (ImageInputStream iis = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
-            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
-            if (!readers.hasNext()) {
-                return null;
-            }
-            ImageReader reader = readers.next();
-            try {
-                reader.setInput(iis, true, true);
-                return new int[]{reader.getWidth(0), reader.getHeight(0)};
-            } finally {
-                reader.dispose();
-            }
-        } catch (IOException | RuntimeException e) {
-            return null;
-        }
-    }
-
-    private static String sha256(byte[] bytes) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
     }
 
     private static void closeQuietly(InputStream in) {

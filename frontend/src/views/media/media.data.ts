@@ -1,7 +1,14 @@
 import type { BasicColumn, FormSchema } from '@/components/Table';
 import { h } from 'vue';
 import { Tag } from 'ant-design-vue';
-import type { MediaLinkModel, MediaRights, MediaStatus } from '@/api/media/model/mediaModel';
+import type {
+  AvailabilityStatus,
+  LinkRole,
+  LinkTargetType,
+  MediaLinkModel,
+  MediaRights,
+  MediaStatus,
+} from '@/api/media/model/mediaModel';
 import { formatToDateTime } from '@/utils/dateUtil';
 
 export const STATUS_LABELS: Record<MediaStatus, string> = {
@@ -31,19 +38,97 @@ export const SOURCE_LABELS: Record<string, string> = {
   SLM_V2: 'slm_v2',
 };
 
-const ROLE_LABELS: Record<string, string> = {
-  MAIN_IMAGE: 'ảnh chính',
-  GALLERY: 'ảnh thêm',
+export const ROLE_LABELS: Record<LinkRole, string> = {
+  MAIN_IMAGE: 'Ảnh chính',
+  GALLERY: 'Ảnh thêm',
+  EXPLAINER: 'Giải thích',
+  CASE_STUDY: 'Công trình thực tế',
+  GUIDE: 'Hướng dẫn',
+  RELATED: 'Liên quan',
 };
 
-/** "Gói 98 (ảnh chính)" */
+/** Vai trò chỉ dành cho ảnh */
+export const IMAGE_ONLY_ROLES: LinkRole[] = ['MAIN_IMAGE', 'GALLERY'];
+
+export const TARGET_LABELS: Record<LinkTargetType, string> = {
+  PACKAGE: 'Gói',
+  MATERIAL: 'Vật tư',
+  BRAND: 'Hãng',
+  KNOWLEDGE_DOC: 'Tài liệu',
+};
+
+/** Giai đoạn khách (mục 4.1) media hợp để gửi */
+export const STAGE_LABELS: Record<string, string> = {
+  LEAD: 'Khách mới',
+  CONSULTING: 'Đang tư vấn',
+  WON: 'Đã chốt',
+  INSTALLATION: 'Đang lắp',
+  INSTALLED: 'Đã lắp',
+  AFTER_SALES: 'Sau bán hàng',
+  REFERRAL: 'Giới thiệu khách',
+};
+
+export const CHANNEL_LABELS: Record<string, string> = {
+  MESSENGER: 'Messenger',
+  ZALO_OA: 'Zalo OA',
+  TIKTOK_DM: 'TikTok',
+};
+
+export const AVAILABILITY_LABELS: Record<AvailabilityStatus, string> = {
+  ACTIVE: 'Xem được',
+  PRIVATE: 'Riêng tư',
+  UNAVAILABLE: 'Không xem được',
+  DELETED: 'Đã bị xoá',
+  UNKNOWN: 'Chưa kiểm tra',
+};
+
+export const AVAILABILITY_COLORS: Record<AvailabilityStatus, string> = {
+  ACTIVE: 'green',
+  PRIVATE: 'orange',
+  UNAVAILABLE: 'red',
+  DELETED: 'red',
+  UNKNOWN: 'default',
+};
+
+/** Nhật ký thao tác trên media */
+export const ACTION_LABELS: Record<string, string> = {
+  'media.import': 'Nhập combo',
+  'media.create': 'Thêm media',
+  'media.update': 'Sửa nội dung',
+  'media.links': 'Sửa liên kết',
+  'media.delete': 'Xoá',
+  'media.restore': 'Khôi phục',
+  'media.source.add': 'Thêm nguồn',
+  'media.source.replace': 'Thay nguồn',
+  'media.source.update': 'Sửa nguồn',
+  'media.source.delete': 'Bỏ nguồn',
+  'media.ai_draft': 'AI viết nháp',
+};
+
+/** Tên trường trong nhật ký sửa nội dung */
+export const FIELD_LABELS: Record<string, string> = {
+  title: 'tiêu đề',
+  status: 'trạng thái',
+  rights: 'quyền sử dụng',
+  indexCode: 'mã danh mục',
+  summary: 'tóm tắt',
+  useWhen: 'dùng khi',
+  avoidWhen: 'tránh khi',
+  description: 'mô tả',
+  transcript: 'lời thoại',
+  topics: 'chủ đề',
+  customerStages: 'giai đoạn khách',
+  allowedChannels: 'kênh',
+};
+
+/** "Gói #98 Hệ Hy-Brid 5 kWp 1 pha (HN) · ảnh chính" */
 export function linkText(l: MediaLinkModel): string {
-  const target = l.targetType === 'PACKAGE' ? 'Gói' : l.targetType;
-  const role = ROLE_LABELS[l.role];
-  return `${target} ${l.targetKey}` + (role ? ` (${role})` : '');
+  const target =
+    l.label ?? `${TARGET_LABELS[l.targetType] ?? l.targetType} ${l.targetKey} (không còn)`;
+  return `${target} · ${(ROLE_LABELS[l.role] ?? l.role).toLowerCase()}`;
 }
 
-const options = (labels: Record<string, string>) =>
+export const options = (labels: Record<string, string>) =>
   Object.entries(labels).map(([value, label]) => ({ label, value }));
 
 export const columns: BasicColumn[] = [
@@ -84,12 +169,13 @@ export const columns: BasicColumn[] = [
         h('div', { style: 'color:#888;font-size:12px' }, RIGHTS_LABELS[record.rights]),
       ]),
   },
+  { title: 'Chủ đề', key: 'topics', dataIndex: 'topics', width: 140, ellipsis: false },
   { title: 'Nguồn', key: 'source', dataIndex: 'sources', width: 160, ellipsis: false },
   {
     title: 'Liên kết',
     key: 'links',
     dataIndex: 'links',
-    width: 170,
+    width: 220,
     align: 'left',
     ellipsis: false,
   },
@@ -143,11 +229,8 @@ export const searchFormSchema: FormSchema[] = [
   },
 ];
 
-/**
- * Form sửa media. AI chỉ hiểu media qua Tóm tắt / Dùng khi / Tránh khi (mục 6.2), nên duyệt bắt buộc có
- * hai ô đầu; backend kiểm tra lại.
- */
-export const mediaFormSchema: FormSchema[] = [
+/** Tab Thông tin của form sửa; danh sách chủ đề nạp từ backend (updateSchema) */
+export const infoFormSchema: FormSchema[] = [
   {
     field: 'title',
     label: 'Tiêu đề',
@@ -164,7 +247,7 @@ export const mediaFormSchema: FormSchema[] = [
     componentProps: { options: options(STATUS_LABELS) },
     helpMessage: [
       'Nháp: AI chưa dùng.',
-      'Đã duyệt: AI được chọn gửi cho khách (khi có tính năng gửi media), cần Tóm tắt và Dùng khi.',
+      'Đã duyệt: AI được chọn gửi cho khách (khi có tính năng gửi media), cần Tóm tắt và Dùng khi ở tab Cho AI.',
       'Lưu trữ: giữ lại để tra cứu, AI không dùng.',
     ],
     colProps: { span: 12 },
@@ -175,57 +258,93 @@ export const mediaFormSchema: FormSchema[] = [
     component: 'Select',
     required: true,
     componentProps: { options: options(RIGHTS_LABELS) },
-    helpMessage: 'Chỉ gửi link: video Facebook / YouTube, không tải về rồi đăng lại.',
+    helpMessage: 'Chỉ gửi link: video Facebook / YouTube / TikTok, không tải về rồi đăng lại.',
     colProps: { span: 12 },
   },
   {
-    field: 'summary',
-    label: 'Tóm tắt',
-    component: 'InputTextArea',
+    field: 'topics',
+    label: 'Chủ đề',
+    component: 'Select',
+    componentProps: { mode: 'multiple', options: [], placeholder: 'Chọn trong bộ chủ đề' },
+    helpMessage: 'Sửa bộ chủ đề ở nút Chủ đề trên trang Thư viện media.',
+    colProps: { span: 24 },
+  },
+  {
+    field: 'customerStages',
+    label: 'Giai đoạn khách',
+    component: 'Select',
     componentProps: {
-      rows: 2,
-      maxlength: 2000,
-      placeholder: 'Media nói gì, ví dụ: ảnh hệ Hybrid 5 kWp, pin 5,12 kWh lắp trên mái tôn',
+      mode: 'multiple',
+      options: options(STAGE_LABELS),
+      placeholder: 'Mọi giai đoạn',
     },
-    dynamicRules: ({ values }) =>
-      values.status === 'APPROVED' ? [{ required: true, message: 'Duyệt cần có tóm tắt' }] : [],
+    helpMessage: 'Để trống là hợp với mọi giai đoạn.',
     colProps: { span: 24 },
   },
   {
-    field: 'useWhen',
-    label: 'Dùng khi',
-    component: 'InputTextArea',
-    componentProps: {
-      rows: 2,
-      maxlength: 2000,
-      placeholder: 'Khi nào nên gửi, ví dụ: khách hỏi gói 5 kWp hoặc muốn xem hệ thực tế',
-    },
-    dynamicRules: ({ values }) =>
-      values.status === 'APPROVED' ? [{ required: true, message: 'Duyệt cần có "dùng khi"' }] : [],
+    field: 'allowedChannels',
+    label: 'Kênh được gửi',
+    component: 'Select',
+    componentProps: { mode: 'multiple', options: options(CHANNEL_LABELS) },
     colProps: { span: 24 },
   },
-  {
-    field: 'avoidWhen',
-    label: 'Tránh khi',
-    component: 'InputTextArea',
-    componentProps: { rows: 2, maxlength: 2000, placeholder: 'Không bắt buộc' },
-    colProps: { span: 24 },
-  },
-  {
-    field: 'description',
-    label: 'Mô tả chi tiết',
-    component: 'InputTextArea',
-    componentProps: { rows: 3, maxlength: 10000 },
-    colProps: { span: 24 },
-  },
-  {
-    field: 'transcript',
-    label: 'Lời thoại',
-    component: 'InputTextArea',
-    componentProps: { rows: 3, maxlength: 50000 },
-    ifShow: ({ values }) => values.type === 'VIDEO',
-    colProps: { span: 24 },
-  },
-  // Không hiện, chỉ để ô Lời thoại biết đây là video
-  { field: 'type', label: '', component: 'Input', show: false },
 ];
+
+/**
+ * Tab Cho AI. AI chỉ hiểu media qua Tóm tắt / Dùng khi / Tránh khi (mục 6.2), nên duyệt bắt buộc có hai ô đầu;
+ * trạng thái nằm ở tab Thông tin nên truyền vào hàm kiểm tra.
+ */
+export function aiFormSchema(approved: () => boolean): FormSchema[] {
+  const requiredWhenApproved = (message: string) => () =>
+    approved() ? [{ required: true, message }] : [];
+  return [
+    {
+      field: 'summary',
+      label: 'Tóm tắt',
+      component: 'InputTextArea',
+      componentProps: {
+        rows: 2,
+        maxlength: 2000,
+        placeholder: 'Media nói gì, ví dụ: ảnh hệ Hybrid 5 kWp, pin 5,12 kWh lắp trên mái tôn',
+      },
+      dynamicRules: requiredWhenApproved('Duyệt cần có tóm tắt'),
+      colProps: { span: 24 },
+    },
+    {
+      field: 'useWhen',
+      label: 'Dùng khi',
+      component: 'InputTextArea',
+      componentProps: {
+        rows: 2,
+        maxlength: 2000,
+        placeholder: 'Khi nào nên gửi, ví dụ: khách hỏi gói 5 kWp hoặc muốn xem hệ thực tế',
+      },
+      dynamicRules: requiredWhenApproved('Duyệt cần có "dùng khi"'),
+      colProps: { span: 24 },
+    },
+    {
+      field: 'avoidWhen',
+      label: 'Tránh khi',
+      component: 'InputTextArea',
+      componentProps: { rows: 2, maxlength: 2000, placeholder: 'Không bắt buộc' },
+      colProps: { span: 24 },
+    },
+    {
+      field: 'description',
+      label: 'Mô tả chi tiết',
+      component: 'InputTextArea',
+      componentProps: { rows: 4, maxlength: 10000 },
+      colProps: { span: 24 },
+    },
+    {
+      field: 'transcript',
+      label: 'Lời thoại',
+      component: 'InputTextArea',
+      componentProps: { rows: 4, maxlength: 50000 },
+      ifShow: ({ values }) => values.type === 'VIDEO',
+      colProps: { span: 24 },
+    },
+    // Không hiện, chỉ để ô Lời thoại biết đây là video
+    { field: 'type', label: '', component: 'Input', show: false },
+  ];
+}

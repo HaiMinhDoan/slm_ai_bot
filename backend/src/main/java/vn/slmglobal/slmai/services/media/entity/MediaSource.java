@@ -77,6 +77,10 @@ public class MediaSource {
     @Column(name = "url_anh_thu_nho")
     private String thumbnailUrl;
 
+    /** Ảnh thu nhỏ của video tải lên, lưu trong MinIO (V14) */
+    @Column(name = "duong_dan_anh_thu_nho")
+    private String thumbnailKey;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "trang_thai_xu_ly", nullable = false)
     @Builder.Default

@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import vn.slmglobal.slmai.services.auth.entity.AuditLog;
 
+import java.util.List;
 import java.util.UUID;
 
 public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
@@ -28,4 +29,13 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
                                @Param("action") String action,
                                @Param("targetType") String targetType,
                                Pageable pageable);
+
+    /** Lịch sử thao tác trên một đối tượng (ví dụ một media), mới trước */
+    @Query("""
+            SELECT a FROM AuditLog a LEFT JOIN FETCH a.actor
+            WHERE a.targetType = :targetType AND a.targetKey = :targetKey
+            ORDER BY a.createdAt DESC
+            """)
+    List<AuditLog> findByTarget(@Param("targetType") String targetType, @Param("targetKey") String targetKey,
+                                Pageable pageable);
 }

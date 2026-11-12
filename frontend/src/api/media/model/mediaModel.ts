@@ -1,23 +1,40 @@
 /** Khớp MediaAdminController của backend (/api/v1/admin/media) */
+export type AvailabilityStatus = 'ACTIVE' | 'PRIVATE' | 'UNAVAILABLE' | 'DELETED' | 'UNKNOWN';
+
 export interface MediaSourceModel {
   id: string;
   sourceType: 'UPLOAD' | 'YOUTUBE' | 'FACEBOOK' | 'TIKTOK' | 'SLM_V2';
   sourceUrl?: string;
   externalId?: string;
+  authorName?: string;
   mimeType?: string;
   sizeBytes?: number;
   width?: number;
   height?: number;
+  durationSeconds?: number;
+  sha256?: string;
+  /** Ảnh xem trước của link ngoài (YouTube, TikTok) */
+  thumbnailUrl?: string;
+  /** Video tải lên có ảnh thu nhỏ lưu trong hệ thống */
+  hasThumbnail: boolean;
   processingStatus: string;
-  availabilityStatus: string;
+  availabilityStatus: AvailabilityStatus;
+  lastCheckedAt?: string;
+  createdAt?: string;
   /** Có file lưu trong hệ thống (xem trước được) */
   stored: boolean;
 }
 
+export type LinkTargetType = 'PACKAGE' | 'MATERIAL' | 'BRAND' | 'KNOWLEDGE_DOC';
+export type LinkRole = 'MAIN_IMAGE' | 'GALLERY' | 'EXPLAINER' | 'CASE_STUDY' | 'GUIDE' | 'RELATED';
+
 export interface MediaLinkModel {
-  targetType: 'PACKAGE' | 'MATERIAL' | 'BRAND' | 'KNOWLEDGE_DOC';
+  targetType: LinkTargetType;
   targetKey: string;
-  role: string;
+  role: LinkRole;
+  sortOrder: number;
+  /** Tên đối tượng; trống nếu đối tượng không còn */
+  label?: string;
 }
 
 export type MediaStatus = 'DRAFT' | 'APPROVED' | 'ARCHIVED';
@@ -36,6 +53,9 @@ export interface MediaModel {
   avoidWhen?: string;
   description?: string;
   transcript?: string;
+  topics: string[];
+  customerStages: string[];
+  allowedChannels: string[];
   createdBy?: string;
   createdAt: string;
   updatedBy?: string;
@@ -70,6 +90,100 @@ export interface MediaUpdateModel {
   avoidWhen?: string;
   description?: string;
   transcript?: string;
+  topics: string[];
+  customerStages: string[];
+  allowedChannels: string[];
+}
+
+export interface MediaLinkInput {
+  targetType: LinkTargetType;
+  targetKey: string;
+  role: LinkRole;
+  sortOrder?: number;
+}
+
+export interface MediaLinksResult {
+  media: MediaModel;
+  /** Thay đổi phụ, ví dụ ảnh chính cũ của gói chuyển thành ảnh thêm */
+  notes: string[];
+}
+
+/** Gói / vật tư / hãng / tài liệu để gắn; twin là gói cùng tên ở miền kia */
+export interface LinkTargetModel {
+  key: string;
+  label: string;
+  twinKey?: string;
+  twinLabel?: string;
+}
+
+export type CreateOutcome = 'CREATED' | 'EXISTS' | 'FAILED';
+
+/** Kết quả thêm một file / một link */
+export interface MediaCreateResult {
+  name: string;
+  outcome: CreateOutcome;
+  mediaId?: string;
+  note?: string;
+}
+
+/** Thông số video trình duyệt đọc được */
+export interface VideoMeta {
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  thumbnail?: Blob;
+}
+
+export interface MediaHistoryModel {
+  at: string;
+  actorName?: string;
+  action: string;
+  before?: Recordable;
+  after?: Recordable;
+}
+
+export type BulkAction =
+  | 'SET_STATUS'
+  | 'SET_RIGHTS'
+  | 'ADD_TOPICS'
+  | 'ADD_LINK'
+  | 'DELETE'
+  | 'RESTORE';
+
+export interface MediaBulkRequest {
+  ids: string[];
+  action: BulkAction;
+  status?: MediaStatus;
+  rights?: MediaRights;
+  topics?: string[];
+  link?: MediaLinkInput;
+}
+
+export interface MediaBulkResult {
+  id: string;
+  title?: string;
+  ok: boolean;
+  note?: string;
+}
+
+export interface MediaDraftModel {
+  summary: string;
+  useWhen: string;
+  avoidWhen: string;
+  description: string;
+  topics: string[];
+  /** Claude đã xem ảnh (hoặc khung hình video) */
+  sawImage: boolean;
+}
+
+export interface TopicModel {
+  code: string;
+  name: string;
+  description?: string;
+  sortOrder: number;
+  active: boolean;
+  updatedBy?: string;
+  updatedAt?: string;
 }
 
 /** Một combo cần nhập: id gói slm_v2 (HN, HCM), link Drive, link Facebook, link web */

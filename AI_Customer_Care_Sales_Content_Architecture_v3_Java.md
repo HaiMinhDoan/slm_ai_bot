@@ -818,6 +818,38 @@ Backend chọn nguồn theo kênh. Thứ tự mặc định cho Messenger (cấu
 - Nhập lại ảnh / video trùng một media đã xoá: báo `EXISTS`, không gắn thêm liên kết. Ảnh mới nhập cho gói mà ảnh chính cũ đã xoá: ảnh cũ chuyển thành `GALLERY`, ảnh mới làm ảnh chính.
 - API: `GET/PUT /admin/media/{id}`, `DELETE /admin/media/{id}` (xoá mềm), `POST /admin/media/{id}/restore`; quản trị hệ thống và quản trị nội dung. Nhật ký `media.update`, `media.delete`, `media.restore`.
 
+**Trang quản lý media đầy đủ (V14, 2026-11-12, doanh nghiệp yêu cầu "sửa được tất cả các trường, thêm mới cũng thế").** Vẫn chỉ xoá mềm, không có xoá hẳn.
+
+- **Form sửa: ngăn kéo 5 tab.**
+  - **Thông tin:** tiêu đề, trạng thái, quyền, chủ đề, giai đoạn khách (`LEAD` … `REFERRAL`), kênh được gửi.
+  - **Cho AI:** tóm tắt, dùng khi, tránh khi, mô tả, lời thoại, và nút **AI viết nháp**.
+  - **Nguồn:** thêm file hoặc link, thay file, sửa link, bỏ nguồn, sửa trạng thái truy cập và tác giả.
+  - **Liên kết:** gói, vật tư, hãng, tài liệu kiến thức; chọn vai trò và thứ tự.
+  - **Lịch sử:** đọc từ nhật ký thao tác.
+  - Mã danh mục M01… vẫn do hệ thống cấp, không sửa tay. Loại ảnh / video theo file hoặc link.
+- **Thêm media:**
+  - **Tải file** (`POST /admin/media/uploads`, mỗi file một lần gọi): đi qua backend vì MinIO nội bộ không cho trình duyệt tải thẳng.
+    - Nhận ảnh JPEG / PNG / WebP tối đa 15 MB, video MP4 / MOV / WebM tối đa 100 MB.
+    - Nhận diện định dạng theo magic bytes; trùng sha256 thì báo `EXISTS`.
+    - Server chưa có ffmpeg nên trình duyệt đọc thời lượng, kích thước và cắt một khung hình làm ảnh thu nhỏ (`media_nguon.duong_dan_anh_thu_nho`).
+  - **Dán link** (`POST /admin/media/links`):
+    - YouTube (watch, youtu.be, shorts, embed, live), Facebook (share/r, share/v, reel, videos, watch, fb.watch) và TikTok cùng một video ra cùng `id_ngoai`. Link rút gọn giữ mã rút gọn, không gọi mạng.
+    - Tiêu đề và ảnh xem trước của YouTube / TikTok lấy qua oEmbed công khai.
+    - Ảnh Google Drive được tải về như lúc nhập combo.
+  - Nhập combo bằng JSON giữ nguyên.
+- **Chủ đề:** bảng `chu_de` (V14), sửa trên admin, có hiệu lực ngay. Không xoá được, chỉ tắt; chủ đề đã tắt vẫn giữ trên media đang gắn. Có sẵn 11 chủ đề (hybrid, on-grid, pin-luu-tru, tam-pin, bien-tan, lap-dat, cong-trinh, bao-tri, bao-hanh, hoa-don, bang-gia). Thay cho `knowledge/rules/topics.yaml` dự tính ở mục 6.2.
+- **Liên kết:** ghi lại cả danh sách (`PUT /admin/media/{id}/links`).
+  - Kiểm tra đối tượng có tồn tại và hiện tên gói / vật tư / hãng / tài liệu.
+  - Chỉ ảnh mới làm ảnh chính / ảnh thêm.
+  - Gắn ảnh chính thì ảnh chính cũ của đối tượng chuyển thành ảnh thêm, và báo lại cho admin.
+  - Chọn gói ở miền này thì form tự thêm gói cùng tên ở miền kia.
+- **Thao tác hàng loạt** (`POST /admin/media/bulk`, tối đa 100 mục): đổi trạng thái, đổi quyền, thêm chủ đề, gắn đối tượng, xoá, khôi phục. Mỗi mục chạy trong transaction riêng và báo kết quả riêng (ví dụ duyệt khi thiếu tóm tắt thì chỉ mục đó lỗi).
+- **AI viết nháp** (`POST /admin/media/{id}/ai-draft`):
+  - Claude (model AI hỗ trợ soạn, adaptive thinking, effort low, structured output) nhìn ảnh hoặc ảnh thu nhỏ của video. Ảnh lớn được thu về cạnh 1568 px.
+  - Claude đọc thêm tiêu đề, gói đang gắn, nội dung đã có và bộ chủ đề, rồi viết nháp tóm tắt, dùng khi, tránh khi, mô tả, chủ đề.
+  - Không ghi vào media, admin xem lại rồi bấm Lưu. Mỗi lần gọi ghi `luot_goi_ai` (`CONTENT_ASSISTANT`) và nhật ký `media.ai_draft`.
+- **Bỏ nguồn:** chỉ xoá dòng `media_nguon`, file MinIO giữ nguyên, nhật ký ghi đường dẫn. Media luôn còn ít nhất một nguồn.
+
 ------------------------------------------------------------------------
 
 # 7. Media Selection
