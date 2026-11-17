@@ -126,7 +126,8 @@
         label: 'Chủ đề',
         component: 'Select',
         required: true,
-        componentProps: { mode: 'multiple', options: [] },
+        componentProps: { mode: 'multiple',
+        optionFilterProp: 'label', options: [] },
         ifShow: ({ values }) => values.action === 'ADD_TOPICS',
         colProps: { span: 24 },
       },
@@ -145,6 +146,7 @@
       field: 'topics',
       componentProps: {
         mode: 'multiple',
+        optionFilterProp: 'label',
         options: topics.filter((t) => t.active).map((t) => ({ value: t.code, label: t.name })),
       },
     });

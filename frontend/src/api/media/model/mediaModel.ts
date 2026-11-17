@@ -116,6 +116,26 @@ export interface LinkTargetModel {
   twinLabel?: string;
 }
 
+/**
+ * Thông tin nhập cùng lúc thêm media, áp cho từng file / link; title chỉ gửi khi thêm đúng một mục.
+ * aiDraft: Claude viết nháp các ô cho AI còn trống sau khi thêm, media giữ ở Nháp.
+ */
+export interface MediaCreateInfo {
+  title?: string;
+  status?: MediaStatus;
+  rights?: MediaRights;
+  summary?: string;
+  useWhen?: string;
+  avoidWhen?: string;
+  description?: string;
+  transcript?: string;
+  topics?: string[];
+  customerStages?: string[];
+  allowedChannels?: string[];
+  links?: MediaLinkInput[];
+  aiDraft?: boolean;
+}
+
 export type CreateOutcome = 'CREATED' | 'EXISTS' | 'FAILED';
 
 /** Kết quả thêm một file / một link */

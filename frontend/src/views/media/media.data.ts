@@ -121,6 +121,7 @@ export const FIELD_LABELS: Record<string, string> = {
   allowedChannels: 'kênh',
 };
 
+/** Ô chọn nhiều (chủ đề, giai đoạn, kênh) tìm theo tên hiển thị: Select mặc định lọc theo mã, gõ tiếng Việt không ra */
 /** "Gói #98 Hệ Hy-Brid 5 kWp 1 pha (HN) · ảnh chính" */
 export function linkText(l: MediaLinkModel): string {
   const target =
@@ -265,7 +266,12 @@ export const infoFormSchema: FormSchema[] = [
     field: 'topics',
     label: 'Chủ đề',
     component: 'Select',
-    componentProps: { mode: 'multiple', options: [], placeholder: 'Chọn trong bộ chủ đề' },
+    componentProps: {
+      mode: 'multiple',
+      optionFilterProp: 'label',
+      options: [],
+      placeholder: 'Chọn trong bộ chủ đề',
+    },
     helpMessage: 'Sửa bộ chủ đề ở nút Chủ đề trên trang Thư viện media.',
     colProps: { span: 24 },
   },
@@ -275,6 +281,7 @@ export const infoFormSchema: FormSchema[] = [
     component: 'Select',
     componentProps: {
       mode: 'multiple',
+      optionFilterProp: 'label',
       options: options(STAGE_LABELS),
       placeholder: 'Mọi giai đoạn',
     },
@@ -285,7 +292,11 @@ export const infoFormSchema: FormSchema[] = [
     field: 'allowedChannels',
     label: 'Kênh được gửi',
     component: 'Select',
-    componentProps: { mode: 'multiple', options: options(CHANNEL_LABELS) },
+    componentProps: {
+      mode: 'multiple',
+      optionFilterProp: 'label',
+      options: options(CHANNEL_LABELS),
+    },
     colProps: { span: 24 },
   },
 ];
@@ -346,5 +357,71 @@ export function aiFormSchema(approved: () => boolean): FormSchema[] {
     },
     // Không hiện, chỉ để ô Lời thoại biết đây là video
     { field: 'type', label: '', component: 'Input', show: false },
+  ];
+}
+
+/**
+ * Form của hộp Thêm media: mọi trường của media, áp cho từng file / link trong lần thêm (2026-11-17).
+ *
+ * @param single đang thêm đúng một file / link (mới nhập được tiêu đề)
+ * @param hasVideo có video trong lần thêm (hiện ô Lời thoại)
+ */
+export function addFormSchema(single: () => boolean, hasVideo: () => boolean): FormSchema[] {
+  const info = Object.fromEntries(infoFormSchema.map((x) => [x.field, x]));
+  const ai = Object.fromEntries(aiFormSchema(() => false).map((x) => [x.field, x]));
+  const requiredToApprove =
+    (message: string) =>
+    ({ values }) =>
+      values.status === 'APPROVED' && !values.aiDraft ? [{ required: true, message }] : [];
+  return [
+    {
+      ...info.title,
+      required: false,
+      dynamicDisabled: () => !single(),
+      componentProps: {
+        maxlength: 300,
+        placeholder: 'Để trống thì lấy theo tên file / tiêu đề video',
+      },
+      helpMessage:
+        'Chỉ nhập được khi thêm đúng 1 file hoặc 1 link; thêm nhiều thì mỗi media lấy theo tên file.',
+    },
+    {
+      ...info.status,
+      defaultValue: 'DRAFT',
+      dynamicDisabled: ({ values }) => !!values.aiDraft,
+      helpMessage: [
+        'Nháp: AI chưa dùng. Đã duyệt: cần Tóm tắt và Dùng khi.',
+        'Bật AI viết nháp thì media để ở Nháp, xem lại rồi mới duyệt.',
+      ],
+    },
+    {
+      ...info.rights,
+      required: false,
+      componentProps: {
+        ...info.rights.componentProps,
+        allowClear: true,
+        placeholder: 'Theo loại nguồn',
+      },
+      helpMessage:
+        'Để trống: file tải lên và ảnh Drive là Của công ty, link video là Chỉ gửi link.',
+    },
+    info.topics,
+    info.customerStages,
+    { ...info.allowedChannels, defaultValue: ['MESSENGER'] },
+    { field: 'dividerAi', label: 'Cho AI', component: 'Divider', colProps: { span: 24 } },
+    {
+      field: 'aiDraft',
+      label: 'AI viết nháp',
+      component: 'Switch',
+      defaultValue: false,
+      helpMessage:
+        'Sau khi thêm, Claude xem ảnh (video: ảnh thu nhỏ và tiêu đề) rồi điền các ô dưới còn để trống. Mỗi file tốn một lượt gọi Claude.',
+      colProps: { span: 24 },
+    },
+    { ...ai.summary, dynamicRules: requiredToApprove('Duyệt cần có tóm tắt') },
+    { ...ai.useWhen, dynamicRules: requiredToApprove('Duyệt cần có "dùng khi"') },
+    ai.avoidWhen,
+    ai.description,
+    { ...ai.transcript, ifShow: () => hasVideo() },
   ];
 }

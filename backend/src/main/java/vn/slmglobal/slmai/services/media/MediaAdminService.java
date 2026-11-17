@@ -45,6 +45,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -146,6 +147,33 @@ public class MediaAdminService {
     public record HistoryEntry(OffsetDateTime at, String actorName, String action, JsonNode before, JsonNode after) {
     }
 
+    /**
+     * Thông tin nhập cùng lúc thêm media (hộp "Thêm media", 2026-11-17): mọi trường của form sửa, áp cho từng
+     * file / link trong lần thêm. Trường null giữ mặc định; {@code title} chỉ gửi khi thêm đúng một mục.
+     *
+     * @param aiDraft Claude viết nháp các ô cho AI sau khi thêm, chỉ điền ô còn trống; media giữ ở Nháp để duyệt
+     */
+    public record CreateInfo(
+            @Size(max = 300, message = "Tiêu đề tối đa 300 ký tự") String title,
+            MediaStatus status,
+            RightsStatus rights,
+            @Size(max = 2000, message = "Tóm tắt tối đa 2000 ký tự") String summary,
+            @Size(max = 2000, message = "Dùng khi tối đa 2000 ký tự") String useWhen,
+            @Size(max = 2000, message = "Tránh khi tối đa 2000 ký tự") String avoidWhen,
+            @Size(max = 10000, message = "Mô tả tối đa 10000 ký tự") String description,
+            @Size(max = 50000, message = "Lời thoại tối đa 50000 ký tự") String transcript,
+            @Size(max = 20, message = "Tối đa 20 chủ đề") List<String> topics,
+            List<String> customerStages,
+            List<String> allowedChannels,
+            @Valid List<LinkInput> links,
+            boolean aiDraft) {
+
+        /** Trạng thái sẽ ghi: có AI viết nháp thì luôn là Nháp (nội dung AI phải được xem lại trước khi duyệt) */
+        MediaStatus effectiveStatus() {
+            return aiDraft || status == null ? MediaStatus.DRAFT : status;
+        }
+    }
+
     public enum BulkAction { SET_STATUS, SET_RIGHTS, ADD_TOPICS, ADD_LINK, DELETE, RESTORE }
 
     /** Thao tác hàng loạt; trường đi kèm tuỳ {@code action} (SET_STATUS cần status, ADD_LINK cần đối tượng...) */
@@ -235,7 +263,7 @@ public class MediaAdminService {
     @Transactional
     public LinksResult updateLinks(AuthInfo actor, UUID id, List<LinkInput> input) {
         MediaItem m = editable(id);
-        List<LinkInput> wanted = checkedLinks(m, input == null ? List.of() : input);
+        List<LinkInput> wanted = checkedLinks(m.getType(), input == null ? List.of() : input);
         List<MediaLinkRepository.Link> before = links.findByMediaIds(List.of(id));
         links.deleteByMedia(id);
         List<String> notes = new ArrayList<>();
@@ -265,6 +293,94 @@ public class MediaAdminService {
             audit.record(actor.id(), "media.restore", TARGET, id, null, Map.of("title", m.getTitle()));
         }
         return toResponse(m);
+    }
+
+    // ------------------------------------------------------------------ thông tin nhập lúc thêm
+
+    /**
+     * Kiểm tra thông tin nhập lúc thêm trước khi lưu file: sai thì báo lỗi, không tạo media và không ghi gì vào MinIO.
+     *
+     * @param rights quyền sẽ ghi (mặc định theo loại nguồn nếu admin không chọn)
+     */
+    void checkCreateInfo(CreateInfo info, MediaType type, RightsStatus rights) {
+        if (info == null) {
+            return;
+        }
+        checkedTopics(info.topics() == null ? List.of() : info.topics(), new String[0]);
+        checked(info.customerStages() == null ? List.of() : info.customerStages(), CUSTOMER_STAGES, "Giai đoạn khách");
+        checked(info.allowedChannels() == null ? List.of() : info.allowedChannels(), CHANNELS, "Kênh");
+        checkedLinks(type, info.links() == null ? List.of() : info.links());
+        if (info.effectiveStatus() == MediaStatus.APPROVED) {
+            require(blankToNull(info.summary()) != null && blankToNull(info.useWhen()) != null,
+                    "Muốn duyệt thì điền Tóm tắt và Dùng khi: AI chọn media dựa vào hai ô này");
+            require(rights != RightsStatus.NEEDS_REVIEW, "Chọn quyền sử dụng trước khi duyệt");
+        }
+    }
+
+    /**
+     * Ghi thông tin nhập lúc thêm vào media vừa tạo, trong transaction tạo media (media và nguồn đã ghi). Trả ghi chú
+     * cho admin (ví dụ ảnh chính cũ của gói chuyển thành ảnh thêm).
+     */
+    List<String> applyCreateInfo(AuthInfo actor, MediaItem m, CreateInfo info) {
+        if (info == null) {
+            return List.of();
+        }
+        m.setSummary(blankToNull(info.summary()));
+        m.setUseWhen(blankToNull(info.useWhen()));
+        m.setAvoidWhen(blankToNull(info.avoidWhen()));
+        m.setDescription(blankToNull(info.description()));
+        m.setTranscript(m.getType() == MediaType.VIDEO ? blankToNull(info.transcript()) : null);
+        if (info.topics() != null) {
+            m.setTopics(checkedTopics(info.topics(), new String[0]).toArray(String[]::new));
+        }
+        if (info.customerStages() != null) {
+            m.setCustomerStages(checked(info.customerStages(), CUSTOMER_STAGES, "Giai đoạn khách")
+                    .toArray(String[]::new));
+        }
+        if (info.allowedChannels() != null) {
+            m.setAllowedChannels(checked(info.allowedChannels(), CHANNELS, "Kênh").toArray(String[]::new));
+        }
+        applyStatus(actor, m, info.effectiveStatus());
+        m.setUpdatedBy(actor.email());
+        items.saveAndFlush(m);
+        List<String> notes = new ArrayList<>();
+        for (LinkInput l : checkedLinks(m.getType(), info.links() == null ? List.of() : info.links())) {
+            notes.addAll(insertLink(m.getId(), l));
+        }
+        audit.record(actor.id(), "media.update", TARGET, m.getId(), null, snapshot(m));
+        if (info.links() != null && !info.links().isEmpty()) {
+            audit.record(actor.id(), "media.links", TARGET, m.getId(), List.of(),
+                    linkSnapshot(links.findByMediaIds(List.of(m.getId()))));
+        }
+        return notes;
+    }
+
+    /** Nháp của AI lúc thêm media: chỉ điền ô còn trống (giữ nội dung admin đã nhập), chủ đề gộp thêm */
+    @Transactional
+    public void fillDraft(AuthInfo actor, UUID id, String summary, String useWhen, String avoidWhen,
+                          String description, List<String> draftTopics) {
+        MediaItem m = editable(id);
+        Map<String, Object> before = snapshot(m);
+        if (m.getSummary() == null) {
+            m.setSummary(blankToNull(summary));
+        }
+        if (m.getUseWhen() == null) {
+            m.setUseWhen(blankToNull(useWhen));
+        }
+        if (m.getAvoidWhen() == null) {
+            m.setAvoidWhen(blankToNull(avoidWhen));
+        }
+        if (m.getDescription() == null) {
+            m.setDescription(blankToNull(description));
+        }
+        Set<String> all = new LinkedHashSet<>(List.of(m.getTopics()));
+        Set<String> active = topics.findAll().stream().filter(Topic::isActive).map(Topic::getCode)
+                .collect(Collectors.toSet());
+        draftTopics.stream().filter(active::contains).forEach(all::add);
+        m.setTopics(all.toArray(String[]::new));
+        m.setUpdatedBy(actor.email());
+        items.saveAndFlush(m);
+        audit.record(actor.id(), "media.update", TARGET, id, before, snapshot(m));
     }
 
     // ------------------------------------------------------------------ hàng loạt
@@ -309,7 +425,7 @@ public class MediaAdminService {
         }
         MediaItem m = editable(id);
         if (r.action() == BulkAction.ADD_LINK) {
-            LinkInput l = checkedLinks(m, List.of(r.link())).get(0);
+            LinkInput l = checkedLinks(m.getType(), List.of(r.link())).get(0);
             List<MediaLinkRepository.Link> before = links.findByMediaIds(List.of(id));
             List<String> notes = insertLink(id, l);
             audit.record(actor.id(), "media.links", TARGET, id, linkSnapshot(before),
@@ -399,7 +515,7 @@ public class MediaAdminService {
         return out;
     }
 
-    private List<LinkInput> checkedLinks(MediaItem m, List<LinkInput> input) {
+    private List<LinkInput> checkedLinks(MediaType type, List<LinkInput> input) {
         List<LinkInput> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         Map<LinkTargetType, Set<String>> keysByType = new LinkedHashMap<>();
@@ -408,7 +524,7 @@ public class MediaAdminService {
             if (key.isEmpty() || l.targetType() == null || l.role() == null) {
                 throw new CommonException(HttpStatus.BAD_REQUEST, "Liên kết thiếu đối tượng hoặc vai trò");
             }
-            if ((l.role() == LinkRole.MAIN_IMAGE || l.role() == LinkRole.GALLERY) && m.getType() != MediaType.IMAGE) {
+            if ((l.role() == LinkRole.MAIN_IMAGE || l.role() == LinkRole.GALLERY) && type != MediaType.IMAGE) {
                 throw new CommonException(HttpStatus.BAD_REQUEST, "Chỉ ảnh mới làm ảnh chính hoặc ảnh thêm; video chọn "
                         + "vai trò Giải thích, Công trình thực tế, Hướng dẫn hoặc Liên quan");
             }
@@ -418,11 +534,11 @@ public class MediaAdminService {
             keysByType.computeIfAbsent(l.targetType(), t -> new LinkedHashSet<>()).add(key);
             out.add(new LinkInput(l.targetType(), key, l.role(), l.sortOrder() == null ? 0 : l.sortOrder()));
         }
-        keysByType.forEach((type, keys) -> {
-            Set<String> found = targets.labels(type, keys).keySet();
+        keysByType.forEach((targetType, keys) -> {
+            Set<String> found = targets.labels(targetType, keys).keySet();
             List<String> missing = keys.stream().filter(k -> !found.contains(k)).toList();
             if (!missing.isEmpty()) {
-                throw new CommonException(HttpStatus.BAD_REQUEST, "Không tìm thấy " + targetName(type) + " "
+                throw new CommonException(HttpStatus.BAD_REQUEST, "Không tìm thấy " + targetName(targetType) + " "
                         + String.join(", ", missing));
             }
         });
@@ -433,7 +549,9 @@ public class MediaAdminService {
     private List<String> insertLink(UUID mediaId, LinkInput l) {
         List<String> notes = new ArrayList<>();
         if (l.role() == LinkRole.MAIN_IMAGE) {
-            links.mainImageOf(l.targetType(), l.targetKey()).filter(other -> !other.equals(mediaId)).ifPresent(other -> {
+            Optional<UUID> previous = links.mainImageOf(l.targetType(), l.targetKey())
+                    .filter(other -> !other.equals(mediaId));
+            previous.ifPresent(other -> {
                 links.demoteMainImage(other, l.targetType(), l.targetKey());
                 String name = items.findById(other).map(o -> o.getIndexCode() != null ? o.getIndexCode()
                         : "\"" + o.getTitle() + "\"").orElse("cũ");

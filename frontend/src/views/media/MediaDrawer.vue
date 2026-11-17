@@ -202,31 +202,7 @@
           message="Gắn media với gói, vật tư, hãng hoặc tài liệu kiến thức"
           description="Mỗi gói chỉ có một ảnh chính: chọn ảnh này làm ảnh chính thì ảnh chính cũ của gói chuyển thành ảnh thêm. Chọn gói ở miền này thì gói cùng tên ở miền kia được thêm theo. Lưu cùng nút Lưu."
         />
-        <div v-for="row in linkRows" :key="row.uid" class="link-row">
-          <Select
-            v-model:value="row.targetType"
-            :options="options(TARGET_LABELS)"
-            style="width: 110px"
-            @change="resetTarget(row)"
-          />
-          <Select
-            :value="row.targetKey"
-            showSearch
-            :filterOption="false"
-            :options="row.options"
-            :loading="row.loading"
-            placeholder="Gõ để tìm"
-            :notFoundContent="row.loading ? 'Đang tìm…' : 'Không có'"
-            class="target"
-            @search="(kw) => searchTargets(row, kw)"
-            @focus="() => !row.options.length && searchTargets(row, '')"
-            @change="(v, opt) => selectTarget(row, v, opt)"
-          />
-          <Select v-model:value="row.role" :options="roleOptions" style="width: 170px" />
-          <InputNumber v-model:value="row.sortOrder" :min="0" style="width: 80px" placeholder="Thứ tự" />
-          <Button type="link" danger @click="removeLink(row)">Gỡ</Button>
-        </div>
-        <Button preIcon="ant-design:plus-outlined" @click="addLink">Thêm liên kết</Button>
+        <LinkEditor v-model:rows="linkRows" :mediaType="media?.type" />
       </TabPane>
 
       <TabPane key="history" tab="Lịch sử">
@@ -256,25 +232,14 @@
 
 <script lang="ts" setup>
   import { computed, ref, watch } from 'vue';
-  import {
-    Alert,
-    Image,
-    Input,
-    InputNumber,
-    Popconfirm,
-    Select,
-    Table,
-    Tabs,
-    Tag,
-    Upload,
-  } from 'ant-design-vue';
-  import { useDebounceFn } from '@vueuse/core';
+  import { Alert, Image, Input, Popconfirm, Select, Table, Tabs, Tag, Upload } from 'ant-design-vue';
   import { Button } from '@/components/Button';
   import { BasicDrawer, useDrawerInner } from '@/components/Drawer';
   import { BasicForm, useForm } from '@/components/Form';
   import { useMessage } from '@/hooks/web/useMessage';
   import { formatToDateTime } from '@/utils/dateUtil';
 
+  import LinkEditor from './LinkEditor.vue';
   import MediaPreview from './MediaPreview.vue';
   import MediaThumb from './MediaThumb.vue';
   import {
@@ -282,12 +247,9 @@
     AVAILABILITY_COLORS,
     AVAILABILITY_LABELS,
     FIELD_LABELS,
-    IMAGE_ONLY_ROLES,
-    ROLE_LABELS,
     SOURCE_LABELS,
     STATUS_COLORS,
     STATUS_LABELS,
-    TARGET_LABELS,
     aiFormSchema,
     infoFormSchema,
     options,
@@ -307,16 +269,14 @@
     mediaDeleteSourceApi,
     mediaGetApi,
     mediaHistoryApi,
-    mediaLinkTargetsApi,
     mediaUpdateApi,
     mediaUpdateLinksApi,
     mediaUpdateSourceApi,
     topicListApi,
   } from '@/api/media';
+  import { linksKey, toLinkInputs, toLinkRows, type LinkRow } from './linkRows';
   import type {
     AvailabilityStatus,
-    LinkRole,
-    LinkTargetType,
     MediaHistoryModel,
     MediaModel,
     MediaSourceModel,
@@ -326,16 +286,6 @@
   defineOptions({ name: 'MediaDrawer' });
 
   const TabPane = Tabs.TabPane;
-
-  interface LinkRow {
-    uid: number;
-    targetType: LinkTargetType;
-    targetKey?: string;
-    role: LinkRole;
-    sortOrder: number;
-    options: { value: string; label: string; twinKey?: string; twinLabel?: string }[];
-    loading: boolean;
-  }
 
   const emit = defineEmits(['success', 'register']);
   const { createMessage } = useMessage();
@@ -352,14 +302,8 @@
   const history = ref<MediaHistoryModel[]>([]);
   const historyLoading = ref(false);
   const topics = ref<TopicModel[]>([]);
-  let uid = 0;
 
   const accept = computed(() => (media.value?.type === 'VIDEO' ? ACCEPT_VIDEOS : ACCEPT_IMAGES));
-  const roleOptions = computed(() =>
-    options(ROLE_LABELS).filter(
-      (o) => media.value?.type === 'IMAGE' || !IMAGE_ONLY_ROLES.includes(o.value as LinkRole),
-    ),
-  );
 
   const [
     registerInfo,
@@ -413,6 +357,7 @@
           field: 'topics',
           componentProps: {
             mode: 'multiple',
+        optionFilterProp: 'label',
             placeholder: 'Chọn trong bộ chủ đề',
             options: t
               .filter((x) => x.active || m.topics.includes(x.code))
@@ -446,16 +391,8 @@
       description: m.description,
       transcript: m.transcript,
     });
-    linkRows.value = m.links.map((l) => ({
-      uid: ++uid,
-      targetType: l.targetType,
-      targetKey: l.targetKey,
-      role: l.role,
-      sortOrder: l.sortOrder,
-      options: [{ value: l.targetKey, label: l.label ?? `${l.targetKey} (không còn)` }],
-      loading: false,
-    }));
-    linksBefore.value = linksKey();
+    linkRows.value = toLinkRows(m.links);
+    linksBefore.value = linksKey(linkRows.value);
   }
 
   watch(tab, async (t) => {
@@ -484,12 +421,6 @@
     }
   }
 
-  function linksKey() {
-    return JSON.stringify(
-      linkRows.value.map((r) => [r.targetType, r.targetKey, r.role, r.sortOrder ?? 0]),
-    );
-  }
-
   async function handleSubmit() {
     if (!media.value) return;
     const info = await validateOn('info', validateInfo);
@@ -513,16 +444,8 @@
         customerStages: info.customerStages ?? [],
         allowedChannels: info.allowedChannels ?? [],
       } as any);
-      if (linksKey() !== linksBefore.value) {
-        const res = await mediaUpdateLinksApi(
-          media.value.id,
-          linkRows.value.map((r) => ({
-            targetType: r.targetType,
-            targetKey: r.targetKey!,
-            role: r.role,
-            sortOrder: r.sortOrder ?? 0,
-          })),
-        );
+      if (linksKey(linkRows.value) !== linksBefore.value) {
+        const res = await mediaUpdateLinksApi(media.value.id, toLinkInputs(linkRows.value));
         res.notes.forEach((n) => createMessage.info(n));
       }
       createMessage.success('Đã lưu media');
@@ -626,62 +549,6 @@
     createMessage.success('Đã bỏ nguồn');
   }
 
-  // ------------------------------------------------------------------ liên kết (lưu cùng nút Lưu)
-
-  function addLink() {
-    linkRows.value.push({
-      uid: ++uid,
-      targetType: 'PACKAGE',
-      role: media.value?.type === 'IMAGE' ? 'GALLERY' : 'RELATED',
-      sortOrder: 0,
-      options: [],
-      loading: false,
-    });
-  }
-
-  function removeLink(row: LinkRow) {
-    linkRows.value = linkRows.value.filter((r) => r.uid !== row.uid);
-  }
-
-  function resetTarget(row: LinkRow) {
-    row.targetKey = undefined;
-    row.options = [];
-  }
-
-  const searchTargets = useDebounceFn(async (row: LinkRow, keyword: string) => {
-    row.loading = true;
-    try {
-      const found = await mediaLinkTargetsApi(row.targetType, keyword || undefined);
-      row.options = found.map((t) => ({
-        value: t.key,
-        label: t.label,
-        twinKey: t.twinKey,
-        twinLabel: t.twinLabel,
-      }));
-    } finally {
-      row.loading = false;
-    }
-  }, 300);
-
-  function selectTarget(row: LinkRow, value: any, option: any) {
-    row.targetKey = value as string;
-    const twinKey: string | undefined = option?.twinKey;
-    const exists = (key: string) =>
-      linkRows.value.some((r) => r.targetType === 'PACKAGE' && r.targetKey === key);
-    if (row.targetType === 'PACKAGE' && twinKey && !exists(twinKey)) {
-      linkRows.value.push({
-        uid: ++uid,
-        targetType: 'PACKAGE',
-        targetKey: twinKey,
-        role: row.role,
-        sortOrder: row.sortOrder,
-        options: [{ value: twinKey, label: option.twinLabel ?? twinKey }],
-        loading: false,
-      });
-      createMessage.info('Đã thêm gói cùng tên ở miền kia: ' + (option.twinLabel ?? twinKey));
-    }
-  }
-
   // ------------------------------------------------------------------ lịch sử
 
   function historyDetail(h: MediaHistoryModel): string {
@@ -738,17 +605,6 @@
 
     .link-input {
       flex: 1;
-    }
-  }
-
-  .link-row {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 8px;
-
-    .target {
-      flex: 1;
-      min-width: 0;
     }
   }
 </style>

@@ -849,6 +849,12 @@ Backend chọn nguồn theo kênh. Thứ tự mặc định cho Messenger (cấu
   - Claude đọc thêm tiêu đề, gói đang gắn, nội dung đã có và bộ chủ đề, rồi viết nháp tóm tắt, dùng khi, tránh khi, mô tả, chủ đề.
   - Không ghi vào media, admin xem lại rồi bấm Lưu. Mỗi lần gọi ghi `luot_goi_ai` (`CONTENT_ASSISTANT`) và nhật ký `media.ai_draft`.
 - **Bỏ nguồn:** chỉ xoá dòng `media_nguon`, file MinIO giữ nguyên, nhật ký ghi đường dẫn. Media luôn còn ít nhất một nguồn.
+- **Nhập đủ thông tin ngay lúc thêm (2026-11-17, doanh nghiệp yêu cầu):** hộp "Thêm media" có đủ các trường của form sửa (`CreateInfo`, gửi kèm từng file / link):
+  - Tiêu đề chỉ nhập được khi thêm đúng một mục; thêm nhiều mục thì mỗi media lấy theo tên file. Các trường còn lại áp chung cho mọi mục.
+  - Thông tin được kiểm tra **trước khi lưu file**: chủ đề, giai đoạn, kênh, đối tượng liên kết, vai trò hợp với loại media, đủ điều kiện duyệt. Sai thì báo lỗi, không tạo media và không ghi gì vào MinIO. Đúng thì ghi cùng transaction tạo media.
+  - Bật **AI viết nháp** thì sau khi thêm, Claude chỉ điền các ô còn trống (giữ nội dung admin đã nhập, chủ đề gộp thêm) và media giữ ở Nháp để duyệt lại. AI lỗi thì media vẫn được thêm, chỉ báo lại.
+  - Thêm đúng một mục thì form sửa tự mở để xem lại. Mục lỗi được giữ lại trong hộp để sửa rồi thêm lại.
+  - Phần sửa liên kết dùng chung một component cho form sửa và hộp thêm. Ô chọn nhiều (chủ đề, giai đoạn, kênh) tìm theo tên tiếng Việt, vì Select mặc định chỉ lọc theo mã.
 
 ------------------------------------------------------------------------
 

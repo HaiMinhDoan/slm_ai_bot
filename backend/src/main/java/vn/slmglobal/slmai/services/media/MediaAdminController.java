@@ -34,7 +34,6 @@ import vn.slmglobal.slmai.services.media.MediaAdminService.MediaFilter;
 import vn.slmglobal.slmai.services.media.MediaAdminService.MediaResponse;
 import vn.slmglobal.slmai.services.media.entity.LinkTargetType;
 import vn.slmglobal.slmai.services.media.entity.MediaSource;
-import vn.slmglobal.slmai.services.media.entity.RightsStatus;
 import vn.slmglobal.slmai.services.media.repository.MediaTargetRepository;
 import vn.slmglobal.slmai.services.media.repository.MediaSourceRepository;
 
@@ -73,7 +72,8 @@ public class MediaAdminController {
     }
 
     @Operation(summary = "Thêm một media từ file tải lên (ảnh JPEG / PNG / WebP tối đa 15 MB, video MP4 / MOV / WebM "
-            + "tối đa 100 MB); video kèm ảnh thu nhỏ và thông số trình duyệt đọc được")
+            + "tối đa 100 MB) kèm thông tin media (phần info, JSON); video kèm ảnh thu nhỏ và thông số trình duyệt đọc "
+            + "được")
     @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN})
     @PostMapping(value = "/uploads", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ResponseData<MediaSourceService.CreateResult>> upload(
@@ -82,16 +82,17 @@ public class MediaAdminController {
             @RequestParam(required = false) Integer width,
             @RequestParam(required = false) Integer height,
             @RequestParam(required = false) Integer durationSeconds,
-            @RequestParam(required = false) RightsStatus rights) {
+            @Valid @RequestPart(value = "info", required = false) MediaAdminService.CreateInfo info) {
         return ApiResponses.ok(sourceService.createFromFile(RequestContext.requireAuthInfo(), file, thumbnail,
-                new MediaSourceService.FileMeta(width, height, durationSeconds), rights), "MEDIA_UPLOAD_SUCCESS");
+                new MediaSourceService.FileMeta(width, height, durationSeconds), info), "MEDIA_UPLOAD_SUCCESS");
     }
 
-    @Operation(summary = "Thêm một media từ link YouTube / Facebook / TikTok (lưu link) hoặc ảnh Google Drive (tải về)")
+    @Operation(summary = "Thêm một media từ link YouTube / Facebook / TikTok (lưu link) hoặc ảnh Google Drive "
+            + "(tải về), kèm thông tin media")
     @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN})
     @PostMapping("/links")
     public ResponseEntity<ResponseData<MediaSourceService.CreateResult>> addByLink(
-            @Valid @RequestBody MediaSourceService.LinkRequest request) {
+            @Valid @RequestBody MediaSourceService.CreateLinkRequest request) {
         return ApiResponses.ok(sourceService.createFromLink(RequestContext.requireAuthInfo(), request),
                 "MEDIA_LINK_SUCCESS");
     }
@@ -265,7 +266,8 @@ public class MediaAdminController {
                     .header("X-Content-Type-Options", "nosniff")
                     .body(new InputStreamResource(storage.get(key)));
         } catch (Exception e) {
-            throw new CommonException(HttpStatus.SERVICE_UNAVAILABLE, "Không đọc được file từ MinIO: " + e.getMessage());
+            throw new CommonException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Không đọc được file từ MinIO: " + e.getMessage());
         }
     }
 

@@ -1,5 +1,6 @@
 package vn.slmglobal.slmai.services.media;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,17 +29,21 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 
 /**
  * Thêm media mới và sửa nguồn của media trên trang admin (mục 6.3 A, B; 2026-11-12).
  *
  * <ul>
+ *   <li>Thêm media nhận kèm thông tin admin nhập ({@link MediaAdminService.CreateInfo}, 2026-11-17): kiểm tra trước khi
+ *       lưu file, ghi cùng transaction tạo media; chọn "AI viết nháp" thì sau đó Claude điền các ô còn trống.</li>
  *   <li>File tải lên đi qua backend (MinIO nội bộ không cho trình duyệt tải thẳng): nhận diện định dạng thật theo
  *       magic bytes, tính sha256 để chống trùng, lưu theo nội dung {@code media/images|videos/<2 ký tự>/<sha256>}.
  *       Video không giải mã được trên server (chưa có ffmpeg): trình duyệt đọc thời lượng, kích thước và cắt một
@@ -65,6 +70,7 @@ public class MediaSourceService {
     private final MediaItemRepository items;
     private final MediaSourceRepository sources;
     private final MediaAdminService admin;
+    private final MediaDraftService drafts;
     private final AuditLogService audit;
     private final TransactionTemplate tx;
 
@@ -78,8 +84,12 @@ public class MediaSourceService {
     public record FileMeta(Integer width, Integer height, Integer durationSeconds) {
     }
 
-    public record LinkRequest(@Size(max = 2000) String url, @Size(max = 300) String title, RightsStatus rights,
-                              UUID replaceSourceId) {
+    /** Thêm link vào media có sẵn; có {@code replaceSourceId} thì thay nguồn đó (sửa link) */
+    public record LinkRequest(@Size(max = 2000) String url, UUID replaceSourceId) {
+    }
+
+    /** Thêm media mới từ một link, kèm thông tin admin nhập */
+    public record CreateLinkRequest(@Size(max = 2000) String url, @Valid MediaAdminService.CreateInfo info) {
     }
 
     public record SourceUpdate(AvailabilityStatus availabilityStatus,
@@ -94,30 +104,23 @@ public class MediaSourceService {
     // ------------------------------------------------------------------ thêm media mới
 
     public CreateResult createFromFile(AuthInfo actor, MultipartFile file, MultipartFile thumbnail, FileMeta meta,
-                                       RightsStatus rights) {
+                                       MediaAdminService.CreateInfo info) {
         String name = file == null || file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
         try {
             requireStorage();
             Inspected in = inspect(file);
+            RightsStatus rights = info == null || info.rights() == null ? RightsStatus.OWNED : info.rights();
+            admin.checkCreateInfo(info, in.format().mediaType, rights);
             Optional<MediaSource> same = sources.findFirstBySha256(in.sha256());
             if (same.isPresent()) {
                 return new CreateResult(name, Outcome.EXISTS, same.get().getMediaId(), existsNote(same.get()));
             }
             Stored s = store(in, file, thumbnail, meta);
-            UUID id = tx.execute(st -> {
-                MediaItem m = items.saveAndFlush(MediaItem.builder()
-                        .type(s.format().mediaType)
-                        .title(titleFromFileName(name))
-                        .status(MediaStatus.DRAFT)
-                        .rights(rights == null ? RightsStatus.OWNED : rights)
-                        .createdBy(actor.email())
-                        .build());
-                MediaSource src = sources.saveAndFlush(uploadSource(m.getId(), s, null, null));
-                audit.record(actor.id(), "media.create", MediaAdminService.TARGET, m.getId(), null,
-                        sourceAudit("UPLOAD", name, src));
-                return m.getId();
-            });
-            return new CreateResult(name, Outcome.CREATED, id, describe(s));
+            String title = titleOf(info, titleFromFileName(name));
+            Created c = create(actor, s.format().mediaType, title, rights, info,
+                    m -> uploadSource(m, s, null, null), "UPLOAD", name);
+            return new CreateResult(name, Outcome.CREATED, c.id(), join(describe(s), c.notes(),
+                    draftAfterCreate(actor, c.id(), info)));
         } catch (CommonException e) {
             return new CreateResult(name, Outcome.FAILED, null, e.getMessage());
         } catch (DataIntegrityViolationException e) {
@@ -125,36 +128,31 @@ public class MediaSourceService {
         }
     }
 
-    public CreateResult createFromLink(AuthInfo actor, LinkRequest r) {
+    public CreateResult createFromLink(AuthInfo actor, CreateLinkRequest r) {
         String url = r.url() == null ? "" : r.url().strip();
+        MediaAdminService.CreateInfo info = r.info();
         try {
             MediaLinkParser.Parsed link = parse(url);
+            MediaType type = link.drive() ? MediaType.IMAGE : MediaType.VIDEO;
+            RightsStatus rights = info != null && info.rights() != null ? info.rights()
+                    : link.drive() ? RightsStatus.OWNED : RightsStatus.LINK_ONLY;
+            admin.checkCreateInfo(info, type, rights);
             Optional<MediaSource> same = sources.findFirstBySourceTypeAndExternalId(
                     link.drive() ? SourceType.UPLOAD : link.type(), link.externalId());
             if (same.isPresent()) {
                 return new CreateResult(url, Outcome.EXISTS, same.get().getMediaId(), existsNote(same.get()));
             }
             if (link.drive()) {
-                return createFromDrive(actor, url, link, r);
+                return createFromDrive(actor, url, link, info, rights);
             }
             Optional<LinkPreviewClient.Preview> preview = previews.preview(link);
-            String title = firstNonBlank(r.title(), preview.map(LinkPreviewClient.Preview::title).orElse(null),
-                    "Video " + platform(link.type()));
-            UUID id = tx.execute(st -> {
-                MediaItem m = items.saveAndFlush(MediaItem.builder()
-                        .type(MediaType.VIDEO)
-                        .title(truncate(title, 300))
-                        .status(MediaStatus.DRAFT)
-                        .rights(r.rights() == null ? RightsStatus.LINK_ONLY : r.rights())
-                        .createdBy(actor.email())
-                        .build());
-                MediaSource src = sources.saveAndFlush(linkSource(m.getId(), link, preview.orElse(null)));
-                audit.record(actor.id(), "media.create", MediaAdminService.TARGET, m.getId(), null,
-                        sourceAudit(link.type().name(), url, src));
-                return m.getId();
-            });
-            return new CreateResult(url, Outcome.CREATED, id, platform(link.type())
-                    + (preview.isPresent() ? ", đã lấy tiêu đề" : ""));
+            String title = titleOf(info, preview.map(LinkPreviewClient.Preview::title)
+                    .orElse("Video " + platform(link.type())));
+            Created c = create(actor, MediaType.VIDEO, title, rights, info,
+                    m -> linkSource(m, link, preview.orElse(null)), link.type().name(), url);
+            String found = platform(link.type()) + (preview.isPresent() ? ", đã lấy tiêu đề" : "");
+            return new CreateResult(url, Outcome.CREATED, c.id(),
+                    join(found, c.notes(), draftAfterCreate(actor, c.id(), info)));
         } catch (CommonException e) {
             return new CreateResult(url, Outcome.FAILED, null, e.getMessage());
         } catch (DataIntegrityViolationException e) {
@@ -162,7 +160,8 @@ public class MediaSourceService {
         }
     }
 
-    private CreateResult createFromDrive(AuthInfo actor, String url, MediaLinkParser.Parsed link, LinkRequest r) {
+    private CreateResult createFromDrive(AuthInfo actor, String url, MediaLinkParser.Parsed link,
+                                         MediaAdminService.CreateInfo info, RightsStatus rights) {
         requireStorage();
         DriveImageFetcher.Image img = fetchDrive(link);
         Optional<MediaSource> same = sources.findFirstBySha256(img.sha256());
@@ -170,20 +169,60 @@ public class MediaSourceService {
             return new CreateResult(url, Outcome.EXISTS, same.get().getMediaId(), existsNote(same.get()));
         }
         Stored s = storeDrive(img);
-        UUID id = tx.execute(st -> {
+        Created c = create(actor, MediaType.IMAGE, titleOf(info, "Ảnh từ Google Drive"), rights, info,
+                m -> uploadSource(m, s, link.url(), link.externalId()), "GOOGLE_DRIVE", url);
+        return new CreateResult(url, Outcome.CREATED, c.id(), join("Ảnh Google Drive, " + describe(s), c.notes(),
+                draftAfterCreate(actor, c.id(), info)));
+    }
+
+    private record Created(UUID id, List<String> notes) {
+    }
+
+    /** Tạo media, nguồn và ghi thông tin admin nhập trong một transaction */
+    private Created create(AuthInfo actor, MediaType type, String title, RightsStatus rights,
+                           MediaAdminService.CreateInfo info, Function<UUID, MediaSource> source,
+                           String origin, String name) {
+        return tx.execute(st -> {
             MediaItem m = items.saveAndFlush(MediaItem.builder()
-                    .type(MediaType.IMAGE)
-                    .title(truncate(firstNonBlank(r.title(), null, "Ảnh từ Google Drive"), 300))
+                    .type(type)
+                    .title(truncate(title, 300))
                     .status(MediaStatus.DRAFT)
-                    .rights(r.rights() == null ? RightsStatus.OWNED : r.rights())
+                    .rights(rights)
                     .createdBy(actor.email())
                     .build());
-            MediaSource src = sources.saveAndFlush(uploadSource(m.getId(), s, link.url(), link.externalId()));
+            MediaSource src = sources.saveAndFlush(source.apply(m.getId()));
             audit.record(actor.id(), "media.create", MediaAdminService.TARGET, m.getId(), null,
-                    sourceAudit("GOOGLE_DRIVE", url, src));
-            return m.getId();
+                    sourceAudit(origin, name, src));
+            return new Created(m.getId(), admin.applyCreateInfo(actor, m, info));
         });
-        return new CreateResult(url, Outcome.CREATED, id, "Ảnh Google Drive, " + describe(s));
+    }
+
+    /** AI viết nháp sau khi thêm (nếu admin chọn); lỗi AI không làm hỏng việc thêm media, chỉ báo lại */
+    private String draftAfterCreate(AuthInfo actor, UUID id, MediaAdminService.CreateInfo info) {
+        if (info == null || !info.aiDraft()) {
+            return null;
+        }
+        try {
+            MediaDraftService.Draft d = drafts.draft(actor, id);
+            admin.fillDraft(actor, id, d.summary(), d.useWhen(), d.avoidWhen(), d.description(), d.topics());
+            return d.sawImage() ? "AI đã viết nháp" : "AI đã viết nháp (không có ảnh để xem, chỉ dựa vào tiêu đề)";
+        } catch (CommonException e) {
+            return "AI viết nháp lỗi: " + e.getMessage();
+        }
+    }
+
+    private static String titleOf(MediaAdminService.CreateInfo info, String fallback) {
+        return firstNonBlank(info == null ? null : info.title(), null, fallback);
+    }
+
+    private static String join(String first, List<String> notes, String last) {
+        List<String> parts = new ArrayList<>();
+        parts.add(first);
+        parts.addAll(notes);
+        if (last != null) {
+            parts.add(last);
+        }
+        return String.join("; ", parts);
     }
 
     // ------------------------------------------------------------------ sửa nguồn của media có sẵn
@@ -249,8 +288,8 @@ public class MediaSourceService {
             }
             s.setAuthorName(MediaAdminService.blankToNull(r.authorName()));
             sources.saveAndFlush(s);
-            audit.record(actor.id(), "media.source.update", MediaAdminService.TARGET, mediaId, before,
-                    Map.of("availability", s.getAvailabilityStatus().name(), "author", String.valueOf(s.getAuthorName())));
+            audit.record(actor.id(), "media.source.update", MediaAdminService.TARGET, mediaId, before, Map.of(
+                    "availability", s.getAvailabilityStatus().name(), "author", String.valueOf(s.getAuthorName())));
         });
         return admin.get(mediaId);
     }
@@ -315,8 +354,8 @@ public class MediaSourceService {
                     HttpStatus.BAD_REQUEST, "Chỉ nhận ảnh JPEG, PNG, WebP hoặc video MP4, MOV, WebM"));
             long max = format.mediaType == MediaType.IMAGE ? MAX_IMAGE_BYTES : MAX_VIDEO_BYTES;
             if (file.getSize() > max) {
-                throw new CommonException(HttpStatus.BAD_REQUEST, (format.mediaType == MediaType.IMAGE ? "Ảnh" : "Video")
-                        + " lớn hơn " + (max / 1024 / 1024) + " MB");
+                String kind = format.mediaType == MediaType.IMAGE ? "Ảnh" : "Video";
+                throw new CommonException(HttpStatus.BAD_REQUEST, kind + " lớn hơn " + (max / 1024 / 1024) + " MB");
             }
             String sha;
             try (InputStream in = file.getInputStream()) {
@@ -461,8 +500,8 @@ public class MediaSourceService {
     private String existsNote(MediaSource same) {
         return items.findById(same.getMediaId()).map(m -> {
             String name = (m.getIndexCode() == null ? "" : m.getIndexCode() + " ") + "\"" + m.getTitle() + "\"";
-            return m.isDeleted() ? "đã có ở media " + name + " nhưng media đó đã bị xoá: khôi phục (lọc Đã xoá) nếu muốn "
-                    + "dùng lại" : "đã có ở media " + name;
+            return m.isDeleted() ? "đã có ở media " + name + " nhưng media đó đã bị xoá: khôi phục (lọc Đã xoá) nếu "
+                    + "muốn dùng lại" : "đã có ở media " + name;
         }).orElse("đã có trong thư viện");
     }
 

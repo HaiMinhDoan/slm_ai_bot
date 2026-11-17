@@ -8,6 +8,7 @@ import type {
   LinkTargetType,
   MediaBulkRequest,
   MediaBulkResult,
+  MediaCreateInfo,
   MediaCreateResult,
   MediaDraftModel,
   MediaFilterModel,
@@ -15,7 +16,6 @@ import type {
   MediaLinkInput,
   MediaLinksResult,
   MediaModel,
-  MediaRights,
   MediaUpdateModel,
   PackageImportItem,
   PackageImportResult,
@@ -26,6 +26,7 @@ import type {
 const BASE = '/api/v1/admin/media';
 /** Video tối đa 100 MB đi qua backend: chờ lâu hơn mặc định */
 const UPLOAD_TIMEOUT = 600_000;
+
 /** Mặc định gửi JSON: axios sẽ đổi FormData thành JSON nếu không đặt lại kiểu */
 const MULTIPART = { 'Content-Type': ContentTypeEnum.FORM_DATA };
 
@@ -62,10 +63,12 @@ export const mediaBulkApi = (data: MediaBulkRequest) =>
 export const mediaAiDraftApi = (id: string) =>
   defHttp.post<MediaDraftModel>({ url: `${BASE}/${id}/ai-draft`, timeout: 180_000 });
 
-function fileForm(file: File, meta?: VideoMeta, extra: Recordable = {}) {
+function fileForm(file: File, meta?: VideoMeta, extra: Recordable = {}, info?: MediaCreateInfo) {
   const form = new FormData();
   form.append('file', file);
   if (meta?.thumbnail) form.append('thumbnail', meta.thumbnail, 'thumbnail.jpg');
+  // Phần JSON: backend đọc bằng @RequestPart, cần đúng kiểu application/json
+  if (info) form.append('info', new Blob([JSON.stringify(info)], { type: 'application/json' }));
   const params: Recordable = { ...extra };
   if (meta?.width) params.width = meta.width;
   if (meta?.height) params.height = meta.height;
@@ -76,22 +79,23 @@ function fileForm(file: File, meta?: VideoMeta, extra: Recordable = {}) {
   return form;
 }
 
-/** Thêm một media từ file; lỗi của từng file trả trong kết quả, không hiện thông báo lỗi chung */
-export const mediaUploadApi = (file: File, meta?: VideoMeta, rights?: MediaRights) =>
+/** Thêm một media từ file kèm thông tin; lỗi của từng file trả trong kết quả, không hiện thông báo lỗi chung */
+export const mediaUploadApi = (file: File, meta?: VideoMeta, info?: MediaCreateInfo) =>
   defHttp.post<MediaCreateResult>(
     {
       url: `${BASE}/uploads`,
-      data: fileForm(file, meta, { rights }),
+      data: fileForm(file, meta, {}, info),
       headers: MULTIPART,
       timeout: UPLOAD_TIMEOUT,
     },
     { errorMessageMode: 'none' },
   );
 
-/** Thêm một media từ link; lỗi của từng link trả trong kết quả */
-export const mediaAddByLinkApi = (url: string, title?: string, rights?: MediaRights) =>
+/** Thêm một media từ link kèm thông tin; lỗi của từng link trả trong kết quả */
+export const mediaAddByLinkApi = (url: string, info?: MediaCreateInfo) =>
   defHttp.post<MediaCreateResult>(
-    { url: `${BASE}/links`, data: { url, title, rights }, timeout: 60_000 },
+    // Có AI viết nháp thì chờ thêm thời gian Claude viết
+    { url: `${BASE}/links`, data: { url, info }, timeout: 180_000 },
     { errorMessageMode: 'none' },
   );
 
