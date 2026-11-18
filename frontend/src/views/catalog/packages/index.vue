@@ -53,6 +53,11 @@
                 onClick: () => openItems(true, { id: record.id }),
               },
               {
+                icon: 'ant-design:picture-outlined',
+                tooltip: 'Ảnh báo giá tự tạo (bot gửi khi gói chưa có ảnh trong thư viện media)',
+                onClick: () => openQuote(true, { id: record.id, name: record.name }),
+              },
+              {
                 icon: 'clarity:note-edit-line',
                 tooltip: 'Sửa gói',
                 auth: EDIT_ROLES,
@@ -86,6 +91,7 @@
 
     <PackageDrawer @register="registerDrawer" @success="handleSuccess" />
     <PackageItemsDrawer @register="registerItems" />
+    <QuoteImageModal @register="registerQuote" />
   </PageWrapper>
 </template>
 
@@ -96,6 +102,7 @@
   import { BasicTable, useTable, TableAction } from '@/components/Table';
   import { PageWrapper } from '@/components/Page';
   import { useDrawer } from '@/components/Drawer';
+  import { useModal } from '@/components/Modal';
   import { useMessage } from '@/hooks/web/useMessage';
   import { usePermission } from '@/hooks/web/usePermission';
   import { RoleEnum } from '@/enums/roleEnum';
@@ -103,6 +110,7 @@
 
   import PackageDrawer from './PackageDrawer.vue';
   import PackageItemsDrawer from './PackageItemsDrawer.vue';
+  import QuoteImageModal from './QuoteImageModal.vue';
   import { columns, searchFormSchema } from './packages.data';
   import {
     catalogPackageDeleteApi,
@@ -125,6 +133,7 @@
   const canEdit = hasPermission(EDIT_ROLES);
   const [registerDrawer, { openDrawer }] = useDrawer();
   const [registerItems, { openDrawer: openItems }] = useDrawer();
+  const [registerQuote, { openModal: openQuote }] = useModal();
   const status = ref<CatalogStatusModel>();
   const labels = ref<WarningLabels>({});
   const syncing = ref(false);
@@ -181,8 +190,13 @@
     striped: false,
     // Chỉ chọn bằng ô tick: bấm nút sửa trên một dòng không được kéo dòng đó vào lệnh Bật / Tắt
     clickToRowSelect: false,
-    // Nhân viên trực chat chỉ có nút xem vật tư; sửa / xoá theo quyền (auth của từng nút)
-    actionColumn: { width: canEdit ? 130 : 70, title: 'Thao tác', dataIndex: 'action', fixed: 'right' },
+    // Nhân viên trực chat chỉ có nút xem vật tư và ảnh báo giá; sửa / xoá theo quyền (auth của từng nút)
+    actionColumn: {
+      width: canEdit ? 160 : 100,
+      title: 'Thao tác',
+      dataIndex: 'action',
+      fixed: 'right',
+    },
   });
 
   const STATUS_LABELS: Record<string, string> = {

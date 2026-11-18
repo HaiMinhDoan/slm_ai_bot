@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -52,6 +53,7 @@ public class CatalogAdminController {
     private final CatalogPackageAdminService packageAdmin;
     private final CatalogMaterialRepository materials;
     private final CatalogImageService images;
+    private final PackageQuoteImageService quoteImages;
 
     public record StatusResponse(boolean configured, String version, CatalogRepository.SyncRun lastSuccess,
                                  List<CatalogRepository.SyncRun> runs) {
@@ -186,6 +188,25 @@ public class CatalogAdminController {
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(img.contentType()))
                 .cacheControl(CacheControl.maxAge(Duration.ofDays(1)).cachePrivate())
+                .header("X-Content-Type-Options", "nosniff")
+                .body(img.bytes());
+    }
+
+    /** Ảnh bot gửi khách khi gói chưa có ảnh báo giá trong thư viện media (dựng lại khi số liệu gói đổi) */
+    @Operation(summary = "Ảnh báo giá tự tạo của một gói (JPEG), dựng theo mẫu từ số liệu catalog hiện hành")
+    @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN, RoleCode.STAFF})
+    @GetMapping("/packages/{id}/quote-image")
+    public ResponseEntity<byte[]> quoteImage(@PathVariable int id) {
+        if (!quoteImages.enabled()) {
+            throw new CommonException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Chưa bật tạo ảnh báo giá: cần GOTENBERG_URL và MinIO");
+        }
+        PackageQuoteImageService.QuoteImage img = quoteImages.image(id).orElseThrow(() -> new CommonException(
+                HttpStatus.BAD_GATEWAY,
+                "Không tạo được ảnh báo giá gói " + id + " (gói không có giá hoặc dịch vụ tạo ảnh lỗi, xem log)"));
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .cacheControl(CacheControl.noCache().cachePrivate())
                 .header("X-Content-Type-Options", "nosniff")
                 .body(img.bytes());
     }

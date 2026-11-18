@@ -119,3 +119,18 @@ export const searchFormSchema: FormSchema[] = [
     componentProps: { placeholder: 'Tên khách hoặc số điện thoại' },
   },
 ];
+
+/** Trạng thái media gửi kèm tin của trang (tin_nhan.dinh_kem, mục 7) */
+export const SENT_MEDIA_STATUS: Record<string, { label: string; color: string }> = {
+  PENDING: { label: 'Chờ gửi', color: 'blue' },
+  SENT: { label: 'Đã gửi kèm', color: 'green' },
+  FAILED: { label: 'Gửi lỗi', color: 'red' },
+  SKIPPED: { label: 'Bỏ qua', color: 'default' },
+};
+
+/** "Ảnh báo giá Hệ On-Grid 19 kWp 3 pha", "Video M25 · Video: Hệ ... (AI chọn)" */
+export function sentMediaLabel(a: Recordable): string {
+  if (a.kind === 'QUOTE') return `${a.title ?? 'Ảnh báo giá'} (ảnh tự tạo)`;
+  const kind = a.media_type === 'VIDEO' ? 'Video' : 'Ảnh';
+  return `${kind} ${a.code ?? ''} · ${a.title ?? ''}${a.by === 'AI' ? ' (AI chọn)' : ''}`;
+}

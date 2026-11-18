@@ -68,6 +68,9 @@ public final class AiReplySchema {
                 "goal", enumOf(GOALS),
                 "intent", enumOf(INTENTS),
                 "reply", type("string"),
+                "media", ordered("type", "array", "items", type("string"), "description",
+                        "Mã media trong danh mục media muốn gửi kèm câu trả lời (ví dụ M07); không gửi thì []. "
+                                + "Ảnh báo giá của gói được gửi tự động theo link gói, không ghi ở đây."),
                 "collected", collected,
                 "question_asked", nullable(enumOf(ConsultSlots.questionKeys())),
                 "qualification", qualification,

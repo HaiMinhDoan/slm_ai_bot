@@ -16,6 +16,8 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.startsWith;
 
 class MessengerClientTest {
@@ -68,6 +70,34 @@ class MessengerClientTest {
                 .andRespond(withSuccess("{\"message_id\":\"m_1\"}", MediaType.APPLICATION_JSON));
 
         assertThat(client.sendText("PSID_1", "Dạ em gọi lại anh nhé", true).messageId()).isEqualTo("m_1");
+    }
+
+    /** Ảnh gửi dạng tệp (không gửi link ảnh): multipart filedata, is_reusable để lần sau gửi theo attachment_id */
+    @Test
+    void uploadsFileAttachmentAndReusesItById() {
+        server.expect(requestTo(startsWith(BASE + "/v26.0/me/messages")))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(content().string(allOf(
+                        containsString("name=\"recipient\""), containsString("{\"id\":\"PSID_1\"}"),
+                        containsString("\"is_reusable\":true"), containsString("\"type\":\"image\""),
+                        containsString("name=\"filedata\"; filename=\"bao-gia-156.jpg\""),
+                        containsString("Content-Type: image/jpeg"), containsString("JPEGDATA"))))
+                .andRespond(withSuccess("{\"recipient_id\":\"PSID_1\",\"message_id\":\"m_img\","
+                        + "\"attachment_id\":\"att_1\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(startsWith(BASE + "/v26.0/me/messages")))
+                .andExpect(content().json("""
+                        {"recipient":{"id":"PSID_2"},"messaging_type":"RESPONSE",
+                         "message":{"attachment":{"type":"image","payload":{"attachment_id":"att_1"}}}}
+                        """, true))
+                .andRespond(withSuccess("{\"message_id\":\"m_again\"}", MediaType.APPLICATION_JSON));
+
+        MessengerClient.AttachmentResult first = client.sendAttachment("PSID_1", "image",
+                "JPEGDATA".getBytes(), "image/jpeg", "bao-gia-156.jpg");
+        assertThat(first.messageId()).isEqualTo("m_img");
+        assertThat(first.attachmentId()).isEqualTo("att_1");
+        assertThat(client.sendAttachmentById("PSID_2", "image", "att_1").messageId()).isEqualTo("m_again");
+        server.verify();
     }
 
     @Test

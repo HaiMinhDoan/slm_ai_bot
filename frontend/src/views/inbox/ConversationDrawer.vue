@@ -112,8 +112,26 @@
             </TypographyParagraph>
 
             <div v-for="(a, i) in m.attachments ?? []" :key="i" class="mt-1">
+              <div v-if="a.kind === 'MEDIA' || a.kind === 'QUOTE'" class="sent-media">
+                <MediaThumb
+                  v-if="a.kind === 'MEDIA' && a.media_type === 'IMAGE' && a.source_id"
+                  :mediaId="a.media_id"
+                  :sourceId="a.source_id"
+                  :size="72"
+                />
+                <QuoteImage v-else-if="a.kind === 'QUOTE'" :packageId="a.package_id" :width="72" />
+                <div class="min-w-0">
+                  <Tag :color="SENT_MEDIA_STATUS[a.status]?.color">
+                    {{ SENT_MEDIA_STATUS[a.status]?.label ?? a.status }}
+                  </Tag>
+                  <TypographyText class="text-xs">{{ sentMediaLabel(a) }}</TypographyText>
+                  <div v-if="a.error">
+                    <TypographyText type="secondary" class="text-xs">{{ a.error }}</TypographyText>
+                  </div>
+                </div>
+              </div>
               <Image
-                v-if="a.type === 'image' && a.payload?.url"
+                v-else-if="a.type === 'image' && a.payload?.url"
                 :src="a.payload.url"
                 :width="120"
                 class="rounded"
@@ -243,6 +261,8 @@
   } from '@/api/inbox';
   import type { ChatMessage, ConversationDetail } from '@/api/inbox/model/inboxModel';
   import ToStaffModal from './ToStaffModal.vue';
+  import MediaThumb from '@/views/media/MediaThumb.vue';
+  import QuoteImage from '@/views/catalog/QuoteImage.vue';
   import {
     CHANNEL_LABELS,
     LEAD_LEVEL,
@@ -250,8 +270,10 @@
     OWNERSHIP,
     QUALIFICATION_VALUE_LABELS,
     SENDER_LABELS,
+    SENT_MEDIA_STATUS,
     SLOT_LABELS,
     SLOT_VALUE_LABELS,
+    sentMediaLabel,
   } from './inbox.data';
 
   defineOptions({ name: 'InboxConversationDrawer' });
@@ -415,6 +437,13 @@
 </script>
 
 <style lang="less" scoped>
+  // Media trang gửi kèm tin: ảnh thu nhỏ bên trái, trạng thái và tên bên phải
+  .sent-media {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
   // Cao cố định để khung chat và khung thông tin cuộn riêng (trừ tiêu đề, chân drawer)
   .layout {
     display: flex;

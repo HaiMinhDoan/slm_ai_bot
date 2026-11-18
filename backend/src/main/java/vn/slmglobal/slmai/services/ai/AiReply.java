@@ -19,8 +19,14 @@ public record AiReply(
         Qualification qualification,
         List<String> sources,
         @JsonProperty("knowledge_gap") String knowledgeGap,
-        Handoff handoff
+        Handoff handoff,
+        /* Mã media trong danh mục AI muốn gửi kèm (mục 7.1); [] khi không gửi */
+        List<String> media
 ) {
+
+    public List<String> mediaCodes() {
+        return media == null ? List.of() : media;
+    }
 
     public boolean handoffNeeded() {
         return handoff != null && handoff.needed();

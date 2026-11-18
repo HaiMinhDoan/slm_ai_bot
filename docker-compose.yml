@@ -27,7 +27,23 @@ services:
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
     networks:
       - web
+      - internal
     mem_limit: 1g
+
+  # Chụp trang HTML thành ảnh (ảnh báo giá gói tự tạo), chỉ backend gọi qua mạng nội bộ, không mở cổng ra ngoài.
+  # Bản chỉ có Chromium (nhẹ hơn bản đầy đủ khoảng 30%, không có LibreOffice).
+  slm-ai-gotenberg:
+    image: gotenberg/gotenberg:8-chromium
+    container_name: slm-ai-gotenberg
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - gotenberg
+      - --api-timeout=60s
+      - --log-level=warn
+    networks:
+      - internal
+    mem_limit: 768m
 
   # CMS (Vben Admin). nginx trong container chuyển /basic-api/* sang slm-ai-backend:8080
   slm-ai-cms:
@@ -50,6 +66,9 @@ services:
     mem_limit: 256m
 
 networks:
+  # Mạng riêng của bot: backend gọi Gotenberg
+  internal:
+    name: slm-ai-internal
   # Mạng dùng chung với nginx-proxy-manager. Nếu chưa có: docker network create slm_v2_app-network
   web:
     name: ${SHARED_NETWORK:-slm_v2_app-network}

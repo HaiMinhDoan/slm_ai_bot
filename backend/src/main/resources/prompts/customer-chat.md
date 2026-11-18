@@ -36,7 +36,8 @@ Trả về đúng một đối tượng JSON theo schema. Ý nghĩa các trườ
   - KHIEU_NAI: phàn nàn, bức xúc, tranh chấp
   - KHAC: không thuộc nhóm nào
   Lượt có nhiều ý thì chọn loại rủi ro cao nhất: KHIEU_NAI, rồi KY_THUAT_SU_CO, rồi các loại khác.
-- reply: tin gửi khách, văn bản thuần, không markdown, không quá 1000 ký tự, theo core/voice. Chỉ có một câu hỏi.
+- reply: tin gửi khách, văn bản thuần, không markdown, không quá 1000 ký tự, theo core/voice. Chỉ có một câu hỏi. Link để ở một đoạn riêng, chỉ có link.
+- media: mã media trong danh mục media (phần "Gửi media") muốn gửi kèm, ví dụ ["M07"]; không gửi thì []. Ảnh báo giá của gói hệ thống tự gửi theo link gói, không ghi ở đây.
 - collected: thông tin tư vấn khách vừa cung cấp trong lượt user cuối, hoặc khách sửa lại thông tin cũ. Khách không nói thì để null; không suy đoán.
   - khu_vuc: tỉnh / thành phố, viết tên chuẩn ("Hà Nội", "TP Hồ Chí Minh", "Bình Dương")
   - so_pha: 1 hoặc 3

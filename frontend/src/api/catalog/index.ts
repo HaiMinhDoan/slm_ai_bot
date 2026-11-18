@@ -86,6 +86,17 @@ export const catalogImageBlobApi = (fileId: number) =>
     { isReturnNativeResponse: true, errorMessageMode: 'none' },
   );
 
+/** Ảnh báo giá tự tạo của gói (JPEG); lần đầu backend dựng qua Gotenberg nên chờ vài giây */
+export const catalogQuoteImageBlobApi = (packageId: number) =>
+  defHttp.get<AxiosResponse<Blob>>(
+    {
+      url: `${CATALOG}/packages/${packageId}/quote-image`,
+      responseType: 'blob',
+      timeout: 90 * 1000,
+    },
+    { isReturnNativeResponse: true, errorMessageMode: 'none' },
+  );
+
 export const pvoutListApi = () => defHttp.get<PvoutTableInfoModel[]>({ url: PVOUT });
 
 export const pvoutTableApi = (year: number) =>

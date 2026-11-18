@@ -1,7 +1,13 @@
 package vn.slmglobal.slmai.services.ai;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.junit.jupiter.api.Test;
 import vn.slmglobal.slmai.services.conversation.entity.ChannelCode;
+import vn.slmglobal.slmai.services.conversation.entity.Message;
+import vn.slmglobal.slmai.services.conversation.entity.MessageDirection;
+import vn.slmglobal.slmai.services.conversation.entity.MessageStatus;
+import vn.slmglobal.slmai.services.conversation.entity.SenderType;
 import vn.slmglobal.slmai.services.conversation.entity.ReplyMode;
 import vn.slmglobal.slmai.services.lead.ConsultSlots;
 import vn.slmglobal.slmai.services.lead.entity.ConsultProfile;
@@ -32,6 +38,28 @@ class CustomerChatPromptBuilderTest {
                 .contains("Hỏi loại mái thì hỏi kèm diện tích mái trong cùng một câu");
         assertThat(context(null)).contains("hoa_don_thang, loai_mai, ty_le_ngay_dem (ty_le_ngay_dem hỏi sau cùng")
                 .contains("hỏi kèm diện tích mái");
+    }
+
+    /** Media trang đã gửi hiện trong lịch sử để AI không gửi lại và nói đúng về chúng; mục chưa tới khách thì không */
+    @Test
+    void sentMediaIsNotedInHistory() {
+        ArrayNode media = new ObjectMapper().createArrayNode();
+        media.addObject().put("kind", "QUOTE").put("title", "Ảnh báo giá Hệ On-Grid 29.4 kWp 3 pha")
+                .put("status", "SENT");
+        media.addObject().put("kind", "MEDIA").put("media_type", "VIDEO").put("code", "M25")
+                .put("title", "Video: Hệ On-Grid 5 kWp 1 pha").put("status", "SENT");
+        media.addObject().put("kind", "MEDIA").put("media_type", "IMAGE").put("code", "M03").put("title", "Ảnh lỗi")
+                .put("status", "FAILED");
+        List<ClaudeChatClient.ChatTurn> turns = CustomerChatPromptBuilder.turns(List.of(
+                Message.builder().direction(MessageDirection.IN).senderType(SenderType.CUSTOMER)
+                        .status(MessageStatus.PROCESSED).content("Gửi anh gói 30 kWp").build(),
+                Message.builder().direction(MessageDirection.OUT).senderType(SenderType.AI).status(MessageStatus.SENT)
+                        .content("Dạ gói đây ạ").attachments(media).build(),
+                Message.builder().direction(MessageDirection.IN).senderType(SenderType.CUSTOMER)
+                        .status(MessageStatus.RECEIVED).content("Ok em").build()));
+
+        assertThat(turns.get(1).text()).isEqualTo("Dạ gói đây ạ\n[Đã gửi kèm: Ảnh báo giá Hệ On-Grid 29.4 kWp 3 pha; "
+                + "video M25 Video: Hệ On-Grid 5 kWp 1 pha]");
     }
 
     @Test

@@ -809,6 +809,26 @@ Backend chọn nguồn theo kênh. Thứ tự mặc định cho Messenger (cấu
 - Zalo OA và TikTok DM: chỉ gửi loại media mà adapter khai báo trong capability (mục 54.1); mặc định ảnh gửi đính kèm nếu được hỗ trợ, video gửi dạng link.
 - Đăng lại media lên Facebook/TikTok/Zalo (mục 55) chỉ dùng nguồn `UPLOAD` có `quyen_su_dung` là `OWNED` hoặc `LICENSED`. URL YouTube/Facebook/TikTok không được coi là file nguồn để tải lên lại.
 
+### 6.4.1 Đã làm (2026-11-18): gửi media và ảnh báo giá tự tạo
+
+- **Gửi:** `MediaPlanner` chọn media khi chốt lượt, ghi vào `tin_nhan.dinh_kem` của tin AI. `MediaDelivery` gửi sau phần chữ, khi AI tự gửi hoặc khi nhân viên bấm gửi nháp.
+  - Ảnh (tải lên, hoặc ảnh báo giá tự tạo) gửi dạng tệp đính kèm, không gửi link ảnh. Messenger tải lên multipart `filedata` với `is_reusable`; `attachment_id` được nhớ trong bộ nhớ theo sha256.
+  - Video Facebook / YouTube / TikTok gửi link thành tin riêng.
+  - Mỗi mục ghi trạng thái `PENDING` / `SENT` / `FAILED` / `SKIPPED`. Inbox hiện ảnh thu nhỏ và trạng thái.
+- **Chọn:**
+  - Câu trả lời có link gói (`…/products/{goi_id}`): gửi ảnh chính của gói đã duyệt; gói chưa có ảnh thì gửi ảnh báo giá tự tạo.
+  - Sau đó gửi một video công trình: của chính gói, nếu không có thì của gói cùng loại hệ gần công suất nhất.
+  - Thêm media AI chọn theo mã (trường `media` của kết quả).
+  - Không gửi lại media đã gửi. Mỗi lượt tối đa 1 video, 2 ảnh AI chọn và ảnh báo giá của 2 gói.
+- **Prompt:** khối "Gửi media" do code dựng nằm trong phần cache: cách gửi và danh mục media (mục 7.1). Danh mục không có ảnh chính của gói; `phien_ban_media` là mã băm của khối. Kết quả `tim_goi_phu_hop` / `chi_tiet_goi` có `gui_kem`, cho biết gửi link gói đó thì khách nhận thêm gì. Lịch sử ghi `[Đã gửi kèm: …]`.
+- **Link đứng riêng:** `ReplyParts` tách mọi link thành tin riêng để Messenger hiện thẻ xem trước; link giữa câu được thay bằng "link bên dưới".
+- **Ảnh báo giá tự tạo:** `PackageQuoteImageService` dựng trang HTML theo mẫu ảnh báo giá của thiết kế.
+  - Đầu trang, chân trang và logo SolarMax cắt từ ảnh mẫu; font Be Vietnam Pro.
+  - Số liệu catalog hiện hành: giá trọn gói, thẻ tấm pin / biến tần / pin lưu trữ kèm giá niêm yết, bảo hành, khối lượng, kích thước, logo hãng (`dm_thuong_hieu.anh_url`), ảnh vật tư.
+  - Chụp thành JPEG qua container Gotenberg (`gotenberg/gotenberg:8-chromium`, mạng `slm-ai-internal`), lưu MinIO ở `quotes/<sha256>.jpg`. Số liệu đổi thì tự dựng ảnh mới. Gotenberg lỗi thì tạm ngừng 5 phút để AI không hứa gửi ảnh.
+  - Admin xem trước ở trang Gói (nút ảnh). Công suất biến tần lấy theo tên vật tư vì thông số slm_v2 có chỗ sai.
+- **V15:** duyệt 35 media gói đã nhập (ảnh báo giá, video Facebook), điền tóm tắt / dùng khi theo tên gói và cấp mã M01…; có ghi nhật ký.
+
 ## 6.5 Sửa, duyệt, xoá mềm media trên admin (V9, 2026-10-29)
 
 - Trang **Thư viện media** theo khuôn bảng của fsignai: lọc theo tiêu đề / mã, loại, trạng thái (kể cả *Đã xoá*), mã gói; mỗi dòng có nút sửa và xoá, mục đã xoá có nút khôi phục.

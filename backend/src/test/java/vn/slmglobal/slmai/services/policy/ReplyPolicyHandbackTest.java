@@ -73,7 +73,7 @@ class ReplyPolicyHandbackTest {
 
     private static AiReply reply(String intent, String text, boolean handoff) {
         return new AiReply("other", intent, text, null, null, null, List.of(), null,
-                new AiReply.Handoff(handoff, handoff ? "Khách sốt ruột, muốn gặp nhân viên" : ""));
+                new AiReply.Handoff(handoff, handoff ? "Khách sốt ruột, muốn gặp nhân viên" : ""), List.of());
     }
 
     private static ReplyPolicy.Input input(AiReply reply, boolean autoHandback, boolean staffHandback) {

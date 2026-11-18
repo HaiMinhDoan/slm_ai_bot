@@ -7,6 +7,9 @@ import vn.slmglobal.slmai.services.conversation.ChannelSender;
 import vn.slmglobal.slmai.services.conversation.entity.ChannelCode;
 import vn.slmglobal.slmai.services.customer.entity.ChannelIdentity;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /** Gửi tin AI / tin hệ thống ra Messenger. Tin AI luôn là RESPONSE trong cửa sổ 24 giờ, không dùng tag. */
@@ -15,7 +18,18 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class MessengerSender implements ChannelSender {
 
+    /** Số tệp nhớ attachment_id (tệp gửi lại cho khách khác không phải tải lên lại) */
+    static final int REUSABLE_CACHE = 500;
+
     private final MessengerClient client;
+    /** key của tệp (sha256 nội dung) → attachment_id của Meta; mất khi khởi động lại thì tải lên lại một lần */
+    private final Map<String, String> reusable = Collections.synchronizedMap(
+            new LinkedHashMap<>(64, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+                    return size() > REUSABLE_CACHE;
+                }
+            });
 
     @Override
     public ChannelCode channel() {
@@ -30,6 +44,32 @@ public class MessengerSender implements ChannelSender {
     @Override
     public String sendText(ChannelIdentity recipient, String text) {
         return client.sendText(recipient.getExternalUserId(), text, false).messageId();
+    }
+
+    @Override
+    public boolean supportsFiles() {
+        return true;
+    }
+
+    @Override
+    public String sendFile(ChannelIdentity recipient, OutgoingFile file) {
+        String psid = recipient.getExternalUserId();
+        String attachmentId = file.key() == null ? null : reusable.get(file.key());
+        if (attachmentId != null) {
+            try {
+                return client.sendAttachmentById(psid, file.kind(), attachmentId).messageId();
+            } catch (MessengerApiException e) {
+                // attachment_id hết hạn hoặc bị xoá: tải lên lại
+                log.info("Không gửi lại được tệp đã tải ({}), tải lên lại: {}", file.fileName(), e.getMessage());
+                reusable.remove(file.key());
+            }
+        }
+        MessengerClient.AttachmentResult r = client.sendAttachment(psid, file.kind(), file.content().get(),
+                file.mimeType(), file.fileName());
+        if (file.key() != null && r.attachmentId() != null) {
+            reusable.put(file.key(), r.attachmentId());
+        }
+        return r.messageId();
     }
 
     @Override

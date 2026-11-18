@@ -1,8 +1,15 @@
 package vn.slmglobal.slmai.adapters.facebook;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -40,6 +47,12 @@ public class MessengerClient {
 
     public record SendResult(String messageId, String recipientId) {
     }
+
+    /** Tin đính kèm đã gửi; {@code attachmentId} dùng lại được cho lần gửi sau (tải lên với is_reusable) */
+    public record AttachmentResult(String messageId, String attachmentId) {
+    }
+
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     /**
      * Gửi tin văn bản.
@@ -83,6 +96,86 @@ public class MessengerClient {
             throw new MessengerApiException("Send API không trả message_id");
         }
         return new SendResult(response.path("message_id").asText(), response.path("recipient_id").asText(null));
+    }
+
+    /**
+     * Tải lên và gửi một tệp đính kèm (ảnh / video) trong cửa sổ 24 giờ: multipart {@code filedata} kèm
+     * {@code is_reusable}, Meta trả {@code attachment_id} để gửi lại tệp này cho khách khác không phải tải lên nữa.
+     *
+     * @param type {@code image} hoặc {@code video}
+     */
+    public AttachmentResult sendAttachment(String psid, String type, byte[] content, String mimeType,
+                                           String fileName) {
+        requireToken();
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("recipient", json(Map.of("id", psid)));
+        body.add("messaging_type", "RESPONSE");
+        body.add("message", json(Map.of("attachment", Map.of("type", type, "payload", Map.of("is_reusable", true)))));
+        HttpHeaders fileHeaders = new HttpHeaders();
+        fileHeaders.setContentType(MediaType.parseMediaType(mimeType));
+        fileHeaders.setContentDispositionFormData("filedata", fileName);
+        body.add("filedata", new HttpEntity<>(new ByteArrayResource(content) {
+            @Override
+            public String getFilename() {
+                return fileName;
+            }
+        }, fileHeaders));
+        JsonNode response = restClient.post()
+                .uri(b -> b.path("/{version}/me/messages")
+                        .queryParam("access_token", properties.pageAccessToken())
+                        .build(properties.graphApiVersion()))
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(body)
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, (request, resp) -> {
+                    throw new MessengerApiException("Send API (tệp) lỗi HTTP " + resp.getStatusCode().value() + ": "
+                            + MessengerApiException.describeGraphError(resp.getBody().readAllBytes()));
+                })
+                .body(JsonNode.class);
+        if (response == null || !response.hasNonNull("message_id")) {
+            throw new MessengerApiException("Send API không trả message_id");
+        }
+        return new AttachmentResult(response.path("message_id").asText(), response.path("attachment_id").asText(null));
+    }
+
+    /** Gửi lại một tệp đã tải lên theo attachment_id */
+    public SendResult sendAttachmentById(String psid, String type, String attachmentId) {
+        requireToken();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("recipient", Map.of("id", psid));
+        body.put("messaging_type", "RESPONSE");
+        body.put("message", Map.of("attachment", Map.of("type", type, "payload",
+                Map.of("attachment_id", attachmentId))));
+        JsonNode response = restClient.post()
+                .uri(b -> b.path("/{version}/me/messages")
+                        .queryParam("access_token", properties.pageAccessToken())
+                        .build(properties.graphApiVersion()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, (request, resp) -> {
+                    throw new MessengerApiException("Send API (tệp đã tải) lỗi HTTP " + resp.getStatusCode().value()
+                            + ": " + MessengerApiException.describeGraphError(resp.getBody().readAllBytes()));
+                })
+                .body(JsonNode.class);
+        if (response == null || !response.hasNonNull("message_id")) {
+            throw new MessengerApiException("Send API không trả message_id");
+        }
+        return new SendResult(response.path("message_id").asText(), response.path("recipient_id").asText(null));
+    }
+
+    private void requireToken() {
+        if (!properties.hasPageAccessToken()) {
+            throw new MessengerApiException("Chưa cấu hình FB_PAGE_ACCESS_TOKEN");
+        }
+    }
+
+    private static String json(Object value) {
+        try {
+            return JSON.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /**

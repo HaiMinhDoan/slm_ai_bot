@@ -64,10 +64,11 @@ public class AiTurnStore {
     /**
      * Tin cần gửi ra kênh sau khi chốt.
      *
-     * @param aiReply câu trả lời của AI: tách thành nhiều tin và chờ theo tốc độ gõ ({@link ReplyParts}); câu báo
-     *                nhận của hệ thống thì gửi nguyên
+     * @param aiReply     câu trả lời của AI: tách thành nhiều tin và chờ theo tốc độ gõ ({@link ReplyParts}); câu báo
+     *                    nhận của hệ thống thì gửi nguyên
+     * @param attachments media gửi sau phần chữ (MediaPlanner), mảng rỗng khi không có
      */
-    public record Outgoing(UUID messageId, String text, boolean aiReply) {
+    public record Outgoing(UUID messageId, String text, boolean aiReply, JsonNode attachments) {
     }
 
     /** Kết quả báo giá của lượt (tool tim_goi_phu_hop): gói đề xuất và giá thấp nhất */
@@ -144,7 +145,7 @@ public class AiTurnStore {
      */
     @Transactional
     public Commit commit(TurnSnapshot s, AiRun run, AiReply reply, ReplyPolicy.Decision decision, Quote quote,
-                         boolean businessOpen, boolean windowOpen, boolean channelSupported) {
+                         JsonNode attachments, boolean businessOpen, boolean windowOpen, boolean channelSupported) {
         Conversation c = conversationRepository.findByIdForUpdate(s.conversationId()).orElseThrow();
         String discard = null;
         if (c.getStatus() != ConversationStatus.OPEN || c.getOwnership() != Ownership.AI_ACTIVE) {
@@ -206,11 +207,13 @@ public class AiTurnStore {
                     .direction(MessageDirection.OUT)
                     .senderType(SenderType.AI)
                     .content(reply.reply().strip())
+                    .attachments(attachments == null ? JsonNodeFactory.instance.arrayNode() : attachments)
                     .status(MessageStatus.DRAFT)
                     .aiRunId(run.getId())
                     .build());
             if (decision.action() == ReplyPolicy.Action.AUTO) {
-                outgoing.add(new Outgoing(aiMessage.getId(), aiMessage.getContent(), true));
+                outgoing.add(new Outgoing(aiMessage.getId(), aiMessage.getContent(), true,
+                        aiMessage.getAttachments()));
             }
         }
         if (decision.action() == ReplyPolicy.Action.HANDOFF) {
@@ -231,23 +234,27 @@ public class AiTurnStore {
                     .content(ack)
                     .status(MessageStatus.DRAFT)
                     .build());
-            outgoing.add(new Outgoing(ackMessage.getId(), ack, false));
+            outgoing.add(new Outgoing(ackMessage.getId(), ack, false, JsonNodeFactory.instance.arrayNode()));
         }
         return new Commit(true, null, List.copyOf(outgoing));
     }
 
+    /** @param attachments trạng thái từng media sau khi gửi (MediaDelivery); null là giữ nguyên */
     @Transactional
-    public void markSent(UUID messageId, String externalMessageId) {
+    public void markSent(UUID messageId, String externalMessageId, JsonNode attachments) {
         messageRepository.findById(messageId).ifPresent(m -> {
             m.setStatus(MessageStatus.SENT);
             m.setSentAt(OffsetDateTime.now());
             m.setExternalMessageId(externalMessageId);
+            if (attachments != null) {
+                m.setAttachments(attachments);
+            }
         });
     }
 
     /**
-     * Câu trả lời nhiều tin gửi được một phần: tin đã ghi giữ phần đã tới khách (SENT); phần còn lại thành một tin
-     * lỗi riêng để nhân viên gửi lại.
+     * Câu trả lời nhiều tin gửi được một phần: tin đã ghi giữ phần đã tới khách (SENT); phần còn lại, cùng media chưa
+     * gửi, thành một tin lỗi riêng để nhân viên gửi lại.
      */
     @Transactional
     public void markPartlySent(UUID messageId, String sentText, String externalMessageId, String remainingText,
@@ -257,11 +264,14 @@ public class AiTurnStore {
             m.setStatus(MessageStatus.SENT);
             m.setSentAt(OffsetDateTime.now());
             m.setExternalMessageId(externalMessageId);
+            JsonNode pending = m.getAttachments();
+            m.setAttachments(JsonNodeFactory.instance.arrayNode());
             Message rest = messageRepository.save(Message.builder()
                     .conversationId(m.getConversationId())
                     .direction(MessageDirection.OUT)
                     .senderType(m.getSenderType())
                     .content(remainingText)
+                    .attachments(pending == null ? JsonNodeFactory.instance.arrayNode() : pending)
                     .status(MessageStatus.FAILED)
                     .aiRunId(m.getAiRunId())
                     .build());

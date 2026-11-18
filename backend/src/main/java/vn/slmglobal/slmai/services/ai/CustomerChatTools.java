@@ -9,8 +9,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import vn.slmglobal.slmai.services.conversation.entity.ChannelCode;
 import vn.slmglobal.slmai.services.lead.ConsultSlots;
 import vn.slmglobal.slmai.services.lead.entity.ConsultProfile;
+import vn.slmglobal.slmai.services.media.MediaPlanner;
 import vn.slmglobal.slmai.services.sizing.MaterialAdvisor;
 import vn.slmglobal.slmai.services.sizing.PackageAdvisor;
 
@@ -44,6 +46,7 @@ public class CustomerChatTools {
 
     private final PackageAdvisor advisor;
     private final MaterialAdvisor materialAdvisor;
+    private final MediaPlanner mediaPlanner;
     private final ObjectMapper objectMapper;
 
     private final List<Tool> definitions = buildDefinitions();
@@ -57,21 +60,23 @@ public class CustomerChatTools {
         return definitions;
     }
 
-    /** Phiên tool của một lượt: gắn hồ sơ tư vấn, ghi lại mọi lần gọi */
-    public Session session(ConsultProfile profile) {
-        return new Session(profile);
+    /** Phiên tool của một lượt: gắn hồ sơ tư vấn và kênh, ghi lại mọi lần gọi */
+    public Session session(ConsultProfile profile, ChannelCode channel) {
+        return new Session(profile, channel);
     }
 
     /** Các lần gọi tool trong một lượt; cũng là nguồn hợp lệ cho kiểm tra con số và link (mục 33.1) */
     public final class Session implements ClaudeChatClient.ToolHandler {
 
         private final ConsultProfile profile;
+        private final ChannelCode channel;
         private final List<ClaudeChatClient.ToolCall> calls = new ArrayList<>();
         private final List<Integer> quotedPackageIds = new ArrayList<>();
         private Long cheapestQuotedVnd;
 
-        private Session(ConsultProfile profile) {
+        private Session(ConsultProfile profile, ChannelCode channel) {
             this.profile = profile;
+            this.channel = channel;
         }
 
         @Override
@@ -146,7 +151,38 @@ public class CustomerChatTools {
                     || advice.cheapestQuotedVnd() < cheapestQuotedVnd)) {
                 cheapestQuotedVnd = advice.cheapestQuotedVnd();
             }
+            addMediaNotes(advice.result());
             return new ClaudeChatClient.ToolOutput(json(advice.result()), false);
+        }
+
+        /**
+         * Gói có link: ghi kèm gui_kem, là thứ hệ thống tự gửi sau tin khi câu trả lời có link gói đó (ảnh báo giá,
+         * video công trình), để AI giới thiệu đúng thứ khách sẽ nhận.
+         */
+        private void addMediaNotes(JsonNode node) {
+            if (channel == null) {
+                return;
+            }
+            try {
+                walk(node);
+            } catch (RuntimeException e) {
+                log.warn("Không ghi được media gửi kèm vào kết quả tool: {}", e.toString());
+            }
+        }
+
+        private void walk(JsonNode node) {
+            if (node instanceof ObjectNode o) {
+                if (o.path("goi_id").canConvertToInt() && o.hasNonNull("link")) {
+                    List<String> extras = mediaPlanner.extrasForPackage(channel, o.get("goi_id").asInt());
+                    if (!extras.isEmpty()) {
+                        o.put("gui_kem", "Gửi link gói này ở một đoạn riêng thì hệ thống tự gửi kèm ngay sau tin: "
+                                + String.join(", ", extras));
+                    }
+                }
+                o.elements().forEachRemaining(this::walk);
+            } else if (node != null && node.isArray()) {
+                node.forEach(this::walk);
+            }
         }
 
         private ClaudeChatClient.ToolOutput packageDetail(JsonNode in) {
@@ -155,6 +191,7 @@ public class CustomerChatTools {
             }
             JsonNode slots = profile == null ? objectMapper.createObjectNode() : profile.getSlots();
             ObjectNode out = advisor.packageDetail(in.get("goi_id").asInt(), text(in, ConsultSlots.KHU_VUC, slots));
+            addMediaNotes(out);
             return new ClaudeChatClient.ToolOutput(json(out), out.has("loi"));
         }
 

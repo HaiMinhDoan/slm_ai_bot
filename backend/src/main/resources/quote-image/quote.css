@@ -1,0 +1,89 @@
+/* Ảnh báo giá gói tự tạo (PackageQuoteImageService), dựng theo mẫu ảnh báo giá của thiết kế: rộng 1080px.
+   Đầu trang, chân trang và logo SolarMax cắt từ ảnh mẫu; font Be Vietnam Pro (OFL). */
+@font-face { font-family: "BVP"; font-weight: 400; src: url("BeVietnamPro-Regular.ttf"); }
+@font-face { font-family: "BVP"; font-weight: 500; src: url("BeVietnamPro-Medium.ttf"); }
+@font-face { font-family: "BVP"; font-weight: 600; src: url("BeVietnamPro-SemiBold.ttf"); }
+@font-face { font-family: "BVP"; font-weight: 700; src: url("BeVietnamPro-Bold.ttf"); }
+@font-face { font-family: "BVP"; font-weight: 800; src: url("BeVietnamPro-ExtraBold.ttf"); }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1080px; background: #fff; }
+body { font-family: "BVP", sans-serif; color: #1f2a37; -webkit-font-smoothing: antialiased; }
+
+.theme-red { --title: #8e2b25; --hi: #c9302a; --accent: #fdb62f; }
+.theme-green { --title: #1d4d2b; --hi: #2e9b48; --accent: #f47b20; }
+
+.band img { display: block; width: 1080px; }
+
+.hero { position: relative; display: flex; min-height: 256px; background: #fff; overflow: hidden; }
+.hero .text { flex: 1; min-width: 0; padding: 34px 20px 30px 80px; }
+.hero h1 { font-weight: 800; font-size: 60px; line-height: 1.24; color: var(--title); letter-spacing: -0.5px; }
+.hero h1.mid { font-size: 52px; }
+.hero h1.long { font-size: 45px; }
+.hero h1 .hi { color: var(--hi); }
+.hero .sub { margin-top: 14px; font-size: 29px; font-weight: 500; color: var(--hi); }
+.hero .phase { position: relative; width: 250px; flex: none; }
+.hero .phase::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; right: -40px;
+  background: var(--accent); transform: skewX(-12deg); transform-origin: bottom left; }
+.hero .phase .n, .hero .phase .p { position: relative; text-align: right; padding-right: 54px; color: #fff; }
+.hero .phase .n { font-size: 132px; font-weight: 800; line-height: 1; margin-top: 44px; }
+.hero .phase .p { font-size: 44px; font-weight: 800; line-height: 1; margin-top: 6px; }
+
+.devices { background: linear-gradient(#c5cad0, #d3d7dc); padding: 32px 40px; display: flex; flex-direction: column;
+  gap: 20px; }
+.card { background: #fff; border-radius: 24px; padding: 30px 40px 30px 36px; display: flex; align-items: center;
+  gap: 30px; }
+.photo { position: relative; width: 200px; height: 220px; flex: none; display: flex; align-items: center;
+  justify-content: center; }
+.photo img { width: 200px; height: 220px; object-fit: contain; transform: scale(1.12); }
+.ribbon { position: absolute; left: -6px; bottom: 6px; width: 150px; padding: 6px 0 6px 14px; color: #5b3d06;
+  background: linear-gradient(100deg, #f7e08a, #d9a93a 60%, #f3d47a); transform: rotate(-8deg);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, .25); }
+.ribbon b { font-size: 40px; font-weight: 800; line-height: 1; }
+.ribbon span { font-size: 18px; font-weight: 800; margin-left: 4px; }
+.ribbon small { display: block; font-size: 10px; font-weight: 700; letter-spacing: .3px; margin-top: -2px; }
+.info { flex: 1; min-width: 0; }
+.info h2 { font-size: 31px; font-weight: 700; color: #233446; line-height: 1.2; }
+.info h2 .main { text-transform: uppercase; }
+.info h2 .light { color: #6b7a8c; font-weight: 600; white-space: nowrap; }
+.info .spec { font-size: 22px; color: #34465a; margin-top: 8px; }
+.info .spec b { font-weight: 700; color: #233446; }
+.price-chip { display: inline-block; margin-top: 14px; background: #e53935; color: #fff; font-weight: 700;
+  font-size: 22px; padding: 6px 12px; border-radius: 6px; }
+.price-chip sup { font-size: 13px; margin-left: 3px; }
+.facts { width: 200px; flex: none; display: flex; flex-direction: column; gap: 10px; }
+.box { background: #fff; border-radius: 8px; box-shadow: 0 2px 6px rgba(15, 30, 50, .18); text-align: center;
+  overflow: hidden; }
+.box .k { background: #e6e9ed; font-size: 12px; font-weight: 700; color: #4b5563; padding: 4px 0;
+  text-transform: uppercase; }
+.box .v { height: 56px; display: flex; align-items: center; justify-content: center; padding: 6px 12px; }
+.box .v img { max-width: 160px; max-height: 34px; object-fit: contain; }
+.brand-text { font-weight: 800; font-size: 22px; color: #233446; }
+.facts .row { display: flex; gap: 8px; }
+.facts .row .box { flex: 1; min-width: 0; }
+.facts .row .v { height: 54px; flex-direction: column; padding: 4px; font-weight: 700; color: #233446;
+  line-height: 1.1; }
+.facts .row .v .big { font-size: 22px; }
+.facts .row .v .small { font-size: 15px; }
+.facts .row .v .unit { font-size: 9px; font-weight: 700; }
+
+.total { display: flex; align-items: center; padding: 26px 60px; gap: 24px;
+  background: linear-gradient(100deg, #2c3e55 0%, #3d5875 45%, #6d7f94 100%); }
+.total .claim { flex: 1; color: #fff; font-weight: 700; font-size: 30px; line-height: 1.25; white-space: nowrap;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, .35); }
+.total .amount { flex: none; background: #e53935; border: 4px solid #fff; border-radius: 14px; color: #fff;
+  font-weight: 800; font-size: 58px; padding: 12px 30px 14px; letter-spacing: -1px; white-space: nowrap; }
+.total .amount sup { font-size: 28px; margin-left: 6px; vertical-align: 24px; }
+
+.list { padding: 30px 40px 26px; }
+.list h3 { text-align: center; font-size: 30px; font-weight: 700; color: #8a94a3; margin-bottom: 18px; }
+.list table { width: 100%; border-collapse: separate; border-spacing: 0; border: 2px solid #e8ebef;
+  border-radius: 12px; }
+.list td { padding: 14px 18px; font-size: 27px; color: #233446; border-top: 2px solid #e8ebef;
+  vertical-align: middle; }
+.list tr:first-child td { border-top: none; }
+.list td.no { width: 64px; text-align: center; }
+.list td.brand { width: 190px; text-align: center; }
+.list td.brand img { max-width: 140px; max-height: 36px; object-fit: contain; vertical-align: middle; }
+.list td.brand .brand-text { font-size: 20px; }
+.list td.qty { width: 150px; text-align: right; padding-right: 30px; white-space: nowrap; }

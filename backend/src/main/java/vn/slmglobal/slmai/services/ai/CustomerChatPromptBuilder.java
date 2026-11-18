@@ -12,6 +12,8 @@ import vn.slmglobal.slmai.services.knowledge.KnowledgeBase;
 import vn.slmglobal.slmai.services.knowledge.KnowledgeSnapshot;
 import vn.slmglobal.slmai.services.lead.ConsultSlots;
 import vn.slmglobal.slmai.services.lead.entity.ConsultProfile;
+import vn.slmglobal.slmai.services.media.MediaCatalog;
+import vn.slmglobal.slmai.services.media.MediaPlanner;
 import vn.slmglobal.slmai.services.settings.AiSettingsService;
 
 import java.time.DayOfWeek;
@@ -30,11 +32,12 @@ import java.util.stream.Collectors;
  * Ghép prompt cho một lượt trả lời khách (mục 5.4, 32):
  * <ol>
  *   <li>Khối cố định (cache): hướng dẫn prompts/customer-chat + toàn bộ tài liệu kiến thức của bản phát hành
- *   đang chạy (mục 5.3); dựng lại khi kích hoạt bản mới hoặc đổi tên công ty / tư vấn viên.</li>
+ *   đang chạy (mục 5.3) + cách gửi media và danh mục media (mục 7.1); dựng lại khi kích hoạt bản mới, đổi tên công
+ *   ty / tư vấn viên hoặc danh mục media đổi.</li>
  *   <li>Khối ngữ cảnh lượt (không cache): thời điểm, giờ làm việc, hồ sơ tư vấn, câu hỏi trước.</li>
  *   <li>Lịch sử hội thoại: tin khách là user, tin của trang là assistant; tin liền nhau cùng phía được gộp.</li>
  * </ol>
- * Số điện thoại bị che trước khi gửi Claude; ảnh / tệp thay bằng mô tả.
+ * Số điện thoại bị che trước khi gửi Claude; ảnh / tệp thay bằng mô tả, media trang đã gửi ghi [Đã gửi kèm: …].
  */
 @Component
 public class CustomerChatPromptBuilder {
@@ -53,8 +56,8 @@ public class CustomerChatPromptBuilder {
     private final AtomicReference<SystemBlock> system = new AtomicReference<>();
 
     /**
-     * @param key     phiên bản kiến thức + tên công ty + tên tư vấn viên
-     * @param text    hướng dẫn + khối kiến thức
+     * @param key     phiên bản kiến thức + tên công ty + tên tư vấn viên + phiên bản danh mục media
+     * @param text    hướng dẫn + khối kiến thức + khối gửi media
      * @param version luot_goi_ai.phien_ban_prompt
      */
     private record SystemBlock(String key, String text, String version) {
@@ -66,35 +69,39 @@ public class CustomerChatPromptBuilder {
     }
 
     /** luot_goi_ai.phien_ban_prompt của khối cố định ghép từ snapshot này */
-    public String promptVersion(KnowledgeSnapshot k) {
-        return system(k).version();
+    public String promptVersion(KnowledgeSnapshot k, MediaCatalog.Block media) {
+        return system(k, media).version();
     }
 
     /**
      * Rỗng khi không có tin nào của khách cần trả lời (tin cuối thuộc về trang).
      *
      * @param k            kiến thức của lượt này (một snapshot cho cả lượt)
+     * @param media        khối gửi media của kênh (MediaCatalog), null khi không đọc được thư viện
      * @param pricingTools có công cụ báo giá (catalog đã đồng bộ); tool do AiTurnService gắn vào request
      */
-    public Optional<ClaudeChatClient.ChatRequest> build(TurnSnapshot s, KnowledgeSnapshot k, ZonedDateTime now,
-                                                        boolean businessOpen, boolean pricingTools) {
+    public Optional<ClaudeChatClient.ChatRequest> build(TurnSnapshot s, KnowledgeSnapshot k, MediaCatalog.Block media,
+                                                        ZonedDateTime now, boolean businessOpen,
+                                                        boolean pricingTools) {
         List<ClaudeChatClient.ChatTurn> turns = turns(s.history());
         if (turns.isEmpty() || !turns.get(turns.size() - 1).customer()) {
             return Optional.empty();
         }
-        return Optional.of(new ClaudeChatClient.ChatRequest(system(k).text(),
+        return Optional.of(new ClaudeChatClient.ChatRequest(system(k, media).text(),
                 turnContext(s, now, businessOpen, pricingTools), turns, AiReplySchema.schema()));
     }
 
-    private SystemBlock system(KnowledgeSnapshot k) {
+    private SystemBlock system(KnowledgeSnapshot k, MediaCatalog.Block media) {
         AiProperties ai = settings.ai();
-        String key = k.version() + "|" + ai.companyName() + "|" + ai.personaName();
+        String key = k.version() + "|" + ai.companyName() + "|" + ai.personaName() + "|"
+                + (media == null ? "" : media.version());
         SystemBlock cached = system.get();
         if (cached != null && cached.key().equals(key)) {
             return cached;
         }
         String instructions = knowledgeBase.renderPrompt(k);
-        String text = instructions + "\n\n# Tài liệu kiến thức\n\n" + knowledgeBase.renderKnowledge(k);
+        String text = instructions + "\n\n# Tài liệu kiến thức\n\n" + knowledgeBase.renderKnowledge(k)
+                + (media == null ? "" : "\n\n" + media.text());
         SystemBlock built = new SystemBlock(key, text,
                 "customer-chat:" + HashUtil.sha256Hex(instructions).substring(0, 16));
         system.set(built);
@@ -158,7 +165,8 @@ public class CustomerChatPromptBuilder {
                 .append("đang soạn tin. Trả lời dài (giải thích, báo giá kèm điều kiện) thì chia 2–3 đoạn ngắn, mỗi đoạn ")
                 .append("một ý, câu hỏi ở đoạn cuối; các dòng liệt kê để chung một đoạn. Khách giục hoặc đã chờ lâu thì ")
                 .append("đoạn đầu là một câu ngắn lịch sự đứng riêng (ví dụ \"Dạ em đây ạ\", \"Em xin lỗi đã để anh đợi ")
-                .append("lâu ạ\"), rồi mới tới nội dung.\n");
+                .append("lâu ạ\"), rồi mới tới nội dung. Link (gói, trang thiết bị) để ở một đoạn riêng, chỉ có ")
+                .append("link: hệ thống gửi link thành tin riêng để khách thấy ảnh xem trước của trang.\n");
         if (pricingTools) {
             sb.append("Công cụ báo giá: có (tim_goi_phu_hop, chi_tiet_goi, tra_cuu_vat_tu). Chưa đủ thông tin tối ")
                     .append("thiểu thì chưa đề xuất gói: hỏi lần lượt thông tin còn thiếu, mỗi tin một câu; khách hỏi ")
@@ -202,7 +210,7 @@ public class CustomerChatPromptBuilder {
             if (!customer && m.getStatus() != MessageStatus.SENT) {
                 continue;
             }
-            String text = customer ? describeInbound(m) : VietnamesePhone.mask(m.getContent());
+            String text = customer ? describeInbound(m) : describeOutbound(m);
             if (text == null || text.isBlank()) {
                 continue;
             }
@@ -236,6 +244,32 @@ public class CustomerChatPromptBuilder {
             }
         }
         return String.join(" ", parts);
+    }
+
+    /** Tin trang đã gửi, kèm media đã tới khách để AI không gửi lại và nói đúng về chúng */
+    private static String describeOutbound(Message m) {
+        String text = m.getContent() == null ? "" : VietnamesePhone.mask(m.getContent());
+        List<String> sent = new ArrayList<>();
+        JsonNode attachments = m.getAttachments();
+        if (attachments != null && attachments.isArray()) {
+            for (JsonNode a : attachments) {
+                if (!MediaPlanner.STATUS_SENT.equals(a.path(MediaPlanner.STATUS).asText())) {
+                    continue;
+                }
+                String code = a.path("code").asText("");
+                String title = a.path("title").asText("");
+                if (MediaPlanner.KIND_QUOTE.equals(a.path(MediaPlanner.KIND).asText())) {
+                    sent.add(title.isEmpty() ? "ảnh báo giá" : title);
+                } else if (MediaPlanner.KIND_MEDIA.equals(a.path(MediaPlanner.KIND).asText())) {
+                    sent.add(("VIDEO".equals(a.path("media_type").asText()) ? "video " : "ảnh ")
+                            + (code.isEmpty() ? "" : code + " ") + title);
+                }
+            }
+        }
+        if (sent.isEmpty()) {
+            return text;
+        }
+        return (text.isBlank() ? "" : text + "\n") + "[Đã gửi kèm: " + String.join("; ", sent) + "]";
     }
 
     private static String describeAttachment(JsonNode a) {

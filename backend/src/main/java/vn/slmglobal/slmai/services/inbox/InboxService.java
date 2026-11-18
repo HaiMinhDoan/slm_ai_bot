@@ -1,6 +1,7 @@
 package vn.slmglobal.slmai.services.inbox;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import jakarta.validation.constraints.Size;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -31,6 +32,7 @@ import vn.slmglobal.slmai.services.customer.repository.CustomerRepository;
 import vn.slmglobal.slmai.services.lead.ConsultSlots;
 import vn.slmglobal.slmai.services.lead.entity.ConsultProfile;
 import vn.slmglobal.slmai.services.lead.repository.ConsultProfileRepository;
+import vn.slmglobal.slmai.services.media.MediaDelivery;
 import vn.slmglobal.slmai.services.notification.NotificationDraft;
 import vn.slmglobal.slmai.services.notification.NotificationService;
 import vn.slmglobal.slmai.services.notification.NotificationSeverity;
@@ -77,13 +79,14 @@ public class InboxService {
     private final NotificationService notifications;
     private final AuditLogService audit;
     private final AiSettingsService settings;
+    private final MediaDelivery mediaDelivery;
     private final Map<ChannelCode, ChannelSender> senders = new EnumMap<>(ChannelCode.class);
 
     public InboxService(InboxRepository inbox, ConversationRepository conversations, MessageRepository messages,
                         ChannelIdentityRepository identities, CustomerRepository customers,
                         ConsultProfileRepository profiles, AiRunRepository aiRuns, DraftEditRepository draftEdits,
                         NotificationService notifications, AuditLogService audit, AiSettingsService settings,
-                        List<ChannelSender> channelSenders) {
+                        MediaDelivery mediaDelivery, List<ChannelSender> channelSenders) {
         this.inbox = inbox;
         this.conversations = conversations;
         this.messages = messages;
@@ -95,6 +98,7 @@ public class InboxService {
         this.notifications = notifications;
         this.audit = audit;
         this.settings = settings;
+        this.mediaDelivery = mediaDelivery;
         channelSenders.forEach(s -> senders.put(s.channel(), s));
     }
 
@@ -296,6 +300,14 @@ public class InboxService {
             }
             failedRest = String.join("\n\n", parts.subList(done, parts.size()));
         }
+        // Media AI chọn kèm nháp (ảnh báo giá, video): gửi sau phần chữ; chữ lỗi giữa chừng thì để cùng phần còn lại
+        JsonNode attachments = m.getAttachments();
+        boolean hasMedia = attachments != null && attachments.isArray() && !attachments.isEmpty()
+                && m.getSenderType() == SenderType.AI;
+        if (hasMedia && failedRest == null) {
+            attachments = mediaDelivery.send(sender, identity, attachments, () -> pauseTyping(sender, identity))
+                    .attachments();
+        }
         boolean edited = !text.equals(m.getContent());
         if (edited && m.getSenderType() == SenderType.AI && m.getContent() != null) {
             draftEdits.save(DraftEdit.builder()
@@ -308,6 +320,9 @@ public class InboxService {
         }
         OffsetDateTime now = now();
         m.setContent(failedRest == null ? text : String.join("\n\n", parts.subList(0, done)));
+        if (hasMedia) {
+            m.setAttachments(failedRest == null ? attachments : JsonNodeFactory.instance.arrayNode());
+        }
         m.setStatus(MessageStatus.SENT);
         m.setSentAt(now);
         m.setExternalMessageId(externalId);
@@ -316,6 +331,7 @@ public class InboxService {
             // Phần đã tới khách giữ là SENT; phần còn lại thành tin lỗi để bấm gửi lại
             messages.save(Message.builder().conversationId(c.getId()).direction(MessageDirection.OUT)
                     .senderType(m.getSenderType()).content(failedRest).status(MessageStatus.FAILED)
+                    .attachments(hasMedia ? attachments : JsonNodeFactory.instance.arrayNode())
                     .aiRunId(m.getAiRunId()).build());
         }
         if (c.getOwnership() == Ownership.HUMAN_OWNED) {

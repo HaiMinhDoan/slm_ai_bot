@@ -34,8 +34,8 @@ class ReplyPartsTest {
     }
 
     @Test
-    void longParagraphIsCutAtSentenceEndsNotInsideNumbersOrLinks() {
-        String sentence = "Gói Hybrid 3 pha 10,63 kWp giá 156.700.000 đ, xem tại https://slmsolar.vn/products/136 ạ. ";
+    void longParagraphIsCutAtSentenceEndsNotInsideNumbers() {
+        String sentence = "Gói Hybrid 3 pha 10,63 kWp giá 156.700.000 đ, lưu trữ 5,12 kWh, bảo hành 5 năm ạ. ";
         String reply = sentence.repeat(8).strip();
 
         var parts = ReplyParts.split(reply);
@@ -44,6 +44,23 @@ class ReplyPartsTest {
             assertThat(p).startsWith("Gói Hybrid").endsWith("ạ.");
         });
         assertThat(String.join(" ", parts)).isEqualTo(reply);
+    }
+
+    @Test
+    void linkIsSentAloneSoMessengerShowsItsPreview() {
+        // Link giữa câu: câu giữ ý, link thành tin riêng ngay sau
+        assertThat(ReplyParts.split("Dạ chị xem chi tiết gói tại https://slmsolar.vn/products/156 ạ."))
+                .containsExactly("Dạ chị xem chi tiết gói tại link bên dưới ạ.", "https://slmsolar.vn/products/156");
+        // Link sau dấu hai chấm hoặc đứng riêng dòng: bỏ khỏi câu
+        assertThat(ReplyParts.split("Chi tiết gói chị xem ở đây:\nhttps://slmsolar.vn/products/156"))
+                .containsExactly("Chi tiết gói chị xem ở đây:", "https://slmsolar.vn/products/156");
+        assertThat(ReplyParts.split("Anh bấm vào link https://slmsolar.com.vn/products/157 để xem nhé."))
+                .containsExactly("Anh bấm vào link bên dưới để xem nhé.", "https://slmsolar.com.vn/products/157");
+        // Tin chỉ có link giữ nguyên; dấu câu dính sau link không thuộc link
+        assertThat(ReplyParts.split("https://slmsolar.vn/products/156")).containsExactly(
+                "https://slmsolar.vn/products/156");
+        assertThat(ReplyParts.split("Dạ giá trọn gói 154.300.000 đ ạ.\n\nhttps://slmsolar.vn/products/156."))
+                .containsExactly("Dạ giá trọn gói 154.300.000 đ ạ.", "https://slmsolar.vn/products/156");
     }
 
     @Test

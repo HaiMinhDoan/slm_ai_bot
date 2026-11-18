@@ -38,6 +38,15 @@ public class CatalogImageService {
     public Image load(int fileId) {
         String url = repository.imageUrl(fileId)
                 .orElseThrow(() -> CommonException.notFound("Không có ảnh " + fileId + " trong catalog đã đồng bộ"));
+        return fetch(url, String.valueOf(fileId));
+    }
+
+    /** Tải một ảnh theo đường dẫn đã đồng bộ trong dm_* (ảnh báo giá tự tạo dùng logo hãng, ảnh vật tư) */
+    Image fetch(String url) {
+        return fetch(url, url);
+    }
+
+    private Image fetch(String url, String label) {
         URI uri = toUri(url);
         try {
             HttpResponse<InputStream> res = http.send(HttpRequest.newBuilder(uri).timeout(TIMEOUT).GET().build(),
@@ -45,7 +54,7 @@ public class CatalogImageService {
             try (InputStream in = res.body()) {
                 if (res.statusCode() != 200) {
                     throw new CommonException(HttpStatus.BAD_GATEWAY,
-                            "MinIO của slm_v2 trả HTTP " + res.statusCode() + " cho ảnh " + fileId);
+                            "MinIO của slm_v2 trả HTTP " + res.statusCode() + " cho ảnh " + label);
                 }
                 byte[] bytes = in.readNBytes(MAX_BYTES + 1);
                 if (bytes.length > MAX_BYTES) {

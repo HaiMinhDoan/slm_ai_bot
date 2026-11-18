@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,9 @@ import vn.slmglobal.slmai.services.knowledge.KnowledgeBase;
 import vn.slmglobal.slmai.services.knowledge.KnowledgeSnapshot;
 import vn.slmglobal.slmai.services.lead.ConsultSlots;
 import vn.slmglobal.slmai.services.lead.entity.ConsultProfile;
+import vn.slmglobal.slmai.services.media.MediaCatalog;
+import vn.slmglobal.slmai.services.media.MediaDelivery;
+import vn.slmglobal.slmai.services.media.MediaPlanner;
 import vn.slmglobal.slmai.services.policy.NumberChecker;
 import vn.slmglobal.slmai.services.policy.ReplyPolicy;
 import vn.slmglobal.slmai.services.settings.AiSettingsService;
@@ -68,6 +72,9 @@ public class AiTurnService {
     private final AiSettingsService settings;
     private final ObjectMapper objectMapper;
     private final ChannelNameService channelNames;
+    private final MediaCatalog mediaCatalog;
+    private final MediaPlanner mediaPlanner;
+    private final MediaDelivery mediaDelivery;
     private final Map<ChannelCode, ChannelSender> senders = new EnumMap<>(ChannelCode.class);
     /** Số lần gọi Claude lỗi liên tiếp của từng hội thoại (chỉ trong tiến trình này) */
     private final Map<UUID, Integer> failures = new ConcurrentHashMap<>();
@@ -81,7 +88,8 @@ public class AiTurnService {
     public AiTurnService(AiTurnStore store, CustomerChatPromptBuilder promptBuilder, ClaudeChatClient claude,
                          ReplyPolicy policy, KnowledgeBase knowledgeBase, CustomerChatTools tools,
                          CatalogSyncService catalogSync, AiSettingsService settings, ObjectMapper objectMapper,
-                         ChannelNameService channelNames, List<ChannelSender> channelSenders) {
+                         ChannelNameService channelNames, MediaCatalog mediaCatalog, MediaPlanner mediaPlanner,
+                         MediaDelivery mediaDelivery, List<ChannelSender> channelSenders) {
         this.store = store;
         this.promptBuilder = promptBuilder;
         this.claude = claude;
@@ -92,6 +100,9 @@ public class AiTurnService {
         this.settings = settings;
         this.objectMapper = objectMapper;
         this.channelNames = channelNames;
+        this.mediaCatalog = mediaCatalog;
+        this.mediaPlanner = mediaPlanner;
+        this.mediaDelivery = mediaDelivery;
         channelSenders.forEach(s -> senders.put(s.channel(), s));
     }
 
@@ -116,22 +127,23 @@ public class AiTurnService {
         s = withChannelName(s);
 
         boolean pricingTools = tools.available();
-        ClaudeChatClient.ChatRequest request = promptBuilder.build(s, knowledge, now, businessOpen, pricingTools)
-                .orElse(null);
+        MediaCatalog.Block media = mediaBlock(s.channel());
+        ClaudeChatClient.ChatRequest request = promptBuilder.build(s, knowledge, media, now, businessOpen,
+                pricingTools).orElse(null);
         if (request == null) {
             store.release(s);
             return;
         }
         CustomerChatTools.Session toolSession = null;
         if (pricingTools) {
-            toolSession = tools.session(s.profile());
+            toolSession = tools.session(s.profile(), s.channel());
             request = request.withTools(tools.definitions(), toolSession);
         }
         TypingIndicator typing = properties.typingIndicator() && sender != null && windowOpen
                 ? TypingIndicator.start(sender, s.identity(), typingScheduler)
                 : null;
 
-        AiRun run = newRun(s, knowledge, properties);
+        AiRun run = newRun(s, knowledge, media, properties);
         ClaudeChatClient.ChatCompletion completion = null;
         RuntimeException failure = null;
         try {
@@ -183,8 +195,8 @@ public class AiTurnService {
         }
         AiTurnStore.Quote quote = toolSession == null ? null
                 : new AiTurnStore.Quote(toolSession.quotedPackageIds(), toolSession.cheapestQuotedVnd());
-        AiTurnStore.Commit commit = store.commit(s, run, reply, decision, quote, businessOpen, windowOpen,
-                sender != null);
+        AiTurnStore.Commit commit = store.commit(s, run, reply, decision, quote, attachments(s, reply), businessOpen,
+                windowOpen, sender != null);
         if (commit.applied()) {
             log.info("Lượt AI hội thoại {}: {} {} ({} ms, {} request, tool {}, cache đọc {} / ghi {})",
                     conversationId, decision.action(), decision.reasons(), run.getLatencyMs(), completion.apiCalls(),
@@ -223,7 +235,7 @@ public class AiTurnService {
         log.error("Gọi Claude lỗi (hội thoại {}, lần {}), chuyển nhân viên: {}", s.conversationId(), attempt,
                 run.getError());
         AiTurnStore.Commit commit = store.commit(s, run, null, ReplyPolicy.Decision.handoff("AI_ERROR"), null,
-                businessOpen, windowOpen, sender != null);
+                null, businessOpen, windowOpen, sender != null);
         return deliver(s, sender, commit.outgoing(), started);
     }
 
@@ -273,7 +285,15 @@ public class AiTurnService {
                     done++;
                     sent++;
                 }
-                store.markSent(o.messageId(), externalId);
+                JsonNode attachments = null;
+                if (o.attachments() != null && !o.attachments().isEmpty()) {
+                    // Ảnh / video sau phần chữ, mỗi mục chờ một nhịp như người gửi
+                    MediaDelivery.Result media = mediaDelivery.send(sender, s.identity(), o.attachments(),
+                            () -> pause(sender, s, MIN_TYPING, properties.typingIndicator()));
+                    attachments = media.attachments();
+                    sent += media.sent();
+                }
+                store.markSent(o.messageId(), externalId, attachments);
             } catch (RuntimeException e) {
                 log.warn("Gửi tin {} của hội thoại {} thất bại sau {}/{} đoạn: {}", o.messageId(), s.conversationId(),
                         done, parts.size(), e.getMessage());
@@ -311,16 +331,44 @@ public class AiTurnService {
         }
     }
 
-    private AiRun newRun(TurnSnapshot s, KnowledgeSnapshot knowledge, AiProperties properties) {
+    private AiRun newRun(TurnSnapshot s, KnowledgeSnapshot knowledge, MediaCatalog.Block media,
+                         AiProperties properties) {
         return AiRun.builder()
                 .purpose(AiPurpose.CUSTOMER_CHAT)
                 .conversationId(s.conversationId())
                 .model(properties.model())
                 .kbVersion(knowledge.version())
                 .catalogVersion(catalogVersion())
-                .mediaVersion(MEDIA_VERSION_NONE)
-                .promptVersion(promptBuilder.promptVersion(knowledge))
+                .mediaVersion(media == null ? MEDIA_VERSION_NONE : media.version())
+                .promptVersion(promptBuilder.promptVersion(knowledge, media))
                 .build();
+    }
+
+    /** Khối gửi media của kênh; thư viện lỗi thì lượt vẫn chạy, chỉ không có danh mục */
+    private MediaCatalog.Block mediaBlock(ChannelCode channel) {
+        try {
+            return mediaCatalog.block(channel);
+        } catch (RuntimeException e) {
+            log.warn("Không đọc được danh mục media: {}", e.toString());
+            return null;
+        }
+    }
+
+    /** Media gửi kèm câu trả lời (MediaPlanner); lỗi thì gửi phần chữ, không kèm media */
+    private JsonNode attachments(TurnSnapshot s, AiReply reply) {
+        if (reply == null || !reply.hasReply()) {
+            return null;
+        }
+        try {
+            MediaPlanner.Plan plan = mediaPlanner.plan(s.channel(), reply.reply(), reply.mediaCodes(), s.history());
+            if (!plan.dropped().isEmpty()) {
+                log.info("Hội thoại {}: bỏ media AI chọn {}", s.conversationId(), plan.dropped());
+            }
+            return plan.attachments();
+        } catch (RuntimeException e) {
+            log.warn("Hội thoại {}: không chọn được media gửi kèm: {}", s.conversationId(), e.toString());
+            return JsonNodeFactory.instance.arrayNode();
+        }
     }
 
     private static void fillUsage(AiRun run, ClaudeChatClient.ChatCompletion c) {

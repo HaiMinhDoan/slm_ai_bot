@@ -102,7 +102,7 @@ public class CatalogMaterialRepository {
      * Giá hiện hành: {@code gia_moi} là lần ghi giá đang dùng gần nhất; {@code gia.gia_ban} là giá của từng cơ sở, cơ sở
      * nào lần đó không có giá riêng thì lấy giá HN (miền Bắc); {@code gia.theo_mien_bac} là các cơ sở đó.
      */
-    private static final String CURRENT_PRICE = """
+    static final String CURRENT_PRICE = """
             LEFT JOIN LATERAL (
                 SELECT g.gia_ban, g.hieu_luc_tu FROM dm_gia_vat_tu g
                 WHERE g.vat_tu_id = v.id_nguon AND g.dang_dung

@@ -75,6 +75,12 @@ app:
     secret-key: ${MINIO_SECRET_KEY:}
     bucket: ${MINIO_BUCKET:slm-ai-media}
 
+  # Gotenberg (Chromium) chụp trang HTML thành ảnh: ảnh báo giá cho gói chưa có ảnh trong thư viện media.
+  # Để trống GOTENBERG_URL= thì không tạo ảnh, bot chỉ gửi ảnh báo giá có sẵn.
+  gotenberg:
+    url: ${GOTENBERG_URL:http://slm-ai-gotenberg:3000}
+    timeout: 60s
+
   # Meta App + Page cho Messenger (mục 54.3). Webhook: https://<tên-miền>/api/v1/webhooks/facebook
   facebook:
     app-id: ${FB_APP_ID:}
@@ -167,8 +173,8 @@ app:
     product-link-domains:
       BAC: slmsolar.vn
       NAM: slmsolar.com.vn
-    quote-conditions: "Đây là giá niêm yết đã gồm VAT của gói trọn gói (thiết bị, nhân công lắp đặt và vận chuyển); giá cuối cùng nhân viên báo sau khi khảo sát thực tế."
-    flat-roof-note: "Mái bằng cần thêm phần khung, chi phí khung nhân viên báo sau khi khảo sát."
+    quote-conditions: "Giá trọn gói đã gồm VAT (thiết bị, nhân công lắp đặt và vận chuyển)."
+    flat-roof-note: "Mái bằng: bên em miễn phí thiết kế 3D; cần dựng khung thép, vật tư khách có thể mua ở cửa hàng vật liệu gần nhà, chi phí thi công nhân viên báo sau."
 
   # Thông báo cho nhân viên trên trang admin (chuông, âm thanh, thông báo trình duyệt qua SSE)
   notification:
