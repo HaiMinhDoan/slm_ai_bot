@@ -45,27 +45,22 @@ public class MaterialAdvisor {
     /**
      * @param keyword      thiết bị khách hỏi (rỗng: liệt kê theo nhóm), hoặc link trang thiết bị khách gửi
      * @param group        TAM_PIN / BIEN_TAN / PIN_LUU_TRU / PHU_KIEN hoặc null
-     * @param provinceText tỉnh khách nói; chưa biết thì giá miền Bắc, không link
+     * @param provinceText tỉnh khách nói (chỉ để nhận ra tỉnh); giá và link luôn theo bảng giá Hà Nội (2026-11-18)
      */
     public ObjectNode lookup(String keyword, String group, String provinceText) {
         ObjectNode out = objectMapper.createObjectNode();
         List<String> notes = new ArrayList<>();
         ProvinceDirectory.Resolution place = provinceText == null || provinceText.isBlank() ? null
                 : provinces.resolve(provinceText).orElse(null);
-        String branch = place == null ? PackageAdvisor.DEFAULT_BRANCH : place.province().branchCode();
-        String domain = null;
-        if (place == null) {
-            if (provinceText != null && !provinceText.isBlank()) {
-                notes.add("Không nhận ra tỉnh \"" + provinceText + "\": hỏi lại khách tỉnh / thành phố.");
-            }
-            out.put("bang_gia", "tạm theo giá miền Bắc (giá hai miền gần như bằng nhau)");
-            notes.add("Chưa biết tỉnh: chưa gửi link thiết bị.");
-        } else {
-            out.put("bang_gia", "giá " + provinces.regionName(place.province().region()));
-            domain = PackageAdvisor.linkDomain(
-                    pricingSource.pricing().productLinkDomains().get(place.province().region().name()),
-                    catalog.domains(branch)).orElse(null);
+        // Công ty bỏ cơ sở TP HCM (2026-11-18): khách ở tỉnh nào cũng báo giá Hà Nội, link trang Hà Nội
+        String branch = PackageAdvisor.QUOTE_BRANCH;
+        if (place == null && provinceText != null && !provinceText.isBlank()) {
+            notes.add("Không nhận ra tỉnh \"" + provinceText + "\": hỏi lại khách tỉnh / thành phố.");
         }
+        out.put("bang_gia", "giá Hà Nội (áp dụng cho mọi tỉnh)");
+        String domain = PackageAdvisor.linkDomain(
+                pricingSource.pricing().productLinkDomains().get(PackageAdvisor.QUOTE_REGION),
+                catalog.domains(branch)).orElse(null);
 
         String g = group != null && GROUPS.contains(group) ? group : null;
         Integer linked = MaterialMatcher.linkedId(keyword);

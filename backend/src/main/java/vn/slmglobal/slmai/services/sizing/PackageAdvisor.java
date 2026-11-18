@@ -30,7 +30,10 @@ import java.util.Optional;
  *       Đề xuất ngay khi còn thiếu tỉnh hoặc tỷ lệ ngày / đêm thì trả khoảng (gói nhỏ nhất và lớn nhất có thể).</li>
  *   <li>Khách tự nêu cấu hình (số tấm, dung lượng pin, 2026-11-09): thêm {@code cau_hinh_khach_hoi} gồm gói đúng cấu
  *       hình, không có thì gói gần nhất ít tấm hơn và nhiều tấm hơn.</li>
- *   <li>Sản lượng theo PV out EVN của tỉnh; link sản phẩm theo miền (Bắc slmsolar.vn, Nam slmsolar.com.vn).</li>
+ *   <li>Hai dòng sản phẩm (2026-11-18): gói tiêu chuẩn chọn như trên trong các gói không phải cao cấp; thêm một gói
+ *       cao cấp Huawei gần nhu cầu nhất để AI đề nghị cả hai (khách chê đắt thì chỉ dòng tiêu chuẩn).</li>
+ *   <li>Sản lượng theo PV out EVN của tỉnh. Giá và link sản phẩm luôn theo bảng giá Hà Nội (2026-11-18: công ty bỏ
+ *       cơ sở TP HCM), tỉnh chỉ dùng để tính sản lượng.</li>
  * </ul>
  */
 @Service
@@ -39,8 +42,10 @@ public class PackageAdvisor {
 
     static final String ON_GRID = "ON_GRID";
     static final String HYBRID = "HYBRID";
-    /** Chưa biết miền: giá tham khảo theo cơ sở HN (giá hai cơ sở gần như bằng nhau), chưa gửi link */
-    static final String DEFAULT_BRANCH = "HN";
+    /** Cơ sở giá của mọi báo giá: công ty bỏ cơ sở TP HCM (2026-11-18), khách ở tỉnh nào cũng báo giá Hà Nội */
+    static final String QUOTE_BRANCH = "HN";
+    /** Miền có tên miền website của cơ sở Hà Nội trong rule bao-gia (product_link_domains) */
+    static final String QUOTE_REGION = "BAC";
     /** Khách nói "pin 5 số" là gói pin 5,12 kWh: lệch dưới mức này coi như đúng dung lượng khách hỏi */
     static final double STORAGE_MATCH_KWH = 0.5;
     /** Gói gần nhất vẫn nhỏ hơn công suất cần quá mức này (vì mái hoặc hết gói lớn hơn) thì ghi chú */
@@ -86,7 +91,7 @@ public class PackageAdvisor {
     public record Advice(ObjectNode result, List<Integer> quotedPackageIds, Long cheapestQuotedVnd) {
     }
 
-    /** Tỉnh, miền, cơ sở giá và PV out của khách cho một lần gọi tool */
+    /** Tỉnh, cơ sở giá (luôn Hà Nội) và PV out của khách cho một lần gọi tool */
     private record Place(ProvinceDirectory.Resolution resolution, String branch, PvoutRepository.Table table,
                          double[] pvMonthly) {
 
@@ -178,11 +183,13 @@ public class PackageAdvisor {
             ArrayNode options = out.putArray("goi_de_xuat");
             double minPrice = Double.MAX_VALUE;
             double maxPrice = 0;
+            List<CatalogPackage> standard = all.stream().filter(p -> !premium(p)).toList();
+            ObjectNode premiumOption = null;
             for (String type : types(preferred, r)) {
                 List<Pick> picks = new ArrayList<>();
                 for (boolean high : s.requiredKwp().exact() && s.batteryKwh().exact() ? List.of(true)
                         : List.of(false, true)) {
-                    picks.add(pick(all, r.phases(), type, full, s, high, r.cheaper()));
+                    picks.add(pick(standard, r.phases(), type, full, s, high, r.cheaper()));
                 }
                 for (Pick p : distinct(picks)) {
                     if (p.pkg() == null) {
@@ -200,6 +207,33 @@ public class PackageAdvisor {
                     minPrice = Math.min(minPrice, price);
                     maxPrice = Math.max(maxPrice, price);
                 }
+                // Một gói cao cấp Huawei cùng loại hệ, cùng số pha với gói tiêu chuẩn, để đề nghị cả hai dòng
+                Integer phases = picks.stream().map(Pick::pkg).filter(java.util.Objects::nonNull).findFirst()
+                        .map(CatalogPackage::phases).orElse(r.phases());
+                if (!r.cheaper() && premiumOption == null && phases != null) {
+                    double needKwp = mid(full.requiredKwp());
+                    Pick pp = pickIn(pool(all.stream().filter(PackageAdvisor::premium).toList(), phases, type), type,
+                            needKwp, mid(s.batteryKwh()), full.maxKwpByRoof(), null);
+                    Double roof = full.maxKwpByRoof();
+                    // Dòng cao cấp không có gói đủ lớn hoặc vừa mái thì chỉ đề nghị dòng tiêu chuẩn
+                    if (pp.pkg() != null && (roof == null || pp.pkg().kwp() <= roof + 1e-9)
+                            && needKwp <= pp.pkg().kwp() * SHORT_OF_NEED) {
+                        premiumOption = summary(pp.pkg(), place);
+                        premiumOption.put("ly_do", reason(type, r, s));
+                        if (pp.note() != null) {
+                            premiumOption.put("luu_y", pp.note());
+                        }
+                        addProduction(premiumOption, pp.pkg(), place, r, s);
+                        quoted.add(pp.pkg().id());
+                    }
+                }
+            }
+            if (premiumOption != null) {
+                options.add(premiumOption);
+            }
+            if (premiumOption != null && options.size() > 1) {
+                notes.add("Có hai dòng sản phẩm: đề nghị cả hai, gói Tiêu chuẩn trước rồi gói Cao cấp Huawei, nêu "
+                        + "điểm mạnh của từng dòng (playbooks/khach-hoi-gia, phần hai dòng sản phẩm).");
             }
             if (!options.isEmpty()) {
                 cheapest = cheapest == null ? Math.round(minPrice) : Math.min(cheapest, Math.round(minPrice));
@@ -235,12 +269,11 @@ public class PackageAdvisor {
         }
         Place place = place(provinceText, out, notes);
         CatalogPackage pkg = found.get();
-        if (place.known() && !pkg.branchCode().equals(place.branch())) {
-            Optional<CatalogPackage> twin = catalog.findTwin(pkg, place.branch());
+        if (!pkg.branchCode().equals(QUOTE_BRANCH)) {
+            Optional<CatalogPackage> twin = catalog.findTwin(pkg, QUOTE_BRANCH);
             if (twin.isPresent()) {
-                notes.add("Gói " + pkg.id() + " là bản giá " + regionOfBranch(pkg.branchCode())
-                        + "; khách ở " + provinces.regionName(place.province().region()) + " nên dùng gói "
-                        + twin.get().id() + ".");
+                notes.add("Gói " + pkg.id() + " là bản giá cơ sở " + pkg.branchCode() + " (đã ngừng); báo theo "
+                        + "bảng giá Hà Nội: gói " + twin.get().id() + ".");
                 pkg = twin.get();
             }
         }
@@ -533,19 +566,18 @@ public class PackageAdvisor {
                 notes.add("Không nhận ra tỉnh \"" + provinceText + "\": hỏi lại khách tỉnh / thành phố.");
             }
             area.put("tinh", "chưa biết");
-            area.put("bang_gia", "tạm theo bảng giá miền Bắc (giá hai miền gần như bằng nhau)");
-            notes.add("Chưa biết tỉnh: chưa gửi link sản phẩm; sản lượng tính theo khoảng PV out cả nước.");
-            return new Place(null, DEFAULT_BRANCH, table, null);
+            area.put("bang_gia", "bảng giá Hà Nội (áp dụng cho mọi tỉnh)");
+            notes.add("Chưa biết tỉnh: sản lượng tính theo khoảng PV out cả nước.");
+            return new Place(null, QUOTE_BRANCH, table, null);
         }
         ProvinceDirectory.Province p = res.province();
         area.put("tinh", p.name());
         if (res.formerName() != null) {
             area.put("tinh_cu", res.formerName() + " (nay thuộc " + p.name() + ")");
         }
-        area.put("mien", provinces.regionName(p.region()));
-        area.put("bang_gia", "bảng giá " + provinces.regionName(p.region()));
+        area.put("bang_gia", "bảng giá Hà Nội (áp dụng cho mọi tỉnh)");
         double[] months = table == null ? null : table.of(p.code()).orElse(null);
-        return new Place(res, p.branchCode(), table, months);
+        return new Place(res, QUOTE_BRANCH, table, months);
     }
 
     private ObjectNode estimate(SizingService.Sizing s, Place place, AdviceRequest r) {
@@ -631,6 +663,8 @@ public class PackageAdvisor {
                 o.put("hang_pin_luu_tru", p.batteryBrand());
             }
         }
+        o.put("dong_san_pham", (premium(p) ? "Cao cấp" : "Tiêu chuẩn")
+                + (p.familyName() == null || p.familyName().isBlank() ? "" : ": " + p.familyName()));
         o.put("gia", VnFormat.money(p.totalPrice()));
         o.put("gia_day_du", VnFormat.moneyExact(p.totalPrice()));
         if (p.bestSeller()) {
@@ -640,13 +674,20 @@ public class PackageAdvisor {
         return o;
     }
 
-    /** https://<tên miền theo miền khách>/products/<id gói>; chưa biết tỉnh thì không có link */
+    /** https://<tên miền của cơ sở Hà Nội>/products/<id gói>; mọi gói báo giá đều là gói Hà Nội */
     private Optional<String> link(CatalogPackage p, Place place) {
-        if (!place.known()) {
-            return Optional.empty();
-        }
-        return linkDomain(pricing().productLinkDomains().get(place.province().region().name()),
-                catalog.domains(p.branchCode())).map(d -> "https://" + d + "/products/" + p.id());
+        return linkDomain(pricing().productLinkDomains().get(QUOTE_REGION), catalog.domains(p.branchCode()))
+                .map(d -> "https://" + d + "/products/" + p.id());
+    }
+
+    /** Dòng cao cấp: gói slm_v2 đặt tên "cao cấp", hoặc biến tần Huawei (JA Solar - Huawei - Huawei) */
+    static boolean premium(CatalogPackage p) {
+        return (p.name() != null && p.name().toLowerCase(java.util.Locale.ROOT).contains("cao cấp"))
+                || "huawei".equalsIgnoreCase(p.inverterBrand());
+    }
+
+    private static double mid(SizingService.Range r) {
+        return (r.min() + r.max()) / 2;
     }
 
     /** Tên miền gửi khách: tên miền rule bao-gia chọn cho miền, nếu slm_v2 có tên miền đó; không thì tên miền đầu */
@@ -701,15 +742,6 @@ public class PackageAdvisor {
             }
         }
         return List.copyOf(m.values());
-    }
-
-    private String regionOfBranch(String branch) {
-        for (ProvinceDirectory.Region r : ProvinceDirectory.Region.values()) {
-            if (provinces.all().stream().anyMatch(p -> p.region() == r && p.branchCode().equals(branch))) {
-                return provinces.regionName(r);
-            }
-        }
-        return branch;
     }
 
     static String typeLabel(String type) {

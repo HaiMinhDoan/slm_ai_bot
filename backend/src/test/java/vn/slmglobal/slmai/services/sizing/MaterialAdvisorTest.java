@@ -17,6 +17,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** Tool tra_cuu_vat_tu trên bộ vật tư giống slm_v2 (2026-11-06) */
@@ -70,7 +72,7 @@ class MaterialAdvisorTest {
     void batteryPriceSpecsLinkAndPackagesForNorthernCustomer() {
         JsonNode r = advisor.lookup("pin lưu trữ Dyness 5kWh", "PIN_LUU_TRU", "Hà Nội");
 
-        assertThat(r.path("bang_gia").asText()).isEqualTo("giá miền Bắc");
+        assertThat(r.path("bang_gia").asText()).isEqualTo("giá Hà Nội (áp dụng cho mọi tỉnh)");
         // Cả hai pin 5,12 kWh khớp, pin 14,3 kWh và dây nối thì không
         assertThat(ids(r)).containsExactly(57, 64);
         JsonNode pin = r.path("vat_tu").get(0);
@@ -87,23 +89,25 @@ class MaterialAdvisorTest {
         assertThat(r.path("ghi_chu").toString()).contains("Không cộng giá lẻ");
     }
 
+    /** Công ty bỏ cơ sở TP HCM (2026-11-18): khách miền Nam cũng giá, link và gói Hà Nội */
     @Test
-    void southernCustomerGetsSouthernDomainAndPackages() {
+    void southernCustomerGetsHanoiPricesLinksAndPackages() {
         JsonNode r = advisor.lookup("Dyness 5.12 kWh", null, "Hồ Chí Minh");
 
-        assertThat(r.path("bang_gia").asText()).isEqualTo("giá miền Nam");
+        assertThat(r.path("bang_gia").asText()).isEqualTo("giá Hà Nội (áp dụng cho mọi tỉnh)");
         JsonNode pin = r.path("vat_tu").get(0);
-        assertThat(pin.path("link").asText()).isEqualTo("https://slmsolar.com.vn/devices/57");
-        assertThat(pin.path("co_trong_goi").findValues("goi_id")).extracting(JsonNode::asInt).containsExactly(97);
+        assertThat(pin.path("link").asText()).isEqualTo("https://slmsolar.vn/devices/57");
+        assertThat(pin.path("co_trong_goi").findValues("goi_id")).extracting(JsonNode::asInt).containsExactly(98, 101);
+        verify(materials, never()).quotableMaterials("HCM");
     }
 
     @Test
-    void unknownProvinceUsesNorthernPriceWithoutLink() {
+    void unknownProvinceStillGetsHanoiPriceAndLink() {
         JsonNode r = advisor.lookup("inverter Solis Hy-Brid 1 pha 8 kW", null, null);
 
         assertThat(ids(r)).containsExactly(72);
-        assertThat(r.path("bang_gia").asText()).startsWith("tạm theo giá miền Bắc");
-        assertThat(r.path("vat_tu").get(0).has("link")).isFalse();
+        assertThat(r.path("bang_gia").asText()).isEqualTo("giá Hà Nội (áp dụng cho mọi tỉnh)");
+        assertThat(r.path("vat_tu").get(0).path("link").asText()).isEqualTo("https://slmsolar.vn/devices/72");
         assertThat(r.path("vat_tu").get(0).path("gia_niem_yet").asText()).isEqualTo("31,7 triệu đồng");
     }
 

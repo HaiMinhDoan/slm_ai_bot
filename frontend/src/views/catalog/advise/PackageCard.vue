@@ -29,14 +29,20 @@
     <div v-if="pkg.link" class="line">
       <a :href="pkg.link" target="_blank" rel="noopener noreferrer">{{ pkg.link }}</a>
     </div>
+    <Tag v-if="pkg.dong_san_pham" :color="premium ? 'purple' : 'blue'" class="mt-1">
+      {{ pkg.dong_san_pham }}
+    </Tag>
     <Tag v-if="pkg.ban_chay" color="gold" class="mt-1">Bán chạy</Tag>
   </Card>
 </template>
 
 <script lang="ts" setup>
+  import { computed } from 'vue';
   import { Card, Tag } from 'ant-design-vue';
 
-  defineProps<{ pkg: Recordable; heading?: string }>();
+  const props = defineProps<{ pkg: Recordable; heading?: string }>();
+  /** Dòng cao cấp Huawei (backend ghi "Cao cấp: …" ở dong_san_pham) */
+  const premium = computed(() => String(props.pkg.dong_san_pham ?? '').startsWith('Cao cấp'));
   const emit = defineEmits<{ (e: 'detail', id: number): void }>();
 </script>
 

@@ -270,7 +270,7 @@ public class CustomerChatTools {
         detail.put("goi_id", described(type("integer"),
                 "goi_id trong kết quả tim_goi_phu_hop, hoặc số cuối trong link /products/{id} khách gửi"));
         detail.put(ConsultSlots.KHU_VUC, nullable(described(type("string"),
-                "Tỉnh / thành phố của khách nếu đã biết, để chọn đúng bảng giá, link và tính sản lượng")));
+                "Tỉnh / thành phố của khách nếu đã biết, để tính sản lượng (giá luôn theo bảng giá Hà Nội)")));
 
         Map<String, Object> material = new LinkedHashMap<>();
         material.put("tu_khoa", described(type("string"), """
@@ -282,7 +282,7 @@ public class CustomerChatTools {
                 "TAM_PIN tấm pin, BIEN_TAN biến tần (inverter), PIN_LUU_TRU pin lưu trữ, PHU_KIEN khung, dây, tủ "
                         + "điện, tiếp địa, nhân công")));
         material.put(ConsultSlots.KHU_VUC, nullable(described(type("string"),
-                "Tỉnh / thành phố của khách nếu đã biết, để lấy giá và link đúng miền")));
+                "Tỉnh / thành phố của khách nếu đã biết (giá luôn theo bảng giá Hà Nội)")));
 
         return List.of(
                 tool(FIND_PACKAGES, """
@@ -301,7 +301,7 @@ public class CustomerChatTools {
                         pin lưu trữ, nhân công), hãng, bảo hành, giá, link, sản lượng theo tỉnh. Gọi khi khách hỏi \
                         gói gồm những gì, hãng nào, bảo hành bao lâu.""", detail),
                 tool(MATERIAL_LOOKUP, """
-                        Tra thiết bị lẻ: giá niêm yết của tấm pin, biến tần (inverter), pin lưu trữ theo miền, \
+                        Tra thiết bị lẻ: giá niêm yết của tấm pin, biến tần (inverter), pin lưu trữ (bảng giá Hà Nội), \
                         hãng, thông số, bảo hành, link trang thiết bị và các gói đang bán có thiết bị đó. Gọi khi \
                         khách hỏi giá riêng một thiết bị, gửi link trang thiết bị, bên mình có những loại / hãng \
                         nào, thông số hay bảo hành của một thiết bị, hoặc gói nào có thiết bị đó. Phụ kiện (khung, \

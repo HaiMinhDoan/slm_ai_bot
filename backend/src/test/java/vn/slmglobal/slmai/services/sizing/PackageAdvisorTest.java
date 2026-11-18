@@ -16,6 +16,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** Công thức chọn gói tạm (mục 60.3) trên bộ gói giống slm_v2 và bảng PV out EVN 2026. */
@@ -153,31 +155,59 @@ class PackageAdvisorTest {
         assertThat(a.result().path("con_thieu").toString()).contains("loai_mai");
     }
 
+    /** Công ty bỏ cơ sở TP HCM (2026-11-18): khách miền Nam cũng báo giá và link gói Hà Nội */
+    /**
+     * Hai dòng sản phẩm (2026-11-18): gói tiêu chuẩn gần nhu cầu nhất (5,72 kWp → 5 kWp, pin 3,75 → 5,12 kWh) và gói
+     * cao cấp Huawei gần nhất (6,4 kWp + 7 kWh), tiêu chuẩn trước; trước đây Huawei 6,4 kWp gần 5,72 kWp hơn nên bị
+     * chọn thay gói 5 kWp rẻ bằng nửa. Khách chê đắt thì chỉ dòng tiêu chuẩn.
+     */
     @Test
-    void withoutBillGivesStartingPricesForTheCustomersRegion() {
+    void offersStandardThenPremiumHuaweiPackage() {
+        PackageAdvisor.Advice a = advisor.advise(new PackageAdvisor.AdviceRequest("Bắc Ninh", 1, 1_500_000L,
+                "CAN_BANG", "TON", null, null, null));
+        JsonNode options = a.result().path("goi_de_xuat");
+        assertThat(options.findValues("goi_id")).extracting(JsonNode::asInt).containsExactly(98, 164);
+        assertThat(options.get(0).path("dong_san_pham").asText()).startsWith("Tiêu chuẩn");
+        assertThat(options.get(1).path("dong_san_pham").asText()).startsWith("Cao cấp");
+        assertThat(options.get(1).path("link").asText()).isEqualTo("https://slmsolar.vn/products/164");
+        assertThat(a.result().path("ghi_chu").toString()).contains("Có hai dòng sản phẩm");
+        assertThat(a.result().has("khoang_gia")).isFalse();
+        assertThat(a.quotedPackageIds()).containsExactly(98, 164);
+        assertThat(a.cheapestQuotedVnd()).isEqualTo(90_800_000L);
+
+        JsonNode cheaper = advisor.advise(new PackageAdvisor.AdviceRequest("Bắc Ninh", 1, 1_500_000L, "CAN_BANG",
+                "TON", null, null, null, null, null, false, true)).result().path("goi_de_xuat");
+        assertThat(cheaper.findValues("dong_san_pham")).extracting(JsonNode::asText)
+                .allSatisfy(d -> assertThat(d).startsWith("Tiêu chuẩn"));
+    }
+
+    @Test
+    void withoutBillSouthernCustomerGetsHanoiStartingPrices() {
         PackageAdvisor.Advice a = advisor.advise(new PackageAdvisor.AdviceRequest("Bình Dương", null, null, null,
                 null, null, null, null));
         JsonNode r = a.result();
         assertThat(r.path("che_do").asText()).isEqualTo("GIA_KHOI_DIEM");
         assertThat(r.path("khu_vuc").path("tinh_cu").asText()).isEqualTo("Bình Dương (nay thuộc TP Hồ Chí Minh)");
+        assertThat(r.path("khu_vuc").path("bang_gia").asText()).isEqualTo("bảng giá Hà Nội (áp dụng cho mọi tỉnh)");
         JsonNode first = r.path("gia_khoi_diem").get(0);
         assertThat(first.path("gia_tu").asText()).isEqualTo("53,6 triệu đồng");
-        assertThat(first.path("goi_re_nhat").path("link").asText()).isEqualTo("https://slmsolar.com.vn/products/159");
-        assertThat(r.path("gia_khoi_diem").get(1).path("goi_re_nhat").path("goi_id").asInt()).isEqualTo(97);
+        assertThat(first.path("goi_re_nhat").path("link").asText()).isEqualTo("https://slmsolar.vn/products/158");
+        assertThat(r.path("gia_khoi_diem").findValues("goi_id")).extracting(JsonNode::asInt).contains(158, 98)
+                .doesNotContain(159, 97);
+        verify(catalog, never()).recommendablePackages("HCM");
         assertThat(r.path("con_thieu").toString()).contains("hoa_don_thang");
         assertThat(a.quotedPackageIds()).isEmpty();
         assertThat(a.cheapestQuotedVnd()).isNull();
     }
 
     @Test
-    void unknownProvinceGivesRangeWithoutLinks() {
+    void unknownProvinceGivesRangeWithHanoiLinks() {
         PackageAdvisor.Advice a = advisor.advise(new PackageAdvisor.AdviceRequest(null, null, 2_000_000L, null,
                 null, null, null, null, null, null, true, false));
         JsonNode r = a.result();
         assertThat(r.path("uoc_tinh").path("cong_suat_can").asText()).contains(" đến ");
         assertThat(r.path("goi_de_xuat").size()).isGreaterThanOrEqualTo(2);
-        r.path("goi_de_xuat").forEach(o -> assertThat(o.has("link")).isFalse());
-        assertThat(r.toString()).doesNotContain("https://");
+        r.path("goi_de_xuat").forEach(o -> assertThat(o.path("link").asText()).startsWith("https://slmsolar.vn/"));
         assertThat(r.path("con_thieu").toString()).contains("khu_vuc");
     }
 
@@ -253,19 +283,21 @@ class PackageAdvisorTest {
         assertThat(wrong.passed()).isFalse();
     }
 
+    /** Link gói TP HCM cũ khách gửi lại: báo theo gói Hà Nội cùng tên */
     @Test
-    void detailMapsPackageToTheCustomersRegion() {
+    void detailMapsOldHcmPackageToItsHanoiTwin() {
         CatalogPackage hn = p(158, "HN", "Hệ On-Grid 5 kWp 1 pha", "ON_GRID", 1, 5.0, 0, 53_600_000, false);
         CatalogPackage hcm = p(159, "HCM", "Hệ On-Grid 5 kWp 1 pha", "ON_GRID", 1, 5.0, 0, 53_600_000, false);
-        when(catalog.findPackage(158)).thenReturn(Optional.of(hn));
-        when(catalog.findTwin(hn, "HCM")).thenReturn(Optional.of(hcm));
+        when(catalog.findPackage(159)).thenReturn(Optional.of(hcm));
+        when(catalog.findTwin(hcm, "HN")).thenReturn(Optional.of(hn));
         when(catalog.visibleItems(anyInt())).thenReturn(List.of(
                 new CatalogRepository.CatalogItem("Tấm pin mặt trời JA 625 Wp", "TAM_PIN", "JA Solar", 8, "Tấm", 144)));
-        JsonNode r = advisor.packageDetail(158, "Sài Gòn");
-        assertThat(r.path("goi_id").asInt()).isEqualTo(159);
-        assertThat(r.path("link").asText()).isEqualTo("https://slmsolar.com.vn/products/159");
+        JsonNode r = advisor.packageDetail(159, "Sài Gòn");
+        assertThat(r.path("goi_id").asInt()).isEqualTo(158);
+        assertThat(r.path("link").asText()).isEqualTo("https://slmsolar.vn/products/158");
+        assertThat(r.path("dong_san_pham").asText()).startsWith("Tiêu chuẩn");
         assertThat(r.path("thanh_phan").get(0).path("bao_hanh").asText()).isEqualTo("bảo hành 12 năm");
-        assertThat(r.path("ghi_chu").toString()).contains("dùng gói 159");
+        assertThat(r.path("ghi_chu").toString()).contains("gói 158");
     }
 
     private static List<CatalogPackage> sorted(List<CatalogPackage> list) {

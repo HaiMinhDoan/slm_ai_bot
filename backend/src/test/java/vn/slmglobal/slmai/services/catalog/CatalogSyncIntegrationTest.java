@@ -310,22 +310,24 @@ class CatalogSyncIntegrationTest {
     }
 
     @Test
-    void advisorQuotesSyncedPackagesWithRegionalLinks() {
+    void advisorQuotesSyncedHanoiPackagesForEveryProvince() {
         syncService.sync(CatalogSyncService.TRIGGER_MANUAL, null);
 
         JsonNode north = advisor.advise(new PackageAdvisor.AdviceRequest("Nam Định", 1, null, null, null, null,
                 "HYBRID", null)).result();
         assertThat(north.path("gia_khoi_diem").get(0).path("goi_re_nhat").path("link").asText())
                 .isEqualTo("https://slmsolar.vn/products/98");
+        // Công ty bỏ cơ sở TP HCM (2026-11-18): khách miền Nam cũng báo gói Hà Nội; sản lượng vẫn theo tỉnh khách
         JsonNode south = advisor.advise(new PackageAdvisor.AdviceRequest("Đồng Nai", 1, 1_000_000L, "CAN_BANG",
                 "NGOI", null, null, null)).result();
         assertThat(south.path("goi_de_xuat").get(0).path("link").asText())
-                .isEqualTo("https://slmsolar.com.vn/products/97");
+                .isEqualTo("https://slmsolar.vn/products/98");
         assertThat(south.path("goi_de_xuat").get(0).path("san_luong_uoc_tinh").path("cach_tinh").asText())
                 .contains("EVN 2026", "Đồng Nai");
 
-        JsonNode detail = advisor.packageDetail(98, "Sài Gòn");
-        assertThat(detail.path("goi_id").asInt()).isEqualTo(97);
+        // Link gói TP HCM cũ: báo theo gói Hà Nội cùng tên
+        JsonNode detail = advisor.packageDetail(97, "Sài Gòn");
+        assertThat(detail.path("goi_id").asInt()).isEqualTo(98);
         assertThat(detail.path("thanh_phan").toString()).contains("Tấm pin mặt trời JA 625 Wp", "bảo hành 12 năm");
         assertThat(detail.path("thanh_phan").toString()).doesNotContain("Bộ ghi dữ liệu");
     }
