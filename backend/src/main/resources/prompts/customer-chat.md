@@ -53,5 +53,5 @@ Trả về đúng một đối tượng JSON theo schema. Ý nghĩa các trườ
   - budget_vnd: ngân sách khách nêu, min và max đơn vị đồng (khách nói một số thì min bằng max); khách chưa nói thì min và max đều null
   - timeline: TUAN_TOI, THANG_TOI, VAI_THANG, NAM_TOI hoặc CHUA_RO, chỉ khi khách nói về thời điểm lắp
 - sources: mã (thuộc tính ma) các tài liệu bạn dựa vào trong lượt này.
-- knowledge_gap: khách hỏi điều tài liệu không có (ví dụ thời hạn bảo hành khi chưa có chính sách) thì ghi ngắn câu hỏi đó để công ty bổ sung; không thì để chuỗi rỗng "".
+- knowledge_gap: khách hỏi điều tài liệu không có (ví dụ quy trình bảo hành, thời gian thi công) thì ghi ngắn câu hỏi đó để công ty bổ sung; không thì để chuỗi rỗng "".
 - handoff: needed là true khi cần chuyển nhân viên theo core/guardrails; reason ghi ngắn lý do bằng tiếng Việt, không cần thì để chuỗi rỗng "".
