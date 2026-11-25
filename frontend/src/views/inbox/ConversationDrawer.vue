@@ -81,6 +81,7 @@
               <TypographyText type="secondary" class="text-xs">
                 <b>{{ senderLabel(m) }}</b> · {{ formatToDateTime(m.sentAt || m.createdAt) }}
               </TypographyText>
+              <Tag v-if="m.followUp" color="cyan" class="ml-1">Tin nhắc</Tag>
               <Tag v-if="m.status === 'DRAFT'" color="orange" class="ml-1">Nháp chưa gửi</Tag>
               <Tag v-else-if="m.status === 'FAILED'" color="red" class="ml-1">Gửi lỗi</Tag>
               <Tag v-else-if="m.status === 'DISCARDED'" class="ml-1">Đã bỏ</Tag>

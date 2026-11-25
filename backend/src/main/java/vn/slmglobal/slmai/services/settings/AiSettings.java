@@ -31,6 +31,13 @@ import java.util.List;
  * @param assistantModel       model của AI hỗ trợ soạn kiến thức (mục 5.10)
  * @param maxAttempts          gọi AI lỗi quá số lần này thì chuyển nhân viên
  * @param retryBackoffSeconds  chờ trước lần thử lại đầu tiên (các lần sau gấp đôi)
+ * @param followUpEnabled      nhắc khách khi khách im lặng (mục 56.9)
+ * @param followUpIntervalHours khách im lặng quá khoảng này sau tin cuối của bot thì nhắc (giờ)
+ * @param followUpMaxCount     số lần nhắc tối đa trong một cửa sổ 24 giờ (0 = không giới hạn)
+ * @param followUpAutoSend     tin nhắc tự gửi; tắt thì thành nháp chờ duyệt
+ * @param followUpStart        đầu khung giờ được nhắc HH:mm
+ * @param followUpEnd          cuối khung giờ được nhắc HH:mm
+ * @param followUpNotifyStaff  hết cửa sổ 24 giờ mà khách vẫn im lặng thì báo nhân viên
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record AiSettings(
@@ -54,7 +61,14 @@ public record AiSettings(
         String effort,
         String assistantModel,
         int maxAttempts,
-        double retryBackoffSeconds
+        double retryBackoffSeconds,
+        boolean followUpEnabled,
+        double followUpIntervalHours,
+        int followUpMaxCount,
+        boolean followUpAutoSend,
+        String followUpStart,
+        String followUpEnd,
+        boolean followUpNotifyStaff
 ) {
 
     /**

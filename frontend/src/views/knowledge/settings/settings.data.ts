@@ -25,6 +25,13 @@ export const SNAKE: Record<string, string> = {
   assistantModel: 'assistant_model',
   maxAttempts: 'max_attempts',
   retryBackoffSeconds: 'retry_backoff_seconds',
+  followUpEnabled: 'follow_up_enabled',
+  followUpIntervalHours: 'follow_up_interval_hours',
+  followUpMaxCount: 'follow_up_max_count',
+  followUpAutoSend: 'follow_up_auto_send',
+  followUpStart: 'follow_up_start',
+  followUpEnd: 'follow_up_end',
+  followUpNotifyStaff: 'follow_up_notify_staff',
 };
 
 export const settingsSchema: FormSchema[] = [
@@ -142,6 +149,59 @@ export const settingsSchema: FormSchema[] = [
     label: 'Chờ tối đa trước mỗi tin',
     component: 'InputNumber',
     componentProps: num({ min: 0, max: 120, addonAfter: 'giây' }),
+  },
+  {
+    field: 'd7',
+    label: 'Nhắc khách khi khách im lặng',
+    component: 'Divider',
+    colProps: { span: 24 },
+  },
+  {
+    field: 'followUpEnabled',
+    label: 'Bật nhắc khách',
+    helpMessage:
+      'Khách chưa trả lời tin của bot thì bot nhắc kèm video công trình / ảnh báo giá chưa gửi. Chỉ trong 24 giờ kể từ tin cuối của khách (luật Messenger); khách hoặc nhân viên nhắn thì dừng',
+    component: 'Switch',
+  },
+  {
+    field: 'followUpIntervalHours',
+    label: 'Nhắc sau khi khách im lặng',
+    helpMessage: 'Tính từ tin cuối của bot, kể cả tin nhắc trước: nhắc lặp lại theo khoảng này',
+    component: 'InputNumber',
+    componentProps: num({ min: 1, max: 12, step: 0.5, addonAfter: 'giờ' }),
+  },
+  {
+    field: 'followUpMaxCount',
+    label: 'Số lần nhắc tối đa trong 24 giờ',
+    component: 'InputNumber',
+    componentProps: num({ min: 0, max: 10, precision: 0, addonAfter: 'lần (0 = không giới hạn)' }),
+  },
+  {
+    field: 'followUpAutoSend',
+    label: 'Tự gửi tin nhắc',
+    helpMessage: 'Tắt thì tin nhắc thành nháp, nhân viên xem rồi gửi trên trang Chat với khách',
+    component: 'Switch',
+  },
+  {
+    field: 'followUpStart',
+    label: 'Được nhắc từ',
+    component: 'TimePicker',
+    required: true,
+    componentProps: { format: 'HH:mm', valueFormat: 'HH:mm', style: { width: '100%' } },
+  },
+  {
+    field: 'followUpEnd',
+    label: 'Được nhắc đến',
+    component: 'TimePicker',
+    required: true,
+    componentProps: { format: 'HH:mm', valueFormat: 'HH:mm', style: { width: '100%' } },
+  },
+  {
+    field: 'followUpNotifyStaff',
+    label: 'Báo nhân viên khi hết 24 giờ',
+    helpMessage:
+      'Khách vẫn im lặng khi hết 24 giờ (bot không nhắn được nữa) và đã có số điện thoại, gói đề xuất hoặc mức tiềm năng WARM / HOT',
+    component: 'Switch',
   },
   { field: 'd6', label: 'Model AI', component: 'Divider', colProps: { span: 24 } },
   {

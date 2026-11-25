@@ -75,6 +75,15 @@ public class MediaPlanner {
     }
 
     public Plan plan(ChannelCode channel, String reply, List<String> codes, List<Message> history) {
+        return plan(channel, reply, codes, history, null);
+    }
+
+    /**
+     * @param preselected media chọn sẵn trước khi gọi AI (tin nhắc khách, {@link #followUpExtra}); gửi đầu tiên và
+     *                    tính vào giới hạn ảnh / video của lượt; null là không có
+     */
+    public Plan plan(ChannelCode channel, String reply, List<String> codes, List<Message> history,
+                     ObjectNode preselected) {
         List<MediaCatalog.Entry> entries = mediaCatalog.entries(channel);
         Sent sent = sent(history);
         ArrayNode out = objectMapper.createArrayNode();
@@ -82,6 +91,17 @@ public class MediaPlanner {
         Set<UUID> chosen = new HashSet<>();
         int images = 0;
         int videos = 0;
+        if (preselected != null) {
+            out.add(preselected);
+            if (KIND_MEDIA.equals(preselected.path(KIND).asText())) {
+                chosen.add(UUID.fromString(preselected.path("media_id").asText()));
+            }
+            if ("VIDEO".equals(preselected.path("media_type").asText())) {
+                videos++;
+            } else {
+                images++;
+            }
+        }
 
         List<Integer> packageIds = productIds(reply);
         for (int id : packageIds) {
@@ -90,13 +110,8 @@ public class MediaPlanner {
                 if (!sent.media().contains(main.get().id()) && chosen.add(main.get().id())) {
                     out.add(media(main.get(), "AUTO", id));
                 }
-            } else if (!sent.quotes().contains(id) && quoteImages.canRender(id)) {
-                ObjectNode q = out.addObject();
-                q.put(KIND, KIND_QUOTE);
-                q.put("package_id", id);
-                q.put("title", "Ảnh báo giá " + catalog.findPackage(id).map(CatalogPackage::name).orElse("gói " + id));
-                q.put("by", "AUTO");
-                q.put(STATUS, STATUS_PENDING);
+            } else if (!sent.quotes().contains(id) && !hasQuote(out, id) && quoteImages.canRender(id)) {
+                out.add(quote(id));
             }
         }
 
@@ -130,6 +145,47 @@ public class MediaPlanner {
                     .ifPresent(v -> out.add(media(v, "AUTO", packageIds.get(0))));
         }
         return new Plan(out, dropped);
+    }
+
+    /**
+     * Media kèm tin nhắc khách (mục 56.9), chọn trước khi gọi AI để AI nói đúng: một media chưa gửi của gói đã đề
+     * xuất, ưu tiên video công trình của gói hoặc gói tương tự, rồi tới ảnh báo giá. Rỗng khi chưa đề xuất gói hoặc
+     * đã gửi hết.
+     */
+    public Optional<ObjectNode> followUpExtra(ChannelCode channel, List<Message> history, List<Integer> packageIds) {
+        if (packageIds == null || packageIds.isEmpty()) {
+            return Optional.empty();
+        }
+        List<MediaCatalog.Entry> entries = mediaCatalog.entries(channel);
+        Sent sent = sent(history);
+        List<Integer> ids = packageIds.stream().distinct().limit(MAX_PACKAGES).toList();
+        for (int id : ids) {
+            Optional<MediaCatalog.Entry> video = similarVideo(entries, id, sent.media(), Set.of());
+            if (video.isPresent()) {
+                return Optional.of(media(video.get(), "AUTO", id));
+            }
+        }
+        for (int id : ids) {
+            Optional<MediaCatalog.Entry> main = mainImage(entries, id);
+            if (main.isPresent()) {
+                if (!sent.media().contains(main.get().id())) {
+                    return Optional.of(media(main.get(), "AUTO", id));
+                }
+            } else if (!sent.quotes().contains(id) && quoteImages.canRender(id)) {
+                return Optional.of(quote(id));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Mô tả một mục gửi kèm cho AI: "video M27 Video: Hệ Hy-Brid …", "Ảnh báo giá Hệ On-Grid …" */
+    public static String describe(JsonNode item) {
+        if (KIND_QUOTE.equals(item.path(KIND).asText())) {
+            return item.path("title").asText("ảnh báo giá");
+        }
+        String code = item.path("code").asText("");
+        return ("VIDEO".equals(item.path("media_type").asText()) ? "video " : "ảnh ")
+                + (code.isEmpty() ? "" : code + " ") + item.path("title").asText("");
     }
 
     /** Gửi link gói này thì hệ thống gửi kèm gì (đưa vào kết quả công cụ để AI giới thiệu đúng) */
@@ -200,6 +256,27 @@ public class MediaPlanner {
     }
 
     private record Scored(MediaCatalog.Entry entry, double score) {
+    }
+
+    /** Ảnh báo giá tự tạo của gói (PackageQuoteImageService), dựng lúc gửi */
+    private ObjectNode quote(int packageId) {
+        ObjectNode q = objectMapper.createObjectNode();
+        q.put(KIND, KIND_QUOTE);
+        q.put("package_id", packageId);
+        q.put("title", "Ảnh báo giá " + catalog.findPackage(packageId).map(CatalogPackage::name)
+                .orElse("gói " + packageId));
+        q.put("by", "AUTO");
+        q.put(STATUS, STATUS_PENDING);
+        return q;
+    }
+
+    private static boolean hasQuote(ArrayNode out, int packageId) {
+        for (JsonNode a : out) {
+            if (KIND_QUOTE.equals(a.path(KIND).asText()) && a.path("package_id").asInt(-1) == packageId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private ObjectNode media(MediaCatalog.Entry e, String by, Integer packageId) {

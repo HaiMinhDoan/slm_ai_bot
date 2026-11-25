@@ -117,6 +117,8 @@ export interface ChatMessage {
   sentAt?: string;
   /** Lý do AI không gửi tự động (nháp) */
   reasons: string[];
+  /** Tin bot tự nhắc khi khách im lặng */
+  followUp: boolean;
 }
 
 export interface ConversationDetail {

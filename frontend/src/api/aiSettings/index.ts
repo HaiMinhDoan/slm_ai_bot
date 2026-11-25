@@ -30,6 +30,15 @@ export interface AiSettings {
   assistantModel: string;
   maxAttempts: number;
   retryBackoffSeconds: number;
+  /** Nhắc khách khi khách im lặng (mục 56.9) */
+  followUpEnabled: boolean;
+  followUpIntervalHours: number;
+  /** 0 = không giới hạn trong cửa sổ 24 giờ */
+  followUpMaxCount: number;
+  followUpAutoSend: boolean;
+  followUpStart: string;
+  followUpEnd: string;
+  followUpNotifyStaff: boolean;
 }
 
 export interface AiSettingsView {

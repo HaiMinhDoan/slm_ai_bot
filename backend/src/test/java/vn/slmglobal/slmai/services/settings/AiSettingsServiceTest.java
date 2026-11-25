@@ -48,9 +48,12 @@ class AiSettingsServiceTest {
         rows.put("persona_name", f.textNode("Lan"));
         rows.put("debounce_seconds", f.numberNode(10));
         rows.put("max_attempts", f.textNode("ba lần")); // sai kiểu: bỏ qua, giữ mặc định
+        rows.put("follow_up_interval_hours", f.numberNode(2));
+        rows.put("follow_up_auto_send", f.booleanNode(false));
         when(repo.findAll()).thenReturn(rows);
 
-        AiSettingsService s = new AiSettingsService(base, conversation, repo, new ObjectMapper(), null, null, null);
+        AiSettingsService s = new AiSettingsService(base, conversation, null, repo, new ObjectMapper(), null, null,
+                null);
 
         assertThat(s.ai().forceDraft()).isTrue();
         assertThat(s.ai().autoIntents()).containsExactly("CHAO_HOI");
@@ -58,8 +61,14 @@ class AiSettingsServiceTest {
         assertThat(s.ai().maxAttempts()).isEqualTo(3);
         assertThat(s.conversation().debounce()).isEqualTo(Duration.ofSeconds(10));
         assertThat(s.ai().apiKey()).isEqualTo("k");
+        // Nhắc khách: ghi đè lên mặc định; khoảng dự phòng / quá hạn giữ theo application.yml
+        assertThat(s.followUp().interval()).isEqualTo(Duration.ofHours(2));
+        assertThat(s.followUp().autoSend()).isFalse();
+        assertThat(s.followUp().start()).isEqualTo("08:00");
+        assertThat(s.followUp().end()).isEqualTo("21:00");
+        assertThat(s.followUp().windowMargin()).isEqualTo(Duration.ofMinutes(30));
         assertThat(s.view().overridden()).containsExactlyInAnyOrder("kill_switch", "auto_intents", "persona_name",
-                "debounce_seconds");
+                "debounce_seconds", "follow_up_interval_hours", "follow_up_auto_send");
     }
 
     @Test
@@ -69,8 +78,10 @@ class AiSettingsServiceTest {
 
         AiSettings bad = new AiSettings(ok.killSwitch(), List.of("CHAO_HOI", "KHONG_CO"), List.of("CHAO_HOI"), "18:00",
                 "08:00", List.of(), null, null, 0, " ", "SolarMax", true, 0, -1, 500, 24, "gpt-5", "low",
-                "claude-opus-5-5", 0, 20);
-        assertThat(AiSettingsService.validate(bad)).hasSizeGreaterThanOrEqualTo(9)
-                .anyMatch(e -> e.startsWith("Tốc độ gõ")).anyMatch(e -> e.startsWith("Chờ tối đa trước mỗi tin"));
+                "claude-opus-5-5", 0, 20, true, 0.5, 11, true, "08:00", "08:00", true);
+        assertThat(AiSettingsService.validate(bad)).hasSizeGreaterThanOrEqualTo(12)
+                .anyMatch(e -> e.startsWith("Tốc độ gõ")).anyMatch(e -> e.startsWith("Chờ tối đa trước mỗi tin"))
+                .anyMatch(e -> e.startsWith("Nhắc khách sau")).anyMatch(e -> e.startsWith("Số lần nhắc tối đa"))
+                .anyMatch(e -> e.startsWith("Khung giờ nhắc khách"));
     }
 }

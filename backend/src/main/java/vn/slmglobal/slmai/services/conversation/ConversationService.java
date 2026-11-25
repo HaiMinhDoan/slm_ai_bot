@@ -20,6 +20,7 @@ import vn.slmglobal.slmai.services.customer.entity.ChannelIdentity;
 import vn.slmglobal.slmai.services.customer.entity.Customer;
 import vn.slmglobal.slmai.services.customer.repository.ChannelIdentityRepository;
 import vn.slmglobal.slmai.services.customer.repository.CustomerRepository;
+import vn.slmglobal.slmai.services.leadnurturing.repository.FollowUpRepository;
 import vn.slmglobal.slmai.services.notification.NotificationDraft;
 import vn.slmglobal.slmai.services.notification.NotificationService;
 import vn.slmglobal.slmai.services.notification.NotificationSeverity;
@@ -44,6 +45,7 @@ public class ConversationService {
     private final MessageRepository messageRepository;
     private final AiSettingsService settings;
     private final NotificationService notifications;
+    private final FollowUpRepository followUps;
 
     /** Tin từ phía khách (tin nhắn, quick reply, postback). */
     public record InboundMessage(ChannelCode channel, String accountId, String externalUserId,
@@ -86,6 +88,8 @@ public class ConversationService {
                 || in.occurredAt().isAfter(conversation.getLastCustomerMessageAt())) {
             conversation.setLastCustomerMessageAt(in.occurredAt());
         }
+        // Khách đã trả lời: bỏ lịch nhắc đang chờ (mục 56.9)
+        followUps.cancelPending(conversation.getId(), "Khách nhắn lại");
         // Gộp tin: mỗi tin mới lùi hạn; chỉ khi AI đang phụ trách (người đang theo thì AI không chen vào)
         if (conversation.getOwnership() == Ownership.AI_ACTIVE) {
             conversation.setReplyDueAt(OffsetDateTime.now().plus(settings.conversation().debounce()));
@@ -116,6 +120,7 @@ public class ConversationService {
                 .build());
         // Nền tảng không cho biết nhân viên nào trả lời trong Page Inbox, nên chưa gán người phụ trách cụ thể
         conversation.handToHuman(null, echo.occurredAt());
+        followUps.cancelPending(conversation.getId(), "Nhân viên nhắn khách");
         return new Recorded(conversation.getId(), message.getId(), false, false);
     }
 

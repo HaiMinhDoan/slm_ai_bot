@@ -137,6 +137,21 @@ app:
       handoff-ack: "Dạ em đã chuyển thông tin cho nhân viên phụ trách, anh/chị chờ em một chút nhé."
       ack-cooldown: 12h
 
+  # Nhắc khách khi khách im lặng (mục 56.9, doanh nghiệp chốt 2026-11-25): mỗi 3 giờ sau tin cuối của bot, trong
+  # 8:00–21:00, chỉ trong cửa sổ 24 giờ của Messenger; sửa được trên trang Cài đặt AI
+  follow-up:
+    enabled: ${FOLLOW_UP_ENABLED:true}
+    interval: 3h
+    # 0 = không giới hạn số lần trong cửa sổ 24 giờ
+    max-count: 0
+    auto-send: true
+    start: "08:00"
+    end: "21:00"
+    notify-staff: true
+    window-margin: 30m
+    stale-after: 15m
+    scan-interval-ms: 60000
+
   # DB slm_v2, tài khoản chỉ đọc ai_sync chỉ thấy view ai_v_* (mục 4.2.5). Để trống = không đồng bộ catalog.
   slm-v2:
     url: ${SLM_V2_DB_URL:}

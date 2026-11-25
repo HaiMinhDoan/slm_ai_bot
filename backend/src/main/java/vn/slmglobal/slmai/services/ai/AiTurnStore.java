@@ -28,6 +28,8 @@ import vn.slmglobal.slmai.services.lead.ConsultProfileService;
 import vn.slmglobal.slmai.services.lead.ConsultSlots;
 import vn.slmglobal.slmai.services.lead.LeadService;
 import vn.slmglobal.slmai.services.lead.entity.ConsultProfile;
+import vn.slmglobal.slmai.services.leadnurturing.entity.FollowUp;
+import vn.slmglobal.slmai.services.leadnurturing.repository.FollowUpRepository;
 import vn.slmglobal.slmai.services.policy.ReplyPolicy;
 
 import java.time.OffsetDateTime;
@@ -60,6 +62,7 @@ public class AiTurnStore {
     private final LeadService leadService;
     private final TurnNotifier notifier;
     private final AiSettingsService settings;
+    private final FollowUpRepository followUps;
 
     /**
      * Tin cần gửi ra kênh sau khi chốt.
@@ -105,6 +108,13 @@ public class AiTurnStore {
         long inboundCount = messageRepository.countByConversationIdAndDirection(c.getId(), MessageDirection.IN);
         ConsultProfile profile = consultProfileService.get(c.getId());
         JsonNode prefs = customer.getPreferences();
+        // Lịch nhắc khách (mục 56.9): khách đã nhắn lại thì lượt này là lượt trả lời thường, bỏ lịch nhắc
+        FollowUp followUp = followUps.findFirstByConversationIdAndKindAndStatusOrderByCreatedAtDesc(c.getId(),
+                FollowUp.Kind.NHAC_KHACH, FollowUp.Status.PENDING).orElse(null);
+        if (followUp != null && !pending.isEmpty()) {
+            followUp.finish(FollowUp.Status.CANCELLED, "Khách nhắn lại trước khi bot nhắc");
+            followUp = null;
+        }
 
         return Optional.of(new TurnSnapshot(
                 c.getId(), c.getCustomerId(), c.getChannel(), identity, lease, inboundCount,
@@ -112,7 +122,7 @@ public class AiTurnStore {
                 c.getStaffHandbackAt() != null, c.getLastCustomerMessageAt(), profile, customer.getPhone(),
                 customer.getName() != null ? customer.getName() : identity.getDisplayName(),
                 prefs != null && prefs.hasNonNull(ConsultSlots.DANH_XUNG) ? prefs.get(ConsultSlots.DANH_XUNG).asText()
-                        : null));
+                        : null, followUp));
     }
 
     /** Không có tin nào cần trả lời: bỏ hạn thuê để hội thoại không bị quét lại. */
@@ -239,6 +249,90 @@ public class AiTurnStore {
         return new Commit(true, null, List.copyOf(outgoing));
     }
 
+    /**
+     * Lượt nhắc không gửi gì (điều kiện đã đổi, AI thấy không nên nhắc, gọi AI lỗi): chốt lịch nhắc, ghi lượt AI nếu
+     * đã gọi, bỏ hạn thuê. Không chuyển nhân viên, không báo nhận.
+     */
+    @Transactional
+    public void finishFollowUp(TurnSnapshot s, FollowUp.Status status, String reason, AiRun run) {
+        if (run != null) {
+            aiRunRepository.save(run);
+        }
+        followUps.findById(s.followUp().getId()).ifPresent(f -> {
+            if (f.getStatus() == FollowUp.Status.PENDING) {
+                f.finish(status, truncate(reason));
+                if (run != null) {
+                    f.setAiRunId(run.getId());
+                }
+            }
+        });
+        conversationRepository.findByIdForUpdate(s.conversationId()).ifPresent(c -> {
+            if (holdsLease(c, s)) {
+                c.setReplyDueAt(null);
+            }
+        });
+    }
+
+    /**
+     * Chốt lượt nhắc khách (mục 56.9): bỏ nếu nhân viên đã nhận, khách vừa nhắn hoặc lịch đã bị huỷ; nếu không thì
+     * ghi luot_goi_ai, tin nhắc (OUT, AI, kèm media) và kết quả vào lich_nhac_khach. Không đổi hồ sơ tư vấn ngoài câu
+     * hỏi cuối, không chuyển nhân viên, không gửi câu báo nhận.
+     *
+     * @param decision AUTO hoặc DRAFT (lượt nhắc không chuyển nhân viên)
+     */
+    @Transactional
+    public Commit commitFollowUp(TurnSnapshot s, AiRun run, AiReply reply, ReplyPolicy.Decision decision,
+                                 JsonNode attachments, boolean inHours, boolean windowOpen) {
+        Conversation c = conversationRepository.findByIdForUpdate(s.conversationId()).orElseThrow();
+        FollowUp f = followUps.findById(s.followUp().getId()).orElseThrow();
+        String discard = null;
+        if (c.getStatus() != ConversationStatus.OPEN || c.getOwnership() != Ownership.AI_ACTIVE) {
+            discard = DISCARD_HUMAN_OWNED;
+        } else if (messageRepository.countByConversationIdAndDirection(c.getId(), MessageDirection.IN)
+                != s.inboundCount()) {
+            discard = DISCARD_NEWER_MESSAGE;
+        } else if (f.getStatus() != FollowUp.Status.PENDING) {
+            discard = "FOLLOW_UP_" + f.getStatus();
+        }
+        ObjectNode policy = policyJson(decision, discard, inHours, windowOpen);
+        policy.put("follow_up_attempt", f.getAttemptNo());
+        run.setPolicyResult(policy);
+        aiRunRepository.save(run);
+        if (discard != null) {
+            if (f.getStatus() == FollowUp.Status.PENDING) {
+                f.finish(FollowUp.Status.CANCELLED, discard);
+                f.setAiRunId(run.getId());
+            }
+            log.debug("Bỏ lượt nhắc của hội thoại {}: {}", c.getId(), discard);
+            return Commit.discarded(discard);
+        }
+
+        c.setReplyDueAt(null);
+        boolean auto = decision.action() == ReplyPolicy.Action.AUTO;
+        Message message = messageRepository.save(Message.builder()
+                .conversationId(c.getId())
+                .direction(MessageDirection.OUT)
+                .senderType(SenderType.AI)
+                .content(reply.reply().strip())
+                .attachments(attachments == null ? JsonNodeFactory.instance.arrayNode() : attachments)
+                .status(MessageStatus.DRAFT)
+                .aiRunId(run.getId())
+                .build());
+        f.setMessageId(message.getId());
+        f.setAiRunId(run.getId());
+        f.finish(auto ? FollowUp.Status.SENT : FollowUp.Status.DRAFT,
+                auto ? null : String.join(", ", decision.reasons()));
+        if (auto) {
+            consultProfileService.recordQuestion(c.getId(), reply.questionAsked());
+            log.info("Hội thoại {}: gửi tin nhắc lần {}", c.getId(), f.getAttemptNo());
+            return new Commit(true, null, List.of(new Outgoing(message.getId(), message.getContent(), true,
+                    message.getAttachments())));
+        }
+        log.info("Hội thoại {}: tin nhắc lần {} thành nháp: {}", c.getId(), f.getAttemptNo(), decision.reasons());
+        notifier.followUpDraft(s, c, run, reply, decision, message);
+        return new Commit(true, null, List.of());
+    }
+
     /** @param attachments trạng thái từng media sau khi gửi (MediaDelivery); null là giữ nguyên */
     @Transactional
     public void markSent(UUID messageId, String externalMessageId, JsonNode attachments) {
@@ -285,6 +379,10 @@ public class AiTurnStore {
             m.setStatus(MessageStatus.FAILED);
             notifier.sendFailed(m, error);
         });
+    }
+
+    private static String truncate(String s) {
+        return s == null || s.length() <= 2000 ? s : s.substring(0, 2000);
     }
 
     private boolean holdsLease(Conversation c, TurnSnapshot s) {

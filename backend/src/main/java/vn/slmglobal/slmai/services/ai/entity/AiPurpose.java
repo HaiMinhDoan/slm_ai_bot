@@ -6,5 +6,7 @@ public enum AiPurpose {
     CONTENT_ASSISTANT,
     DAILY_BRIEF,
     KNOWLEDGE_ASSISTANT,
-    RELEASE_EVAL
+    RELEASE_EVAL,
+    /** Tin nhắc khách im lặng (mục 56.9, V17) */
+    FOLLOW_UP
 }

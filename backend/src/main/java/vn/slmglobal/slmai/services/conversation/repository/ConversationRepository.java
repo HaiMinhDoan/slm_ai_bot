@@ -34,6 +34,16 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
             FOR UPDATE SKIP LOCKED""")
     Optional<Conversation> lockDue(UUID id);
 
+    /**
+     * Khoá một hội thoại để lập lịch nhắc khách (mục 56.9): AI đang phụ trách, không có lượt đang chờ; tiến trình
+     * khác đang giữ thì bỏ qua.
+     */
+    @Query(nativeQuery = true, value = """
+            SELECT * FROM hoi_thoai
+            WHERE id = :id AND trang_thai = 'OPEN' AND nguoi_phu_trach = 'AI_ACTIVE' AND han_tra_loi_luc IS NULL
+            FOR UPDATE SKIP LOCKED""")
+    Optional<Conversation> lockForFollowUp(UUID id);
+
     /** Khoá để chốt lượt: chờ nếu đang có transaction khác ghi tin vào hội thoại này. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM Conversation c WHERE c.id = :id")

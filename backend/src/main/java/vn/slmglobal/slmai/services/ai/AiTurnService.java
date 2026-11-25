@@ -21,10 +21,13 @@ import vn.slmglobal.slmai.services.conversation.entity.ChannelCode;
 import vn.slmglobal.slmai.services.conversation.entity.Message;
 import vn.slmglobal.slmai.services.conversation.entity.MessageDirection;
 import vn.slmglobal.slmai.services.conversation.entity.MessageStatus;
+import vn.slmglobal.slmai.services.conversation.entity.SenderType;
 import vn.slmglobal.slmai.services.knowledge.KnowledgeBase;
 import vn.slmglobal.slmai.services.knowledge.KnowledgeSnapshot;
 import vn.slmglobal.slmai.services.lead.ConsultSlots;
 import vn.slmglobal.slmai.services.lead.entity.ConsultProfile;
+import vn.slmglobal.slmai.services.leadnurturing.FollowUpProperties;
+import vn.slmglobal.slmai.services.leadnurturing.entity.FollowUp;
 import vn.slmglobal.slmai.services.media.MediaCatalog;
 import vn.slmglobal.slmai.services.media.MediaDelivery;
 import vn.slmglobal.slmai.services.media.MediaPlanner;
@@ -36,9 +39,12 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -115,6 +121,10 @@ public class AiTurnService {
         long started = System.nanoTime();
         TurnSnapshot s = store.claim(conversationId).orElse(null);
         if (s == null) {
+            return;
+        }
+        if (s.isFollowUp()) {
+            processFollowUp(s, started);
             return;
         }
         // Một cài đặt và một bản kiến thức cho cả lượt, kể cả khi admin vừa đổi giữa chừng
@@ -204,6 +214,171 @@ public class AiTurnService {
                     run.getCacheWriteTokens());
         }
         return deliver(s, sender, commit.outgoing(), started);
+    }
+
+    /**
+     * Lượt nhắc khách im lặng (mục 56.9): kiểm tra lại điều kiện, AI viết tin nhắc kèm media chọn sẵn, Policy như tin
+     * thường. Không chuyển nhân viên, không gửi câu báo nhận, gọi AI lỗi thì bỏ lần nhắc này.
+     */
+    private void processFollowUp(TurnSnapshot s, long started) {
+        AiProperties properties = settings.ai();
+        FollowUpProperties rules = settings.followUp();
+        KnowledgeSnapshot knowledge = knowledgeBase.current();
+        ZonedDateTime now = ZonedDateTime.now(properties.businessHours().zoneId());
+        ChannelSender sender = senders.get(s.channel());
+        Duration window = settings.conversation().messagingWindow();
+        Message lastSent = lastSentOutbound(s);
+        String blocked = followUpBlocked(s, rules, properties, sender, window, lastSent, now);
+        if (blocked != null) {
+            log.info("Hội thoại {}: bỏ lần nhắc {}: {}", s.conversationId(), s.followUp().getAttemptNo(), blocked);
+            store.finishFollowUp(s, FollowUp.Status.CANCELLED, blocked, null);
+            return;
+        }
+        s = withChannelName(s);
+        boolean businessOpen = properties.businessHours().isOpen(now);
+        boolean pricingTools = tools.available();
+        MediaCatalog.Block media = mediaBlock(s.channel());
+        ObjectNode extra = followUpExtra(s);
+        ZonedDateTime windowEnd = s.lastCustomerMessageAt().plus(window).atZoneSameInstant(now.getZone());
+        CustomerChatPromptBuilder.FollowUpContext context = new CustomerChatPromptBuilder.FollowUpContext(
+                s.followUp().getAttemptNo(),
+                Duration.between(lastSent.getSentAt(), now.toOffsetDateTime()),
+                Duration.between(now, windowEnd),
+                !rules.allows(s.followUp().getAttemptNo() + 1) || !rules.hasSlotBetween(now.plus(rules.interval()),
+                        windowEnd.minus(rules.windowMargin()), now.getZone()),
+                extra == null ? List.of() : List.of(MediaPlanner.describe(extra)));
+        ClaudeChatClient.ChatRequest request = promptBuilder.buildFollowUp(s, knowledge, media, now, businessOpen,
+                pricingTools, context).orElse(null);
+        if (request == null) {
+            store.finishFollowUp(s, FollowUp.Status.CANCELLED, "Tin cuối không phải của trang", null);
+            return;
+        }
+        CustomerChatTools.Session toolSession = null;
+        if (pricingTools) {
+            toolSession = tools.session(s.profile(), s.channel());
+            request = request.withTools(tools.definitions(), toolSession);
+        }
+
+        AiRun run = newRun(s, knowledge, media, properties);
+        run.setPurpose(AiPurpose.FOLLOW_UP);
+        ClaudeChatClient.ChatCompletion completion;
+        try {
+            completion = claude.complete(request);
+        } catch (RuntimeException e) {
+            run.setError(truncate(describe(e)));
+            log.warn("Hội thoại {}: gọi Claude cho lần nhắc lỗi, bỏ lần nhắc: {}", s.conversationId(), run.getError());
+            store.finishFollowUp(s, FollowUp.Status.FAILED, run.getError(), run);
+            return;
+        }
+        if (toolSession != null) {
+            run.setToolCalls(toolCallsJson(toolSession.calls()));
+        }
+        fillUsage(run, completion);
+        AiReply reply = parse(run, completion);
+        if (reply == null) {
+            store.finishFollowUp(s, FollowUp.Status.FAILED, run.getError(), run);
+            return;
+        }
+        run.setSources(reply.sources() == null ? new String[0] : reply.sources().toArray(String[]::new));
+        run.setKnowledgeGap(reply.knowledgeGap() != null && !reply.knowledgeGap().isBlank());
+        if (!reply.hasReply()) {
+            store.finishFollowUp(s, FollowUp.Status.SKIPPED, "AI thấy không nên nhắc", run);
+            return;
+        }
+        if (reply.handoffNeeded() || (properties.handoffIntents() != null
+                && properties.handoffIntents().contains(reply.intent()))) {
+            store.finishFollowUp(s, FollowUp.Status.SKIPPED, "AI muốn chuyển nhân viên"
+                    + (reply.handoffNeeded() ? ": " + reply.handoff().reason() : ""), run);
+            return;
+        }
+        boolean windowOpen = isWindowOpen(s);
+        ReplyPolicy.Decision decision = policy.evaluate(new ReplyPolicy.Input(
+                reply, s.replyMode(), false, false, windowOpen, true, sender.maxTextLength(),
+                numberSourceTexts(s, knowledge, toolSession), numberSourceValues(s.profile()),
+                allowedLinks(s, knowledge, toolSession), knowledge.rules().replyPolicy()));
+        if (decision.action() == ReplyPolicy.Action.HANDOFF) {
+            store.finishFollowUp(s, FollowUp.Status.SKIPPED, String.join(", ", decision.reasons()), run);
+            return;
+        }
+        if (decision.action() == ReplyPolicy.Action.AUTO && !rules.autoSend()) {
+            decision = new ReplyPolicy.Decision(ReplyPolicy.Action.DRAFT,
+                    List.of(ReplyPolicy.FOLLOW_UP_DRAFT_MODE), List.of());
+        }
+        JsonNode attachments = followUpAttachments(s, reply, extra);
+        AiTurnStore.Commit commit = store.commitFollowUp(s, run, reply, decision, attachments,
+                rules.isInHours(now, now.getZone()), windowOpen);
+        deliver(s, sender, commit.outgoing(), started);
+    }
+
+    /**
+     * Lý do không nhắc nữa (điều kiện đã đổi kể từ lúc lập lịch); null là nhắc được. Cùng điều kiện với
+     * FollowUpScheduler, kiểm lại lúc chạy vì lịch có thể chờ worker một lúc.
+     */
+    private static String followUpBlocked(TurnSnapshot s, FollowUpProperties rules, AiProperties properties,
+                                          ChannelSender sender, Duration window, Message lastSent,
+                                          ZonedDateTime now) {
+        if (sender == null) {
+            return "Kênh chưa hỗ trợ gửi tin";
+        }
+        if (!rules.enabled()) {
+            return "Đã tắt nhắc khách";
+        }
+        if (properties.forceDraft()) {
+            return "Công tắc dừng AI đang bật";
+        }
+        if (s.followUp().getCreatedAt().plus(rules.staleAfter()).isBefore(now.toOffsetDateTime())) {
+            return "Lịch nhắc chờ quá lâu";
+        }
+        if (!rules.isInHours(now, now.getZone())) {
+            return "Ngoài khung giờ nhắc";
+        }
+        if (s.lastCustomerMessageAt() == null || window == null || s.lastCustomerMessageAt().plus(window)
+                .minus(rules.windowMargin()).isBefore(now.toOffsetDateTime())) {
+            return "Sắp hết 24 giờ kể từ tin cuối của khách";
+        }
+        if (lastSent == null || lastSent.getSenderType() != SenderType.AI || lastSent.getSentAt() == null
+                || lastSent.getSentAt().isBefore(s.lastCustomerMessageAt())) {
+            return "Tin cuối không phải tin AI đã gửi sau tin của khách";
+        }
+        return null;
+    }
+
+    /** Tin trang đã gửi gần nhất trong lịch sử (theo lúc gửi) */
+    private static Message lastSentOutbound(TurnSnapshot s) {
+        return s.history().stream()
+                .filter(m -> m.getDirection() == MessageDirection.OUT && m.getStatus() == MessageStatus.SENT
+                        && m.getSentAt() != null)
+                .max(Comparator.comparing(Message::getSentAt))
+                .orElse(null);
+    }
+
+    /** Media chọn sẵn cho tin nhắc: của gói đã đề xuất, chưa gửi; lỗi thì nhắc không kèm media */
+    private ObjectNode followUpExtra(TurnSnapshot s) {
+        if (s.profile() == null || s.profile().getRecommendedPackageIds() == null) {
+            return null;
+        }
+        try {
+            List<Integer> ids = Arrays.stream(s.profile().getRecommendedPackageIds()).filter(Objects::nonNull)
+                    .toList();
+            return mediaPlanner.followUpExtra(s.channel(), s.history(), ids).orElse(null);
+        } catch (RuntimeException e) {
+            log.warn("Hội thoại {}: không chọn được media cho tin nhắc: {}", s.conversationId(), e.toString());
+            return null;
+        }
+    }
+
+    private JsonNode followUpAttachments(TurnSnapshot s, AiReply reply, ObjectNode extra) {
+        try {
+            MediaPlanner.Plan plan = mediaPlanner.plan(s.channel(), reply.reply(), reply.mediaCodes(), s.history(),
+                    extra);
+            if (!plan.dropped().isEmpty()) {
+                log.info("Hội thoại {}: tin nhắc bỏ media AI chọn {}", s.conversationId(), plan.dropped());
+            }
+            return plan.attachments();
+        } catch (RuntimeException e) {
+            log.warn("Hội thoại {}: không chọn được media gửi kèm tin nhắc: {}", s.conversationId(), e.toString());
+            return JsonNodeFactory.instance.arrayNode();
+        }
     }
 
     /** Lấy tên Facebook của khách một lần (để AI chọn anh / chị theo core/voice), lưu vào dinh_danh_kenh. */

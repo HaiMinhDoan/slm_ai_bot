@@ -11,7 +11,8 @@ export type NotificationType =
   | 'AI_KILL_SWITCH'
   | 'KNOWLEDGE_RELEASE'
   | 'STAFF_HANDOFF'
-  | 'CUSTOMER_WAITING';
+  | 'CUSTOMER_WAITING'
+  | 'CUSTOMER_SILENT';
 
 export type NotificationSeverity = 'INFO' | 'WARNING' | 'URGENT';
 

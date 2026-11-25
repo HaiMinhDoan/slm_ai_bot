@@ -16,6 +16,7 @@ export const TYPE_LABELS: Record<NotificationType, string> = {
   KNOWLEDGE_RELEASE: 'Kích hoạt kiến thức',
   STAFF_HANDOFF: 'Chuyển cho sale',
   CUSTOMER_WAITING: 'Khách nhắn, chờ nhân viên',
+  CUSTOMER_SILENT: 'Khách im lặng quá 24 giờ',
 };
 
 /** Thông báo việc của quản trị: mở trang Catalog & báo giá để xử lý */

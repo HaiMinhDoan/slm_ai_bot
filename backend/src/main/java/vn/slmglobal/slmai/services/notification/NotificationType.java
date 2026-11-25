@@ -25,5 +25,7 @@ public enum NotificationType {
     /** Nhân viên bấm "Chuyển cho sale" trên trang chat: AI dừng, chờ nhân viên trả lời */
     STAFF_HANDOFF,
     /** Khách nhắn khi hội thoại đang do nhân viên phụ trách (một thông báo cho mỗi đợt khách chờ) */
-    CUSTOMER_WAITING
+    CUSTOMER_WAITING,
+    /** Hết cửa sổ 24 giờ mà khách vẫn im lặng sau tin của bot: nhân viên nhắn trong Page Inbox hoặc gọi điện (V17) */
+    CUSTOMER_SILENT
 }

@@ -32,6 +32,7 @@ import vn.slmglobal.slmai.services.customer.repository.CustomerRepository;
 import vn.slmglobal.slmai.services.lead.ConsultSlots;
 import vn.slmglobal.slmai.services.lead.entity.ConsultProfile;
 import vn.slmglobal.slmai.services.lead.repository.ConsultProfileRepository;
+import vn.slmglobal.slmai.services.leadnurturing.repository.FollowUpRepository;
 import vn.slmglobal.slmai.services.media.MediaDelivery;
 import vn.slmglobal.slmai.services.notification.NotificationDraft;
 import vn.slmglobal.slmai.services.notification.NotificationService;
@@ -80,13 +81,15 @@ public class InboxService {
     private final AuditLogService audit;
     private final AiSettingsService settings;
     private final MediaDelivery mediaDelivery;
+    private final FollowUpRepository followUps;
     private final Map<ChannelCode, ChannelSender> senders = new EnumMap<>(ChannelCode.class);
 
     public InboxService(InboxRepository inbox, ConversationRepository conversations, MessageRepository messages,
                         ChannelIdentityRepository identities, CustomerRepository customers,
                         ConsultProfileRepository profiles, AiRunRepository aiRuns, DraftEditRepository draftEdits,
                         NotificationService notifications, AuditLogService audit, AiSettingsService settings,
-                        MediaDelivery mediaDelivery, List<ChannelSender> channelSenders) {
+                        MediaDelivery mediaDelivery, FollowUpRepository followUps,
+                        List<ChannelSender> channelSenders) {
         this.inbox = inbox;
         this.conversations = conversations;
         this.messages = messages;
@@ -99,6 +102,7 @@ public class InboxService {
         this.audit = audit;
         this.settings = settings;
         this.mediaDelivery = mediaDelivery;
+        this.followUps = followUps;
         channelSenders.forEach(s -> senders.put(s.channel(), s));
     }
 
@@ -120,11 +124,12 @@ public class InboxService {
     }
 
     /**
-     * @param reasons lý do AI không gửi tự động (nháp) theo nhãn tiếng Việt; rỗng với tin thường
+     * @param reasons  lý do AI không gửi tự động (nháp) theo nhãn tiếng Việt; rỗng với tin thường
+     * @param followUp tin bot tự nhắc khi khách im lặng (lich_nhac_khach, mục 56.9)
      */
     public record MessageView(UUID id, String direction, String senderType, String staffId, String content,
                               JsonNode attachments, String status, OffsetDateTime createdAt, OffsetDateTime sentAt,
-                              List<String> reasons) {
+                              List<String> reasons, boolean followUp) {
     }
 
     /**
@@ -378,10 +383,11 @@ public class InboxService {
                 .map(Message::getAiRunId).collect(Collectors.toSet());
         Map<UUID, AiRun> runs = aiRuns.findAllById(draftRuns).stream()
                 .collect(Collectors.toMap(AiRun::getId, Function.identity()));
+        Set<UUID> nudges = Set.copyOf(followUps.messageIds(c.getId()));
         List<MessageView> mv = shown.stream().map(m -> new MessageView(m.getId(), m.getDirection().name(),
                 m.getSenderType().name(), m.getStaffId(), m.getContent(), m.getAttachments(), m.getStatus().name(),
                 m.getCreatedAt(), m.getSentAt(), m.getStatus() == MessageStatus.DRAFT
-                ? reasons(runs.get(m.getAiRunId())) : List.of())).toList();
+                ? reasons(runs.get(m.getAiRunId())) : List.of(), nudges.contains(m.getId()))).toList();
 
         ConversationView conv = new ConversationView(c.getId(), c.getChannel(), c.getOwnership().name(),
                 c.getStatus().name(), c.getIntent(), c.getSummary(), c.getTakenOverAt(), c.getAutoHandbackAt(),

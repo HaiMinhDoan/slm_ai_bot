@@ -91,6 +91,73 @@ public class CustomerChatPromptBuilder {
                 turnContext(s, now, businessOpen, pricingTools), turns, AiReplySchema.schema()));
     }
 
+    /**
+     * Ngữ cảnh của một lượt nhắc khách (mục 56.9).
+     *
+     * @param attemptNo  lần nhắc thứ mấy trong cửa sổ 24 giờ
+     * @param silentFor  khách im lặng bao lâu kể từ tin cuối của trang
+     * @param windowLeft còn bao lâu trước khi hết cửa sổ 24 giờ
+     * @param lastChance lần nhắc sau sẽ rơi ra ngoài cửa sổ hoặc khung giờ: có thể là lần cuối
+     * @param attached   media hệ thống sẽ tự gửi kèm (mô tả cho AI); rỗng là không có
+     */
+    public record FollowUpContext(int attemptNo, Duration silentFor, Duration windowLeft, boolean lastChance,
+                                  List<String> attached) {
+    }
+
+    /**
+     * Lượt nhắc khách: cùng khối cố định (cache trúng), ngữ cảnh lượt thêm mục nhắc khách, lịch sử thêm một lượt user
+     * cuối là ghi chú hệ thống (Messages API cần kết thúc bằng lượt user). Rỗng khi tin cuối không phải của trang.
+     */
+    public Optional<ClaudeChatClient.ChatRequest> buildFollowUp(TurnSnapshot s, KnowledgeSnapshot k,
+                                                                MediaCatalog.Block media, ZonedDateTime now,
+                                                                boolean businessOpen, boolean pricingTools,
+                                                                FollowUpContext f) {
+        List<ClaudeChatClient.ChatTurn> turns = turns(s.history());
+        if (turns.isEmpty() || turns.get(turns.size() - 1).customer()) {
+            return Optional.empty();
+        }
+        turns.add(new ClaudeChatClient.ChatTurn(true, followUpNote(f.silentFor())));
+        String base = turnContext(s, now, businessOpen, pricingTools);
+        String context = base.substring(0, base.length() - CONTEXT_END.length()) + followUpContext(f) + CONTEXT_END;
+        return Optional.of(new ClaudeChatClient.ChatRequest(system(k, media).text(), context, turns,
+                AiReplySchema.schema()));
+    }
+
+    /** Lượt user cuối của lượt nhắc */
+    static String followUpNote(Duration silentFor) {
+        return "[Khách chưa trả lời sau " + waitText(silentFor) + "]";
+    }
+
+    static String followUpContext(FollowUpContext f) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Lượt này là lượt NHẮC KHÁCH, không phải trả lời: khách chưa trả lời từ ")
+                .append(waitText(f.silentFor())).append(" sau tin cuối của bạn. Lượt user cuối \"").append(followUpNote(f.silentFor()))
+                .append("\" là ghi chú của hệ thống, không phải lời khách.\n");
+        sb.append("Đây là lần nhắc thứ ").append(f.attemptNo())
+                .append(" kể từ tin cuối của khách; còn khoảng ").append(waitText(f.windowLeft()))
+                .append(" nữa là hết thời gian được nhắn cho khách")
+                .append(f.lastChance() ? ", lần này có thể là lần nhắc cuối" : "").append(".\n");
+        sb.append("Cách nhắc (theo playbooks/nhac-khach nếu có): 1–2 câu ngắn, nhắc đúng điều khách đang quan ")
+                .append("tâm hoặc câu khách còn bỏ ngỏ; không lặp lại tin trước hay lần nhắc trước, không ép chốt, ")
+                .append("không hứa khuyến mãi, tối đa một câu hỏi.");
+        if (f.lastChance()) {
+            sb.append(" Lần cuối thì chào nhẹ, mời khách nhắn lại khi cần hoặc để lại số điện thoại để nhân viên gọi ")
+                    .append("tư vấn.");
+        }
+        sb.append("\n");
+        sb.append("Hệ thống sẽ tự gửi kèm sau tin nhắc: ")
+                .append(f.attached().isEmpty() ? "không có media nào" : String.join("; ", f.attached()));
+        if (!f.attached().isEmpty()) {
+            sb.append(" (có thể nói ngắn \"em gửi anh/chị … bên dưới ạ\")");
+        }
+        sb.append(". Chỉ chọn thêm mã ở trường media khi thật sự liên quan, không chọn media đã gửi.\n");
+        sb.append("Để reply là chuỗi rỗng \"\" (không nhắc) khi: khách đã từ chối hoặc nói chưa có nhu cầu, ")
+                .append("bảo đừng nhắn nữa, đã chào kết thúc hoặc hẹn tự liên hệ lại, đang khiếu nại hay báo sự cố, ")
+                .append("hoặc nhân viên đã hẹn gọi khách. Lượt nhắc không chuyển nhân viên (handoff.needed là false), ")
+                .append("collected để null hết, intent theo nội dung tin nhắc (thường TU_VAN_LAP_MOI hoặc HOI_GIA).\n");
+        return sb.toString();
+    }
+
     private SystemBlock system(KnowledgeSnapshot k, MediaCatalog.Block media) {
         AiProperties ai = settings.ai();
         String key = k.version() + "|" + ai.companyName() + "|" + ai.personaName() + "|"
@@ -107,6 +174,8 @@ public class CustomerChatPromptBuilder {
         system.set(built);
         return built;
     }
+
+    private static final String CONTEXT_END = "</ngu_canh_luot>";
 
     String turnContext(TurnSnapshot s, ZonedDateTime now, boolean businessOpen, boolean pricingTools) {
         AiProperties.BusinessHours hours = settings.ai().businessHours();
@@ -183,7 +252,7 @@ public class CustomerChatPromptBuilder {
             sb.append("Công cụ báo giá: chưa có (bảng giá chưa đồng bộ). Không đưa con số giá, công suất, sản lượng; ")
                     .append("mời khách để lại số điện thoại để nhân viên gửi báo giá.\n");
         }
-        sb.append("</ngu_canh_luot>");
+        sb.append(CONTEXT_END);
         return sb.toString();
     }
 

@@ -42,6 +42,14 @@ public class ConsultProfileService {
         return repository.findById(conversationId).orElse(null);
     }
 
+    /** Tin nhắc khách (mục 56.9) có hỏi và đã gửi: ghi câu hỏi cuối, không đụng thông tin khách hay phân loại */
+    public void recordQuestion(UUID conversationId, String questionAsked) {
+        if (questionAsked == null || questionAsked.isBlank()) {
+            return;
+        }
+        repository.findById(conversationId).ifPresent(p -> p.setLastQuestionAsked(questionAsked));
+    }
+
     public ConsultProfile apply(UUID conversationId, UUID customerId, Update u) {
         ConsultProfile profile = repository.findById(conversationId).orElseGet(() -> ConsultProfile.builder()
                 .conversationId(conversationId)

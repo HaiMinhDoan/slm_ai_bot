@@ -4723,6 +4723,14 @@ Admin cần xem được:
 - Sau khi có dữ liệu thực: bật auto-send cho nhóm tình huống rủi ro thấp đã được phê duyệt, với giới hạn rõ ràng và audit log.
 - Chỉ mở tự động gửi trên những kênh mà API/tài khoản hiện tại cho phép. Nếu kênh không hỗ trợ tin chủ động hợp lệ, hệ thống vẫn có thể tạo nhiệm vụ nhắc nhân viên hoặc chờ khách phản hồi.
 
+**Đã làm (2026-11-25), luật cố định:**
+- `FollowUpScheduler` quét mỗi phút. Hội thoại AI đang phụ trách, tin cuối là tin AI đã gửi, khách im lặng quá khoảng chờ (mặc định 3 giờ), cửa sổ 24 giờ còn ít nhất 30 phút, đang trong khung giờ nhắc (8:00–21:00) thì lập lịch `lich_nhac_khach` (V17) và đặt `han_tra_loi_luc`. `AiTurnWorker` chạy lượt nhắc như lượt thường (khoá lượt, Policy, gửi, media), `luot_goi_ai.muc_dich = FOLLOW_UP`.
+- Lượt nhắc dùng cùng khối cố định (cache trúng). Ngữ cảnh lượt nói rõ là lượt nhắc, lần thứ mấy, còn bao lâu, có phải lần cuối, media hệ thống tự gửi kèm (`MediaPlanner.followUpExtra`: video công trình rồi ảnh báo giá chưa gửi của gói đã đề xuất). Lịch sử kết thúc bằng ghi chú hệ thống `[Khách chưa trả lời sau …]`.
+- Dừng: khách nhắn lại hoặc nhân viên nhắn thì huỷ lịch đang chờ. AI trả `reply` rỗng (khách đã từ chối, hẹn tự liên hệ, khiếu nại…) thì `SKIPPED`, không nhắc nữa trong cửa sổ đó. Có nháp chờ duyệt, công tắc dừng bật hoặc chế độ nháp thì không nhắc. Gọi AI lỗi thì bỏ lần đó, không chuyển nhân viên.
+- Lặp lại mỗi khoảng chờ tới khi hết cửa sổ (số lần tối đa mặc định 0 = không giới hạn, doanh nghiệp chốt 2026-11-25); tin nhắc tự gửi, tắt thì thành nháp (`FOLLOW_UP_DRAFT_MODE`).
+- Cửa sổ vừa đóng mà khách vẫn im lặng, hội thoại có số điện thoại / gói đề xuất / mức WARM, HOT / từ 2 câu trả lời: báo nhân viên một lần (`CUSTOMER_SILENT`) để nhắn trong Page Inbox (trong 7 ngày) hoặc gọi điện. Bot không dùng tag để nhắn ngoài cửa sổ.
+- Thông số nằm trên trang *Cài đặt AI*; trang Chat với khách gắn thẻ "Tin nhắc".
+
 **Kết luận:** Lead Nurturing là workflow độc lập tích hợp với Customer 360, Claude, Knowledge Base (mục 5), Media Library, Scheduler, Policy Engine và các channel adapter. AI quyết định đề xuất *khi nào, vì sao và nên gửi nội dung gì*; backend kiểm soát *có được phép gửi hay không, có còn phù hợp tại thời điểm gửi hay không*.
 
 # 57. TikTok — phạm vi tích hợp end-to-end cho hệ thống điện mặt trời
@@ -5214,6 +5222,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 | Kiến thức: `core/` (identity, voice, guardrails), playbook `khach-hoi-gia`, `tu-van-lap-moi` | Chạy thật, nạp từ file trong repo |
 | Chat với khách (inbox admin, mục 19, 34): một trang, tab theo kênh kèm số hội thoại cần nhân viên; bảng hội thoại (khách đang chờ, tin cuối, phụ trách, mức tiềm năng); drawer xem tin, gửi / sửa rồi gửi / bỏ nháp AI kèm lý do AI không tự gửi (bản sửa lưu `kt_sua_ban_nhap`), gửi lại tin lỗi; "Chuyển cho sale" (AI dừng, báo mọi nhân viên, không gán người cụ thể) và "Chuyển cho AI" (AI trả lời ngay tin khách còn chờ, bỏ nháp cũ); khung thông tin khách, hồ sơ tư vấn, lead; báo `CUSTOMER_WAITING`. STAFF và SYSTEM_ADMIN xem mọi hội thoại | Đã viết 2026-11-04, chờ triển khai |
 | Knowledge Editor (mục 5.2, 5.3, 5.9, 5.10): tài liệu và rule trong CSDL có phiên bản, diff, chống ghi đè, phát hành / quay về bản cũ, trang Quy tắc, *Cài đặt AI* có hiệu lực ngay, AI hỗ trợ soạn (Opus 5.5) | Đã viết 2026-11-04, chờ triển khai. Lần khởi động đầu tự nhập kiến thức và rule đang chạy thành bản phát hành #1 |
+| Nhắc khách im lặng (mục 56.9, 2026-11-25): job quét mỗi phút; tin cuối là của bot và khách im lặng quá 3 giờ thì AI viết tin nhắc (lượt `FOLLOW_UP`, playbook `nhac-khach`) kèm một media chưa gửi của gói đã đề xuất; lặp lại mỗi 3 giờ trong 8:00–21:00, chỉ trong cửa sổ 24 giờ; dừng khi khách / nhân viên nhắn hoặc AI thấy không nên nhắc; hết 24 giờ thì báo nhân viên `CUSTOMER_SILENT`; bảng `lich_nhac_khach` (V17); sửa trên *Cài đặt AI*; trang chat gắn thẻ "Tin nhắc" | Đã viết 2026-11-25, chờ triển khai. Cần tạo tài liệu `playbooks/nhac-khach` trên admin |
 
 ## 60.2 Còn thiếu
 
@@ -5226,13 +5235,7 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 3. **Media cho AI:** admin viết `tom_tat` / `dung_khi` và duyệt ảnh combo (form sửa đã có, mục 6.5); `MediaIndexBuilder` dựng danh mục từ mục đã duyệt, chưa xoá; quyết định bot có được gửi link video Facebook không (link slmsolar.vn / slmsolar.com.vn đã cho phép ở mốc báo giá; Policy chỉ cho link có trong kết quả tool, tin trang đã gửi và trang chủ theo miền); gửi ảnh qua Messenger (Attachment Upload API, không cần MinIO công khai). 24 ảnh combo đã nạp đang chờ duyệt.
 4. **Kiến thức v1** (soạn trên Knowledge Editor sau khi triển khai): chính sách bảo hành, khoảng 10 FAQ, chiến lược bán hàng (mục 58.7). AI hỗ trợ soạn khi thử đã chỉ ra một chỗ cần doanh nghiệp quyết: playbook `khach-hoi-gia` bước 8 và `core/guardrails` cho bot nêu thời hạn bảo hành lấy từ `chi_tiet_goi`; nếu chính sách bảo hành muốn để nhân viên báo thời hạn thì phải sửa hai tài liệu này cho thống nhất.
 5. **Bộ test** 100–200 câu hỏi thật và kịch bản nhiều lượt (mục 35); KPI mục tiêu và số liệu nền (mục 38, Phase 0).
-6. **Nhắc khách im lặng** (ghi lại 2026-11-25 theo yêu cầu doanh nghiệp, chưa làm; luật cố định của mục 56.9). Hiện chưa có: kiến thức không có hướng dẫn khi khách không trả lời, code không có job theo dõi khách im lặng, thư mục `leadnurturing` và bảng lịch follow-up chưa có; bot chỉ trả lời khi khách nhắn tới, media chỉ gửi kèm câu trả lời. Messenger chỉ cho bot tự nhắn trong 24 giờ kể từ tin cuối của khách; sau đó chỉ người thật nhắn được (tag `HUMAN_AGENT`, tối đa 7 ngày). Đề xuất:
-   - Nhắc 1 lần trong 24 giờ khi tin cuối là của bot (đã đề xuất gói hoặc đang hỏi thông tin) và khách im lặng quá một khoảng (đề xuất 3 giờ), chỉ trong giờ làm việc.
-   - AI viết tin nhắc theo một playbook mới: một câu nhắc nhẹ đúng điều khách đang quan tâm, kèm media liên quan chưa gửi (video công trình tương tự, ảnh báo giá gói đã đề xuất); không ép chốt, không lặp lại tin trước.
-   - Huỷ lịch nhắc khi khách nhắn lại, nhân viên tiếp quản, khách từ chối hoặc bảo đừng nhắn nữa.
-   - Quá 24 giờ vẫn im lặng: tạo thông báo cho nhân viên kèm tóm tắt hội thoại và gợi ý nội dung để nhân viên tự nhắn.
-   - Trang admin: bật / tắt, số giờ chờ, số lần nhắc; hộp thư ghi rõ tin nào là tin nhắc.
-   - Chờ doanh nghiệp chốt: số giờ chờ, số lần nhắc, tin nhắc tự gửi hay để nháp cho nhân viên duyệt thời gian đầu.
+6. **Nhắc khách im lặng:** đã làm 2026-11-25 (60.1, mục 56.9). Còn lại theo mục 56: planner AI tự chọn thời điểm, dashboard follow-up (56.8), tỷ lệ khách trả lời sau tin nhắc.
 7. **Dashboard:** trang *Phân tích* hiện là trang còn sót của fsignai (gọi `/api/v1/admin/dashboard`, lỗi 404). Thay bằng số liệu của bot từ `luot_goi_ai`: chi phí AI, tỷ lệ gửi tự động, tỷ lệ nhân viên sửa nháp.
 8. **Ra khách thật:**
    - App Review + xác minh doanh nghiệp (3–6 tuần): `pages_messaging`, `pages_manage_metadata`, `pages_read_engagement` (Advanced Access; hai quyền sau để lấy tên khách qua Conversations API, xưng anh / chị); trang chính sách quyền riêng tư và xoá dữ liệu; chuyển webhook sang tên miền công ty.

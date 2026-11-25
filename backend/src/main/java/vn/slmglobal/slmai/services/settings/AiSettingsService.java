@@ -18,6 +18,7 @@ import vn.slmglobal.slmai.services.ai.AiProperties;
 import vn.slmglobal.slmai.services.ai.AiReplySchema;
 import vn.slmglobal.slmai.services.auth.AuditLogService;
 import vn.slmglobal.slmai.services.conversation.ConversationProperties;
+import vn.slmglobal.slmai.services.leadnurturing.FollowUpProperties;
 import vn.slmglobal.slmai.services.notification.NotificationDraft;
 import vn.slmglobal.slmai.services.notification.NotificationService;
 import vn.slmglobal.slmai.services.notification.NotificationSeverity;
@@ -42,7 +43,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * Cài đặt vận hành AI (mục 33.2, 35): giá trị trong application.yml / .env là mặc định, bảng {@code cai_dat_ai}
  * ghi đè. Có hiệu lực ngay sau khi lưu (nạp lại sau commit), dự phòng tự nạp lại mỗi 30 giây.
  *
- * <p>Mọi chỗ đọc cấu hình động gọi {@link #ai()} / {@link #conversation()} mỗi lần dùng, không giữ bản sao.
+ * <p>Mọi chỗ đọc cấu hình động gọi {@link #ai()} / {@link #conversation()} / {@link #followUp()} mỗi lần dùng, không
+ * giữ bản sao.
  */
 @Slf4j
 @Service
@@ -63,11 +65,16 @@ public class AiSettingsService {
     }
 
     private record Effective(AiSettings settings, AiProperties ai, ConversationProperties conversation,
-                             List<String> overridden) {
+                             FollowUpProperties followUp, List<String> overridden) {
     }
+
+    /** Nhắc khách mặc định khi không có cấu hình app.follow-up (test) */
+    static final FollowUpProperties DEFAULT_FOLLOW_UP = new FollowUpProperties(true, Duration.ofHours(3), 0, true,
+            "08:00", "21:00", true, Duration.ofMinutes(30), Duration.ofMinutes(15));
 
     private final AiProperties baseAi;
     private final ConversationProperties baseConversation;
+    private final FollowUpProperties baseFollowUp;
     private final AiSettingRepository repository;
     private final AuditLogService audit;
     private final NotificationService notifications;
@@ -79,21 +86,29 @@ public class AiSettingsService {
 
     @Autowired
     public AiSettingsService(AiProperties baseAi, ConversationProperties baseConversation,
-                             AiSettingRepository repository, ObjectMapper objectMapper, AuditLogService audit,
-                             NotificationService notifications, ApplicationEventPublisher events) {
+                             FollowUpProperties baseFollowUp, AiSettingRepository repository,
+                             ObjectMapper objectMapper, AuditLogService audit, NotificationService notifications,
+                             ApplicationEventPublisher events) {
         this.baseAi = baseAi;
         this.baseConversation = baseConversation;
+        this.baseFollowUp = baseFollowUp == null ? DEFAULT_FOLLOW_UP : baseFollowUp;
         this.repository = repository;
         this.audit = audit;
         this.notifications = notifications;
         this.events = events;
         this.snake = objectMapper.copy().setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-        this.defaults = normalize(defaultsOf(baseAi, baseConversation));
+        this.defaults = normalize(defaultsOf(baseAi, baseConversation, this.baseFollowUp));
     }
 
     /** Không đọc CSDL: chỉ dùng giá trị truyền vào (test). */
     public static AiSettingsService fixed(AiProperties ai, ConversationProperties conversation) {
-        return new AiSettingsService(ai, conversation, null, new ObjectMapper(), null, null, null);
+        return fixed(ai, conversation, DEFAULT_FOLLOW_UP);
+    }
+
+    /** Không đọc CSDL, có cấu hình nhắc khách (test). */
+    public static AiSettingsService fixed(AiProperties ai, ConversationProperties conversation,
+                                          FollowUpProperties followUp) {
+        return new AiSettingsService(ai, conversation, followUp, null, new ObjectMapper(), null, null, null);
     }
 
     public AiProperties ai() {
@@ -102,6 +117,10 @@ public class AiSettingsService {
 
     public ConversationProperties conversation() {
         return effective().conversation();
+    }
+
+    public FollowUpProperties followUp() {
+        return effective().followUp();
     }
 
     public AiSettings settings() {
@@ -217,7 +236,7 @@ public class AiSettingsService {
                 applied.clear();
             }
         }
-        return new Effective(s, toAiProperties(s), toConversation(s), List.copyOf(applied));
+        return new Effective(s, toAiProperties(s), toConversation(s), toFollowUp(s), List.copyOf(applied));
     }
 
     private AiProperties toAiProperties(AiSettings s) {
@@ -242,7 +261,13 @@ public class AiSettingsService {
                 baseConversation.workerBatchSize());
     }
 
-    static AiSettings defaultsOf(AiProperties a, ConversationProperties c) {
+    private FollowUpProperties toFollowUp(AiSettings s) {
+        return new FollowUpProperties(s.followUpEnabled(), hours(s.followUpIntervalHours()), s.followUpMaxCount(),
+                s.followUpAutoSend(), s.followUpStart(), s.followUpEnd(), s.followUpNotifyStaff(),
+                baseFollowUp.windowMargin(), baseFollowUp.staleAfter());
+    }
+
+    static AiSettings defaultsOf(AiProperties a, ConversationProperties c, FollowUpProperties f) {
         AiProperties.BusinessHours bh = a.businessHours();
         AiProperties.Templates t = a.templates();
         return new AiSettings(
@@ -266,7 +291,14 @@ public class AiSettingsService {
                 a.effort(),
                 DEFAULT_ASSISTANT_MODEL,
                 a.maxAttempts(),
-                a.retryBackoff() == null ? 20 : a.retryBackoff().toMillis() / 1000.0);
+                a.retryBackoff() == null ? 20 : a.retryBackoff().toMillis() / 1000.0,
+                f.enabled(),
+                f.interval() == null ? 3 : f.interval().toMillis() / 3_600_000.0,
+                f.maxCount(),
+                f.autoSend(),
+                f.start(),
+                f.end(),
+                f.notifyStaff());
     }
 
     static List<String> validate(AiSettings s) {
@@ -320,6 +352,15 @@ public class AiSettingsService {
         }
         range(errors, "Số lần thử lại khi gọi AI lỗi", s.maxAttempts(), 1, 10);
         range(errors, "Chờ trước lần thử lại (giây)", s.retryBackoffSeconds(), 1, 600);
+        range(errors, "Nhắc khách sau (giờ)", s.followUpIntervalHours(), 1, 12);
+        range(errors, "Số lần nhắc tối đa", s.followUpMaxCount(), 0, 10);
+        try {
+            if (LocalTime.parse(s.followUpStart()).equals(LocalTime.parse(s.followUpEnd()))) {
+                errors.add("Khung giờ nhắc khách: giờ bắt đầu phải khác giờ kết thúc");
+            }
+        } catch (DateTimeParseException | NullPointerException e) {
+            errors.add("Khung giờ nhắc khách phải theo dạng HH:mm");
+        }
         return errors;
     }
 
@@ -356,7 +397,8 @@ public class AiSettingsService {
                 s.businessDays(), s.outOfHoursAck(), s.handoffAck(), s.ackCooldownHours(), s.personaName(),
                 s.companyName(), s.typingIndicator(), s.typingCharsPerSecond(), s.typingMaxSeconds(),
                 s.debounceSeconds(), s.autoHandbackHours(), s.model(), s.effort(), s.assistantModel(), s.maxAttempts(),
-                s.retryBackoffSeconds());
+                s.retryBackoffSeconds(), s.followUpEnabled(), s.followUpIntervalHours(), s.followUpMaxCount(),
+                s.followUpAutoSend(), s.followUpStart(), s.followUpEnd(), s.followUpNotifyStaff());
     }
 
     private Map<String, Object> withoutKillSwitch(AiSettings s) {
@@ -376,7 +418,9 @@ public class AiSettingsService {
                 blankToNull(strip(s.outOfHoursAck())), blankToNull(strip(s.handoffAck())), s.ackCooldownHours(),
                 strip(s.personaName()), strip(s.companyName()), s.typingIndicator(), s.typingCharsPerSecond(),
                 s.typingMaxSeconds(), s.debounceSeconds(), s.autoHandbackHours(), strip(s.model()), strip(s.effort()),
-                strip(s.assistantModel()), s.maxAttempts(), s.retryBackoffSeconds());
+                strip(s.assistantModel()), s.maxAttempts(), s.retryBackoffSeconds(), s.followUpEnabled(),
+                s.followUpIntervalHours(), s.followUpMaxCount(), s.followUpAutoSend(), strip(s.followUpStart()),
+                strip(s.followUpEnd()), s.followUpNotifyStaff());
     }
 
     private static List<String> ordered(List<String> intents) {

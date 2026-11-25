@@ -43,6 +43,7 @@ public class TurnNotifier {
             Map.entry(ReplyPolicy.MULTIPLE_QUESTIONS, "hỏi hơn một câu"),
             Map.entry(ReplyPolicy.CHANNEL_NOT_SUPPORTED, "kênh chưa hỗ trợ gửi tự động"),
             Map.entry(ReplyPolicy.OUTSIDE_WINDOW, "đã quá 24 giờ kể từ tin cuối của khách"),
+            Map.entry(ReplyPolicy.FOLLOW_UP_DRAFT_MODE, "tin nhắc khách đang để nháp (Cài đặt AI)"),
             Map.entry("AI_ERROR", "AI gặp lỗi khi gọi Claude"),
             Map.entry("AI_OUTPUT_UNUSABLE", "AI trả kết quả không dùng được"));
 
@@ -94,6 +95,23 @@ public class TurnNotifier {
                     .dedupeKey("AI_DRAFT:" + aiMessage.getId())
                     .build());
         }
+    }
+
+    /** Tin nhắc khách im lặng (mục 56.9) thành nháp: nhân viên xem rồi gửi trên trang Chat với khách. */
+    public void followUpDraft(TurnSnapshot s, Conversation c, AiRun run, AiReply reply,
+                              ReplyPolicy.Decision decision, Message draft) {
+        Map<String, Object> data = turnData(s, run, reply, decision, draft);
+        data.put("followUp", true);
+        notifications.notify(NotificationDraft.builder()
+                .type(NotificationType.AI_DRAFT)
+                .severity(NotificationSeverity.INFO)
+                .title("Nháp tin nhắc khách: " + customerLabel(s))
+                .body("Khách chưa trả lời, tin nhắc chưa gửi vì " + labels(decision.reasons()) + ".")
+                .data(data)
+                .conversationId(c.getId())
+                .customerId(c.getCustomerId())
+                .dedupeKey("AI_DRAFT:" + draft.getId())
+                .build());
     }
 
     /** Số khách vừa gửi đã thuộc khách khác (khach_hang.sdt UNIQUE): nhân viên cần gộp khách. */

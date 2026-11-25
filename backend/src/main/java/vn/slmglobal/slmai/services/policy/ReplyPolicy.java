@@ -51,6 +51,8 @@ public class ReplyPolicy {
     public static final String MULTIPLE_QUESTIONS = "MULTIPLE_QUESTIONS";
     public static final String CHANNEL_NOT_SUPPORTED = "CHANNEL_NOT_SUPPORTED";
     public static final String OUTSIDE_WINDOW = "OUTSIDE_WINDOW";
+    /** Tin nhắc khách (mục 56.9) khi tắt "tự gửi tin nhắc": luôn là nháp */
+    public static final String FOLLOW_UP_DRAFT_MODE = "FOLLOW_UP_DRAFT_MODE";
 
     private static final Pattern LINK = Pattern.compile("(?i)(https?://|www\\.|\\b[\\w-]+\\.(com|vn|net|org)\\b)");
     /** Một link đầy đủ: có hoặc không có https://, www., đường dẫn */
