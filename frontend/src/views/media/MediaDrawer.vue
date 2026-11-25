@@ -16,6 +16,9 @@
           <Tag :color="media.type === 'IMAGE' ? 'blue' : 'purple'">
             {{ media.type === 'IMAGE' ? 'Ảnh' : 'Video' }}
           </Tag>
+          <Tag :color="CATEGORY_COLORS[media.category] ?? 'default'">
+            {{ categoryLabel(media.category) }}
+          </Tag>
           <Tag :color="STATUS_COLORS[media.status]">{{ STATUS_LABELS[media.status] }}</Tag>
           <span v-if="media.indexCode" class="muted">Mã danh mục {{ media.indexCode }}</span>
         </div>
@@ -246,11 +249,13 @@
     ACTION_LABELS,
     AVAILABILITY_COLORS,
     AVAILABILITY_LABELS,
+    CATEGORY_COLORS,
     FIELD_LABELS,
     SOURCE_LABELS,
     STATUS_COLORS,
     STATUS_LABELS,
     aiFormSchema,
+    categoryLabel,
     infoFormSchema,
     options,
   } from './media.data';
@@ -377,6 +382,7 @@
     status.value = m.status;
     await setInfo({
       title: m.title,
+      category: m.category,
       status: m.status,
       rights: m.rights,
       topics: m.topics,

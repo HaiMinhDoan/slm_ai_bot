@@ -30,6 +30,20 @@ export const RIGHTS_LABELS: Record<MediaRights, string> = {
   NEEDS_REVIEW: 'Chưa rõ quyền',
 };
 
+/**
+ * Phân loại media. Backend lưu dạng chuỗi (MediaItem.CATEGORIES): thêm loại mới thì thêm mã ở backend và nhãn ở đây,
+ * không cần đổi CSDL. Mã chưa có nhãn vẫn hiện nguyên mã.
+ */
+export const CATEGORY_LABELS: Record<string, string> = {
+  QUOTE: 'Báo giá',
+  GENERAL: 'Media thường',
+};
+
+export const CATEGORY_COLORS: Record<string, string> = {
+  QUOTE: 'gold',
+  GENERAL: 'default',
+};
+
 export const SOURCE_LABELS: Record<string, string> = {
   UPLOAD: 'File trong hệ thống',
   FACEBOOK: 'Facebook',
@@ -110,6 +124,7 @@ export const FIELD_LABELS: Record<string, string> = {
   title: 'tiêu đề',
   status: 'trạng thái',
   rights: 'quyền sử dụng',
+  category: 'phân loại',
   indexCode: 'mã danh mục',
   summary: 'tóm tắt',
   useWhen: 'dùng khi',
@@ -132,6 +147,8 @@ export function linkText(l: MediaLinkModel): string {
 export const options = (labels: Record<string, string>) =>
   Object.entries(labels).map(([value, label]) => ({ label, value }));
 
+export const categoryLabel = (code: string) => CATEGORY_LABELS[code] ?? code;
+
 export const columns: BasicColumn[] = [
   { title: 'Xem', key: 'preview', dataIndex: 'preview', width: 90 },
   { title: 'Mã', dataIndex: 'indexCode', width: 60 },
@@ -142,6 +159,15 @@ export const columns: BasicColumn[] = [
     customRender: ({ record }) =>
       h(Tag, { color: record.type === 'IMAGE' ? 'blue' : 'purple' }, () =>
         record.type === 'IMAGE' ? 'Ảnh' : 'Video',
+      ),
+  },
+  {
+    title: 'Phân loại',
+    dataIndex: 'category',
+    width: 120,
+    customRender: ({ record }) =>
+      h(Tag, { color: CATEGORY_COLORS[record.category] ?? 'default' }, () =>
+        categoryLabel(record.category),
       ),
   },
   {
@@ -194,7 +220,7 @@ export const searchFormSchema: FormSchema[] = [
     label: 'Tìm kiếm',
     component: 'Input',
     componentProps: { placeholder: 'Tiêu đề hoặc mã M07' },
-    colProps: { span: 6 },
+    colProps: { span: 8 },
   },
   {
     field: 'type',
@@ -208,7 +234,14 @@ export const searchFormSchema: FormSchema[] = [
         { label: 'Video', value: 'VIDEO' },
       ],
     },
-    colProps: { span: 6 },
+    colProps: { span: 8 },
+  },
+  {
+    field: 'category',
+    label: 'Phân loại',
+    component: 'Select',
+    componentProps: { allowClear: true, placeholder: 'Tất cả', options: options(CATEGORY_LABELS) },
+    colProps: { span: 8 },
   },
   {
     field: 'status',
@@ -219,14 +252,14 @@ export const searchFormSchema: FormSchema[] = [
       placeholder: 'Tất cả',
       options: [...options(STATUS_LABELS), { label: 'Đã xoá', value: 'DELETED' }],
     },
-    colProps: { span: 6 },
+    colProps: { span: 8 },
   },
   {
     field: 'packageId',
     label: 'Mã gói',
     component: 'InputNumber',
     componentProps: { min: 1, precision: 0, placeholder: 'tron_goi.id', style: { width: '100%' } },
-    colProps: { span: 6 },
+    colProps: { span: 8 },
   },
 ];
 
@@ -238,7 +271,17 @@ export const infoFormSchema: FormSchema[] = [
     component: 'Input',
     required: true,
     componentProps: { maxlength: 300 },
-    colProps: { span: 24 },
+    colProps: { span: 16 },
+  },
+  {
+    field: 'category',
+    label: 'Phân loại',
+    component: 'Select',
+    required: true,
+    defaultValue: 'GENERAL',
+    componentProps: { options: options(CATEGORY_LABELS) },
+    helpMessage: 'Báo giá: ảnh báo giá của gói. Media thường: ảnh, video tư vấn, công trình.',
+    colProps: { span: 8 },
   },
   {
     field: 'status',
@@ -385,6 +428,7 @@ export function addFormSchema(single: () => boolean, hasVideo: () => boolean): F
       helpMessage:
         'Chỉ nhập được khi thêm đúng 1 file hoặc 1 link; thêm nhiều thì mỗi media lấy theo tên file.',
     },
+    info.category,
     {
       ...info.status,
       defaultValue: 'DRAFT',

@@ -166,6 +166,7 @@ public class PackageMediaImportService {
             UUID mediaId = tx.execute(st -> {
                 MediaItem media = items.saveAndFlush(MediaItem.builder()
                         .type(MediaType.IMAGE)
+                        .category(MediaItem.CATEGORY_QUOTE)
                         .title(item.title().strip())
                         .status(MediaStatus.DRAFT)
                         .rights(rights)

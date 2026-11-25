@@ -59,7 +59,14 @@
     LinkTargetType,
     MediaBulkResult,
   } from '@/api/media/model/mediaModel';
-  import { RIGHTS_LABELS, ROLE_LABELS, STATUS_LABELS, TARGET_LABELS, options } from './media.data';
+  import {
+    CATEGORY_LABELS,
+    RIGHTS_LABELS,
+    ROLE_LABELS,
+    STATUS_LABELS,
+    TARGET_LABELS,
+    options,
+  } from './media.data';
 
   defineOptions({ name: 'MediaBulkModal' });
 
@@ -69,6 +76,7 @@
   const ACTION_LABELS: Record<BulkAction, string> = {
     SET_STATUS: 'Đổi trạng thái (duyệt, về nháp, lưu trữ)',
     SET_RIGHTS: 'Đổi quyền sử dụng',
+    SET_CATEGORY: 'Đổi phân loại (báo giá, media thường)',
     ADD_TOPICS: 'Thêm chủ đề',
     ADD_LINK: 'Gắn với gói / vật tư / hãng / tài liệu',
     DELETE: 'Xoá (xoá mềm)',
@@ -119,6 +127,15 @@
         required: true,
         componentProps: { options: options(RIGHTS_LABELS) },
         ifShow: ({ values }) => values.action === 'SET_RIGHTS',
+        colProps: { span: 24 },
+      },
+      {
+        field: 'category',
+        label: 'Phân loại',
+        component: 'Select',
+        required: true,
+        componentProps: { options: options(CATEGORY_LABELS) },
+        ifShow: ({ values }) => values.action === 'SET_CATEGORY',
         colProps: { span: 24 },
       },
       {
@@ -184,6 +201,7 @@
         action: values.action,
         status: values.status,
         rights: values.rights,
+        category: values.category,
         topics: values.topics,
         link:
           values.action === 'ADD_LINK'

@@ -39,10 +39,16 @@ export interface MediaLinkModel {
 
 export type MediaStatus = 'DRAFT' | 'APPROVED' | 'ARCHIVED';
 export type MediaRights = 'OWNED' | 'LICENSED' | 'LINK_ONLY' | 'NEEDS_REVIEW';
+/**
+ * Phân loại: QUOTE ảnh báo giá gói, GENERAL media thường. Backend lưu dạng chuỗi để thêm loại mới không cần đổi CSDL,
+ * nên để kiểu string (nhãn ở CATEGORY_LABELS)
+ */
+export type MediaCategory = string;
 
 export interface MediaModel {
   id: string;
   type: 'IMAGE' | 'VIDEO';
+  category: MediaCategory;
   title: string;
   /** Mã trong danh mục media cho AI (M07), cấp ở lần duyệt đầu */
   indexCode?: string;
@@ -74,6 +80,7 @@ export interface MediaModel {
 export interface MediaFilterModel {
   keyword?: string;
   type?: 'IMAGE' | 'VIDEO';
+  category?: MediaCategory;
   status?: MediaStatus | 'DELETED';
   packageId?: number;
   page?: number;
@@ -85,6 +92,7 @@ export interface MediaUpdateModel {
   title: string;
   status: MediaStatus;
   rights: MediaRights;
+  category: MediaCategory;
   summary?: string;
   useWhen?: string;
   avoidWhen?: string;
@@ -124,6 +132,7 @@ export interface MediaCreateInfo {
   title?: string;
   status?: MediaStatus;
   rights?: MediaRights;
+  category?: MediaCategory;
   summary?: string;
   useWhen?: string;
   avoidWhen?: string;
@@ -165,6 +174,7 @@ export interface MediaHistoryModel {
 export type BulkAction =
   | 'SET_STATUS'
   | 'SET_RIGHTS'
+  | 'SET_CATEGORY'
   | 'ADD_TOPICS'
   | 'ADD_LINK'
   | 'DELETE'
@@ -175,6 +185,7 @@ export interface MediaBulkRequest {
   action: BulkAction;
   status?: MediaStatus;
   rights?: MediaRights;
+  category?: MediaCategory;
   topics?: string[];
   link?: MediaLinkInput;
 }

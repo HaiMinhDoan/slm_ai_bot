@@ -733,6 +733,7 @@ Schema chi tiết ở mục 29.
 | Trường | Giá trị |
 |---|---|
 | `media.loai_media` | `IMAGE`, `VIDEO` |
+| `media.phan_loai` (V16, 2026-11-25) | `QUOTE` là ảnh báo giá của gói, `GENERAL` là media thường (mặc định). Cột lưu chuỗi, không ràng buộc trong CSDL: thêm loại mới chỉ cần thêm mã vào `MediaItem.CATEGORIES` và nhãn vào `CATEGORY_LABELS` (`media.data.ts`). V16 gán `QUOTE` cho ảnh đang là ảnh chính của gói; ảnh combo nhập từ Drive tự là `QUOTE`. Trang media có bộ lọc, cột, ô sửa và thao tác hàng loạt cho trường này |
 | `media_nguon.loai_nguon` | `UPLOAD` (file tự upload lên MinIO/S3), `YOUTUBE`, `FACEBOOK`, `TIKTOK`, `SLM_V2` (ảnh gói/vật tư đồng bộ từ hệ thống bảng giá, chỉ đọc) |
 | `media.trang_thai` | `DRAFT`, `APPROVED`, `ARCHIVED`; AI chỉ dùng mục `APPROVED` |
 | `media.quyen_su_dung` | `OWNED`, `LICENSED`, `LINK_ONLY`, `NEEDS_REVIEW` |
@@ -5225,11 +5226,18 @@ Mọi phần còn lại của mục 38 làm sau khi MVP đạt KPI mục tiêu.
 3. **Media cho AI:** admin viết `tom_tat` / `dung_khi` và duyệt ảnh combo (form sửa đã có, mục 6.5); `MediaIndexBuilder` dựng danh mục từ mục đã duyệt, chưa xoá; quyết định bot có được gửi link video Facebook không (link slmsolar.vn / slmsolar.com.vn đã cho phép ở mốc báo giá; Policy chỉ cho link có trong kết quả tool, tin trang đã gửi và trang chủ theo miền); gửi ảnh qua Messenger (Attachment Upload API, không cần MinIO công khai). 24 ảnh combo đã nạp đang chờ duyệt.
 4. **Kiến thức v1** (soạn trên Knowledge Editor sau khi triển khai): chính sách bảo hành, khoảng 10 FAQ, chiến lược bán hàng (mục 58.7). AI hỗ trợ soạn khi thử đã chỉ ra một chỗ cần doanh nghiệp quyết: playbook `khach-hoi-gia` bước 8 và `core/guardrails` cho bot nêu thời hạn bảo hành lấy từ `chi_tiet_goi`; nếu chính sách bảo hành muốn để nhân viên báo thời hạn thì phải sửa hai tài liệu này cho thống nhất.
 5. **Bộ test** 100–200 câu hỏi thật và kịch bản nhiều lượt (mục 35); KPI mục tiêu và số liệu nền (mục 38, Phase 0).
-6. **Dashboard:** trang *Phân tích* hiện là trang còn sót của fsignai (gọi `/api/v1/admin/dashboard`, lỗi 404). Thay bằng số liệu của bot từ `luot_goi_ai`: chi phí AI, tỷ lệ gửi tự động, tỷ lệ nhân viên sửa nháp.
-7. **Ra khách thật:**
+6. **Nhắc khách im lặng** (ghi lại 2026-11-25 theo yêu cầu doanh nghiệp, chưa làm; luật cố định của mục 56.9). Hiện chưa có: kiến thức không có hướng dẫn khi khách không trả lời, code không có job theo dõi khách im lặng, thư mục `leadnurturing` và bảng lịch follow-up chưa có; bot chỉ trả lời khi khách nhắn tới, media chỉ gửi kèm câu trả lời. Messenger chỉ cho bot tự nhắn trong 24 giờ kể từ tin cuối của khách; sau đó chỉ người thật nhắn được (tag `HUMAN_AGENT`, tối đa 7 ngày). Đề xuất:
+   - Nhắc 1 lần trong 24 giờ khi tin cuối là của bot (đã đề xuất gói hoặc đang hỏi thông tin) và khách im lặng quá một khoảng (đề xuất 3 giờ), chỉ trong giờ làm việc.
+   - AI viết tin nhắc theo một playbook mới: một câu nhắc nhẹ đúng điều khách đang quan tâm, kèm media liên quan chưa gửi (video công trình tương tự, ảnh báo giá gói đã đề xuất); không ép chốt, không lặp lại tin trước.
+   - Huỷ lịch nhắc khi khách nhắn lại, nhân viên tiếp quản, khách từ chối hoặc bảo đừng nhắn nữa.
+   - Quá 24 giờ vẫn im lặng: tạo thông báo cho nhân viên kèm tóm tắt hội thoại và gợi ý nội dung để nhân viên tự nhắn.
+   - Trang admin: bật / tắt, số giờ chờ, số lần nhắc; hộp thư ghi rõ tin nào là tin nhắc.
+   - Chờ doanh nghiệp chốt: số giờ chờ, số lần nhắc, tin nhắc tự gửi hay để nháp cho nhân viên duyệt thời gian đầu.
+7. **Dashboard:** trang *Phân tích* hiện là trang còn sót của fsignai (gọi `/api/v1/admin/dashboard`, lỗi 404). Thay bằng số liệu của bot từ `luot_goi_ai`: chi phí AI, tỷ lệ gửi tự động, tỷ lệ nhân viên sửa nháp.
+8. **Ra khách thật:**
    - App Review + xác minh doanh nghiệp (3–6 tuần): `pages_messaging`, `pages_manage_metadata`, `pages_read_engagement` (Advanced Access; hai quyền sau để lấy tên khách qua Conversations API, xưng anh / chị); trang chính sách quyền riêng tư và xoá dữ liệu; chuyển webhook sang tên miền công ty.
    - Token: chuyển Page token sang System User (token hiện gắn với tài khoản cá nhân của người quản trị Trang).
-8. **Phía doanh nghiệp:**
+9. **Phía doanh nghiệp:**
    - Pháp lý dữ liệu cá nhân (mục 59.5).
    - Sửa dữ liệu trong slm_v2: gói 134 / 135, 140 / 141, 175 / 176 là **40 tấm** (25 kWp), slm_v2 đang ghi 39 tấm / 24,375 kWp; gói 101 `cong_suat_he_thong = 9` (đúng 8750); gói 101 / 102 lệch giá 600 nghìn giữa HN và HCM; gói 180 (HN) và 181 (HCM) cùng dòng nhưng cấu hình khác, ảnh của 180 là ảnh hệ 181.
 

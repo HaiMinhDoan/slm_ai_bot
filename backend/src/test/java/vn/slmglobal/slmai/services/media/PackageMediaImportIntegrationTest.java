@@ -209,7 +209,7 @@ class PackageMediaImportIntegrationTest {
     }
 
     @Test
-    void listFiltersByKeywordTypeStatusAndPackage() {
+    void listFiltersByKeywordTypeCategoryStatusAndPackage() {
         run(false, item(98, 97, DRIVE_URL, "https://www.facebook.com/share/v/1DsTmxsPeh/"));
 
         assertThat(list("hy-brid", null, null, null).total()).isEqualTo(2);
@@ -220,6 +220,12 @@ class PackageMediaImportIntegrationTest {
         assertThat(list(null, null, "DRAFT", 97).total()).isEqualTo(2);
         assertThat(list(null, null, null, 140).total()).isZero();
         assertThatThrownBy(() -> list(null, null, "BAD", null)).isInstanceOf(CommonException.class);
+
+        // Ảnh combo nhập vào là ảnh báo giá, video là media thường
+        assertThat(mediaAdmin.list(new MediaFilter(null, null, "QUOTE", null, null), PageRequest.of(0, 20)).items())
+                .extracting(MediaResponse::type).containsExactly("IMAGE");
+        assertThat(mediaAdmin.list(new MediaFilter(null, null, "GENERAL", null, null), PageRequest.of(0, 20)).items())
+                .extracting(MediaResponse::type).containsExactly("VIDEO");
     }
 
     @Test
@@ -255,7 +261,7 @@ class PackageMediaImportIntegrationTest {
     }
 
     private PageResponse<MediaResponse> list(String keyword, MediaType type, String status, Integer packageId) {
-        return mediaAdmin.list(new MediaFilter(keyword, type, status, packageId), PageRequest.of(0, 20));
+        return mediaAdmin.list(new MediaFilter(keyword, type, null, status, packageId), PageRequest.of(0, 20));
     }
 
     private UUID videoId() {

@@ -95,8 +95,8 @@ public class MediaAdminService {
     public record LinkResponse(String targetType, String targetKey, String role, int sortOrder, String label) {
     }
 
-    public record MediaResponse(UUID id, String type, String title, String indexCode, String status, String rights,
-                                String summary, String useWhen, String avoidWhen, String description,
+    public record MediaResponse(UUID id, String type, String category, String title, String indexCode, String status,
+                                String rights, String summary, String useWhen, String avoidWhen, String description,
                                 String transcript, List<String> topics, List<String> customerStages,
                                 List<String> allowedChannels, String createdBy, OffsetDateTime createdAt,
                                 String updatedBy, OffsetDateTime updatedAt, String approvedBy,
@@ -104,13 +104,17 @@ public class MediaAdminService {
                                 List<SourceResponse> sources, List<LinkResponse> links) {
     }
 
-    /** @param status DRAFT, APPROVED, ARCHIVED hoặc DELETED; null = mọi mục chưa xoá */
-    public record MediaFilter(String keyword, MediaType type, String status, Integer packageId) {
+    /**
+     * @param status   DRAFT, APPROVED, ARCHIVED hoặc DELETED; null = mọi mục chưa xoá
+     * @param category phân loại ({@link MediaItem#CATEGORIES}); null = mọi loại
+     */
+    public record MediaFilter(String keyword, MediaType type, String category, String status, Integer packageId) {
     }
 
     /**
-     * Toàn bộ nội dung form sửa (form gửi cả trường không đổi). Ba danh sách cuối null là giữ nguyên.
+     * Toàn bộ nội dung form sửa (form gửi cả trường không đổi). Phân loại và ba danh sách cuối null là giữ nguyên.
      *
+     * @param category        phân loại ({@link MediaItem#CATEGORIES})
      * @param customerStages  giai đoạn khách hợp để gửi ({@link #CUSTOMER_STAGES}); rỗng là mọi giai đoạn
      * @param allowedChannels kênh được gửi ({@link #CHANNELS})
      */
@@ -118,6 +122,7 @@ public class MediaAdminService {
             @NotBlank(message = "Chưa nhập tiêu đề") @Size(max = 300, message = "Tiêu đề tối đa 300 ký tự") String title,
             @NotNull(message = "Chưa chọn trạng thái") MediaStatus status,
             @NotNull(message = "Chưa chọn quyền sử dụng") RightsStatus rights,
+            String category,
             @Size(max = 2000, message = "Tóm tắt tối đa 2000 ký tự") String summary,
             @Size(max = 2000, message = "Dùng khi tối đa 2000 ký tự") String useWhen,
             @Size(max = 2000, message = "Tránh khi tối đa 2000 ký tự") String avoidWhen,
@@ -129,7 +134,7 @@ public class MediaAdminService {
 
         public UpdateRequest(String title, MediaStatus status, RightsStatus rights, String summary, String useWhen,
                              String avoidWhen, String description, String transcript) {
-            this(title, status, rights, summary, useWhen, avoidWhen, description, transcript, null, null, null);
+            this(title, status, rights, null, summary, useWhen, avoidWhen, description, transcript, null, null, null);
         }
     }
 
@@ -157,6 +162,7 @@ public class MediaAdminService {
             @Size(max = 300, message = "Tiêu đề tối đa 300 ký tự") String title,
             MediaStatus status,
             RightsStatus rights,
+            String category,
             @Size(max = 2000, message = "Tóm tắt tối đa 2000 ký tự") String summary,
             @Size(max = 2000, message = "Dùng khi tối đa 2000 ký tự") String useWhen,
             @Size(max = 2000, message = "Tránh khi tối đa 2000 ký tự") String avoidWhen,
@@ -174,12 +180,12 @@ public class MediaAdminService {
         }
     }
 
-    public enum BulkAction { SET_STATUS, SET_RIGHTS, ADD_TOPICS, ADD_LINK, DELETE, RESTORE }
+    public enum BulkAction { SET_STATUS, SET_RIGHTS, SET_CATEGORY, ADD_TOPICS, ADD_LINK, DELETE, RESTORE }
 
     /** Thao tác hàng loạt; trường đi kèm tuỳ {@code action} (SET_STATUS cần status, ADD_LINK cần đối tượng...) */
     public record BulkRequest(@NotEmpty(message = "Chưa chọn media") @Size(max = MAX_BULK) List<UUID> ids,
                               @NotNull(message = "Chưa chọn thao tác") BulkAction action,
-                              MediaStatus status, RightsStatus rights, List<String> topics,
+                              MediaStatus status, RightsStatus rights, String category, List<String> topics,
                               @Valid LinkInput link) {
     }
 
@@ -233,6 +239,9 @@ public class MediaAdminService {
     public MediaResponse update(AuthInfo actor, UUID id, UpdateRequest r) {
         MediaItem m = editable(id);
         Map<String, Object> before = snapshot(m);
+        if (r.category() != null) {
+            m.setCategory(checkedCategory(r.category()));
+        }
         if (r.topics() != null) {
             m.setTopics(checkedTopics(r.topics(), m.getTopics()).toArray(String[]::new));
         }
@@ -306,6 +315,9 @@ public class MediaAdminService {
         if (info == null) {
             return;
         }
+        if (info.category() != null) {
+            checkedCategory(info.category());
+        }
         checkedTopics(info.topics() == null ? List.of() : info.topics(), new String[0]);
         checked(info.customerStages() == null ? List.of() : info.customerStages(), CUSTOMER_STAGES, "Giai đoạn khách");
         checked(info.allowedChannels() == null ? List.of() : info.allowedChannels(), CHANNELS, "Kênh");
@@ -330,6 +342,9 @@ public class MediaAdminService {
         m.setAvoidWhen(blankToNull(info.avoidWhen()));
         m.setDescription(blankToNull(info.description()));
         m.setTranscript(m.getType() == MediaType.VIDEO ? blankToNull(info.transcript()) : null);
+        if (info.category() != null) {
+            m.setCategory(checkedCategory(info.category()));
+        }
         if (info.topics() != null) {
             m.setTopics(checkedTopics(info.topics(), new String[0]).toArray(String[]::new));
         }
@@ -390,6 +405,7 @@ public class MediaAdminService {
         switch (r.action()) {
             case SET_STATUS -> require(r.status() != null, "Chưa chọn trạng thái");
             case SET_RIGHTS -> require(r.rights() != null, "Chưa chọn quyền sử dụng");
+            case SET_CATEGORY -> checkedCategory(r.category());
             case ADD_TOPICS -> require(r.topics() != null && !r.topics().isEmpty(), "Chưa chọn chủ đề");
             case ADD_LINK -> {
                 require(r.link() != null, "Chưa chọn đối tượng để gắn");
@@ -439,6 +455,7 @@ public class MediaAdminService {
                 m.setRights(r.rights());
                 applyStatus(actor, m, m.getStatus());
             }
+            case SET_CATEGORY -> m.setCategory(checkedCategory(r.category()));
             case ADD_TOPICS -> {
                 Set<String> all = new LinkedHashSet<>(List.of(m.getTopics()));
                 all.addAll(checkedTopics(r.topics(), m.getTopics()));
@@ -479,6 +496,15 @@ public class MediaAdminService {
             m.setApprovedAt(null);
         }
         m.setStatus(status);
+    }
+
+    private static String checkedCategory(String raw) {
+        String code = raw == null ? "" : raw.strip();
+        if (!MediaItem.CATEGORIES.contains(code)) {
+            throw new CommonException(HttpStatus.BAD_REQUEST, code.isEmpty() ? "Chưa chọn phân loại"
+                    : "Phân loại không hợp lệ: " + code);
+        }
+        return code;
     }
 
     /** Chủ đề phải có trong danh sách; chủ đề đã tắt chỉ giữ được nếu media vốn đã có */
@@ -610,6 +636,9 @@ public class MediaAdminService {
             if (f.type() != null) {
                 where.add(cb.equal(root.get("type"), f.type()));
             }
+            if (blankToNull(f.category()) != null) {
+                where.add(cb.equal(root.get("category"), f.category().strip()));
+            }
             String keyword = blankToNull(f.keyword());
             if (keyword != null) {
                 where.add(cb.or(
@@ -647,8 +676,8 @@ public class MediaAdminService {
     }
 
     private static MediaResponse toResponse(MediaItem m, List<SourceResponse> src, List<LinkResponse> lnk) {
-        return new MediaResponse(m.getId(), m.getType().name(), m.getTitle(), m.getIndexCode(), m.getStatus().name(),
-                m.getRights().name(), m.getSummary(), m.getUseWhen(), m.getAvoidWhen(), m.getDescription(),
+        return new MediaResponse(m.getId(), m.getType().name(), m.getCategory(), m.getTitle(), m.getIndexCode(),
+                m.getStatus().name(), m.getRights().name(), m.getSummary(), m.getUseWhen(), m.getAvoidWhen(), m.getDescription(),
                 m.getTranscript(), List.of(m.getTopics()), List.of(m.getCustomerStages()),
                 List.of(m.getAllowedChannels()), m.getCreatedBy(), m.getCreatedAt(), m.getUpdatedBy(),
                 m.getUpdatedAt(), m.getApprovedBy(), m.getApprovedAt(), m.isDeleted(), m.getDeletedBy(),
@@ -669,6 +698,7 @@ public class MediaAdminService {
         data.put("title", m.getTitle());
         data.put("status", m.getStatus());
         data.put("rights", m.getRights());
+        data.put("category", m.getCategory());
         data.put("indexCode", m.getIndexCode());
         data.put("summary", m.getSummary());
         data.put("useWhen", m.getUseWhen());

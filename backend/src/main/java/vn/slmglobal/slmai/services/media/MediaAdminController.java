@@ -97,7 +97,8 @@ public class MediaAdminController {
                 "MEDIA_LINK_SUCCESS");
     }
 
-    @Operation(summary = "Thao tác hàng loạt: đổi trạng thái, quyền, thêm chủ đề, gắn đối tượng, xoá, khôi phục")
+    @Operation(summary = "Thao tác hàng loạt: đổi trạng thái, quyền, phân loại, thêm chủ đề, gắn đối tượng, xoá, "
+            + "khôi phục")
     @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN})
     @PostMapping("/bulk")
     public ResponseEntity<ResponseData<List<MediaAdminService.BulkResult>>> bulk(
@@ -138,18 +139,20 @@ public class MediaAdminController {
                 "MEDIA_TOPIC_UPDATE_SUCCESS");
     }
 
-    @Operation(summary = "Danh sách media (mới trước); mặc định ẩn mục đã xoá, status=DELETED để xem chúng")
+    @Operation(summary = "Danh sách media (mới trước), lọc theo loại, phân loại (QUOTE / GENERAL), trạng thái, gói; "
+            + "mặc định ẩn mục đã xoá, status=DELETED để xem chúng")
     @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN})
     @GetMapping
     public ResponseEntity<ResponseData<PageResponse<MediaResponse>>> list(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) vn.slmglobal.slmai.services.media.entity.MediaType type,
+            @RequestParam(required = false) String category,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Integer packageId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         PageRequest pageable = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), MAX_PAGE_SIZE));
-        return ApiResponses.ok(adminService.list(new MediaFilter(keyword, type, status, packageId), pageable),
+        return ApiResponses.ok(adminService.list(new MediaFilter(keyword, type, category, status, packageId), pageable),
                 "MEDIA_LIST_SUCCESS");
     }
 
@@ -227,7 +230,7 @@ public class MediaAdminController {
                 "MEDIA_SOURCE_DELETE_SUCCESS");
     }
 
-    @Operation(summary = "Sửa nội dung, chủ đề, giai đoạn khách, kênh, quyền sử dụng, trạng thái duyệt")
+    @Operation(summary = "Sửa nội dung, phân loại, chủ đề, giai đoạn khách, kênh, quyền sử dụng, trạng thái duyệt")
     @RequireAuth(roles = {RoleCode.SYSTEM_ADMIN, RoleCode.CONTENT_ADMIN})
     @PutMapping("/{id}")
     public ResponseEntity<ResponseData<MediaResponse>> update(@PathVariable UUID id,

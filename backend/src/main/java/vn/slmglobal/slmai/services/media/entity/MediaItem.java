@@ -17,6 +17,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /** Một media trong thư viện: nội dung và metadata để AI chọn (mục 6, 7). Bảng media (V6). */
@@ -29,6 +30,16 @@ import java.util.UUID;
 @AllArgsConstructor
 public class MediaItem {
 
+    /** Media thường: ảnh, video tư vấn, công trình */
+    public static final String CATEGORY_GENERAL = "GENERAL";
+    /** Ảnh báo giá của gói */
+    public static final String CATEGORY_QUOTE = "QUOTE";
+    /**
+     * Phân loại hợp lệ. Cột lưu dạng chuỗi, không ràng buộc trong CSDL: thêm loại mới chỉ cần thêm mã ở đây và nhãn ở
+     * trang admin (CATEGORY_LABELS trong media.data.ts)
+     */
+    public static final List<String> CATEGORIES = List.of(CATEGORY_GENERAL, CATEGORY_QUOTE);
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -39,6 +50,11 @@ public class MediaItem {
 
     @Column(name = "tieu_de", nullable = false)
     private String title;
+
+    /** Phân loại (V16): một mã trong {@link #CATEGORIES} */
+    @Column(name = "phan_loai", nullable = false)
+    @Builder.Default
+    private String category = CATEGORY_GENERAL;
 
     /** Mã ngắn trong danh mục media (M07), cấp khi duyệt */
     @Column(name = "ma_danh_muc")

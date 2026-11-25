@@ -105,6 +105,7 @@ class MediaLibraryIntegrationTest {
         assertThat(image.outcome()).isEqualTo(Outcome.CREATED);
         MediaResponse m = admin.get(image.mediaId());
         assertThat(m.type()).isEqualTo("IMAGE");
+        assertThat(m.category()).isEqualTo("GENERAL");
         assertThat(m.title()).isEqualTo("anh he 5kWp mai ton");
         assertThat(m.status()).isEqualTo("DRAFT");
         assertThat(m.rights()).isEqualTo("OWNED");
@@ -157,23 +158,27 @@ class MediaLibraryIntegrationTest {
         UUID id = upload("a.jpg", DriveImageFetcherTest.jpeg(5, 5), null, null).mediaId();
 
         MediaResponse m = admin.update(ACTOR, id, new UpdateRequest("Ảnh hệ 5 kWp", MediaStatus.APPROVED,
-                RightsStatus.OWNED, "Hệ Hybrid 5 kWp trên mái tôn", "Khách hỏi gói 5 kWp", "Khách khiếu nại",
+                RightsStatus.OWNED, "QUOTE", "Hệ Hybrid 5 kWp trên mái tôn", "Khách hỏi gói 5 kWp", "Khách khiếu nại",
                 "Mô tả", null, List.of("pin-luu-tru", "hybrid", "hybrid"), List.of("CONSULTING", "LEAD"),
                 List.of("ZALO_OA", "MESSENGER")));
         assertThat(m.topics()).containsExactly("pin-luu-tru", "hybrid");
         assertThat(m.customerStages()).containsExactly("LEAD", "CONSULTING");
         assertThat(m.allowedChannels()).containsExactly("MESSENGER", "ZALO_OA");
         assertThat(m.indexCode()).isEqualTo("M01");
+        assertThat(m.category()).isEqualTo("QUOTE");
 
         assertThatThrownBy(() -> admin.update(ACTOR, id, withTopics(List.of("khong-co"))))
                 .isInstanceOf(CommonException.class).hasMessageContaining("khong-co");
         assertThatThrownBy(() -> admin.update(ACTOR, id, new UpdateRequest("x", MediaStatus.DRAFT, RightsStatus.OWNED,
-                null, null, null, null, null, null, List.of("VIP"), null)))
+                null, null, null, null, null, null, null, List.of("VIP"), null)))
                 .isInstanceOf(CommonException.class).hasMessageContaining("Giai đoạn khách");
 
         // Chủ đề đã tắt: media đang có thì giữ được, media khác không chọn mới được
         topicService.update(ACTOR, "hybrid", new TopicRequest(null, "Hệ Hybrid", null, null, false));
-        assertThat(admin.update(ACTOR, id, withTopics(List.of("hybrid"))).topics()).containsExactly("hybrid");
+        MediaResponse kept = admin.update(ACTOR, id, withTopics(List.of("hybrid")));
+        assertThat(kept.topics()).containsExactly("hybrid");
+        // Phân loại null là giữ nguyên
+        assertThat(kept.category()).isEqualTo("QUOTE");
         UUID other = upload("b.jpg", DriveImageFetcherTest.jpeg(6, 6), null, null).mediaId();
         assertThatThrownBy(() -> admin.update(ACTOR, other, withTopics(List.of("hybrid"))))
                 .isInstanceOf(CommonException.class).hasMessageContaining("đã tắt");
@@ -258,22 +263,28 @@ class MediaLibraryIntegrationTest {
                 "Dùng khi", null, null, null));
 
         List<BulkResult> approved = admin.bulk(ACTOR, new BulkRequest(List.of(ready, empty), BulkAction.SET_STATUS,
-                MediaStatus.APPROVED, null, null, null));
+                MediaStatus.APPROVED, null, null, null, null));
         assertThat(approved).extracting(BulkResult::ok).containsExactly(true, false);
         assertThat(approved.get(1).note()).contains("Tóm tắt");
         assertThat(admin.get(ready).indexCode()).isEqualTo("M01");
 
-        admin.bulk(ACTOR, new BulkRequest(List.of(ready, empty), BulkAction.ADD_TOPICS, null, null,
+        admin.bulk(ACTOR, new BulkRequest(List.of(ready, empty), BulkAction.ADD_TOPICS, null, null, null,
                 List.of("lap-dat"), null));
         assertThat(admin.get(empty).topics()).containsExactly("lap-dat");
 
         assertThatThrownBy(() -> admin.bulk(ACTOR, new BulkRequest(List.of(ready, empty), BulkAction.ADD_LINK, null,
-                null, null, new LinkInput(LinkTargetType.PACKAGE, "98", LinkRole.MAIN_IMAGE, 0))))
+                null, null, null, new LinkInput(LinkTargetType.PACKAGE, "98", LinkRole.MAIN_IMAGE, 0))))
                 .isInstanceOf(CommonException.class).hasMessageContaining("ảnh chính");
 
-        admin.bulk(ACTOR, new BulkRequest(List.of(ready, empty), BulkAction.DELETE, null, null, null, null));
+        admin.bulk(ACTOR, new BulkRequest(List.of(ready, empty), BulkAction.SET_CATEGORY, null, null, "QUOTE", null,
+                null));
+        assertThat(admin.get(empty).category()).isEqualTo("QUOTE");
+        assertThatThrownBy(() -> admin.bulk(ACTOR, new BulkRequest(List.of(ready), BulkAction.SET_CATEGORY, null, null,
+                "BANG_GIA", null, null))).isInstanceOf(CommonException.class).hasMessageContaining("BANG_GIA");
+
+        admin.bulk(ACTOR, new BulkRequest(List.of(ready, empty), BulkAction.DELETE, null, null, null, null, null));
         assertThat(admin.get(ready).deleted()).isTrue();
-        admin.bulk(ACTOR, new BulkRequest(List.of(ready), BulkAction.RESTORE, null, null, null, null));
+        admin.bulk(ACTOR, new BulkRequest(List.of(ready), BulkAction.RESTORE, null, null, null, null, null));
         assertThat(admin.get(ready).deleted()).isFalse();
     }
 
@@ -282,7 +293,7 @@ class MediaLibraryIntegrationTest {
         insertPackages();
         CreateResult r = sourceService.createFromFile(ACTOR, file("x.jpg", DriveImageFetcherTest.jpeg(9, 9)), null,
                 null, new CreateInfo("Ảnh hệ 5 kWp mái tôn", MediaStatus.APPROVED, RightsStatus.OWNED,
-                        "Hệ Hybrid 5 kWp trên mái tôn", "Khách hỏi gói 5 kWp", "Khách khiếu nại", "Mô tả", "bỏ qua",
+                        "QUOTE", "Hệ Hybrid 5 kWp trên mái tôn", "Khách hỏi gói 5 kWp", "Khách khiếu nại", "Mô tả", "bỏ qua",
                         List.of("hybrid"), List.of("LEAD"), List.of("MESSENGER", "ZALO_OA"),
                         List.of(new LinkInput(LinkTargetType.PACKAGE, "98", LinkRole.MAIN_IMAGE, 0)), false));
         assertThat(r.outcome()).isEqualTo(Outcome.CREATED);
@@ -290,6 +301,7 @@ class MediaLibraryIntegrationTest {
         MediaResponse m = admin.get(r.mediaId());
         assertThat(m.title()).isEqualTo("Ảnh hệ 5 kWp mái tôn");
         assertThat(m.status()).isEqualTo("APPROVED");
+        assertThat(m.category()).isEqualTo("QUOTE");
         assertThat(m.indexCode()).isEqualTo("M01");
         assertThat(m.summary()).isEqualTo("Hệ Hybrid 5 kWp trên mái tôn");
         assertThat(m.avoidWhen()).isEqualTo("Khách khiếu nại");
@@ -311,13 +323,18 @@ class MediaLibraryIntegrationTest {
 
         CreateResult approvedEmpty = sourceService.createFromFile(ACTOR, file("x.jpg",
                 DriveImageFetcherTest.jpeg(9, 9)), null, null, new CreateInfo(null, MediaStatus.APPROVED, null, null,
-                null, null, null, null, null, null, null, null, false));
+                null, null, null, null, null, null, null, null, null, false));
         assertThat(approvedEmpty.note()).contains("Tóm tắt");
 
         CreateResult videoAsMainImage = sourceService.createFromLink(ACTOR, new CreateLinkRequest(YOUTUBE,
-                new CreateInfo(null, null, null, null, null, null, null, null, null, null, null,
+                new CreateInfo(null, null, null, null, null, null, null, null, null, null, null, null,
                         List.of(new LinkInput(LinkTargetType.PACKAGE, "98", LinkRole.MAIN_IMAGE, 0)), false)));
         assertThat(videoAsMainImage.note()).contains("Chỉ ảnh");
+
+        CreateResult unknownCategory = sourceService.createFromLink(ACTOR, new CreateLinkRequest(YOUTUBE,
+                new CreateInfo(null, null, null, "BANG_GIA", null, null, null, null, null, null, null, null, null,
+                        false)));
+        assertThat(unknownCategory.note()).contains("Phân loại không hợp lệ");
 
         verify(storage, never()).put(anyString(), any(), anyLong(), any());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM media", Integer.class)).isZero();
@@ -329,7 +346,7 @@ class MediaLibraryIntegrationTest {
                 "AI tránh khi", "AI mô tả", List.of("lap-dat", "khong-co"), false));
 
         CreateResult r = sourceService.createFromLink(ACTOR, new CreateLinkRequest(YOUTUBE, new CreateInfo(
-                "Video lắp đặt", MediaStatus.APPROVED, null, "Admin tóm tắt", null, null, null, null,
+                "Video lắp đặt", MediaStatus.APPROVED, null, null, "Admin tóm tắt", null, null, null, null,
                 List.of("hybrid"), null, null, null, true)));
 
         assertThat(r.note()).contains("AI đã viết nháp");
@@ -345,7 +362,7 @@ class MediaLibraryIntegrationTest {
                 .thenThrow(new CommonException(HttpStatus.BAD_GATEWAY, "Gọi AI lỗi: hết hạn mức"));
         CreateResult failed = sourceService.createFromLink(ACTOR, new CreateLinkRequest(
                 "https://www.facebook.com/reel/1234567890123", new CreateInfo(null, null, null, null, null, null, null,
-                null, null, null, null, null, true)));
+                null, null, null, null, null, null, true)));
         assertThat(failed.outcome()).isEqualTo(Outcome.CREATED);
         assertThat(failed.note()).contains("AI viết nháp lỗi");
     }
@@ -382,15 +399,15 @@ class MediaLibraryIntegrationTest {
     }
 
     private static CreateInfo titled(String title) {
-        return new CreateInfo(title, null, null, null, null, null, null, null, null, null, null, null, false);
+        return new CreateInfo(title, null, null, null, null, null, null, null, null, null, null, null, null, false);
     }
 
     private static CreateInfo withTopicsInfo(List<String> topics) {
-        return new CreateInfo(null, null, null, null, null, null, null, null, topics, null, null, null, false);
+        return new CreateInfo(null, null, null, null, null, null, null, null, null, topics, null, null, null, false);
     }
 
     private static UpdateRequest withTopics(List<String> topics) {
-        return new UpdateRequest("Ảnh", MediaStatus.DRAFT, RightsStatus.OWNED, null, null, null, null, null, topics,
-                null, null);
+        return new UpdateRequest("Ảnh", MediaStatus.DRAFT, RightsStatus.OWNED, null, null, null, null, null, null,
+                topics, null, null);
     }
 }

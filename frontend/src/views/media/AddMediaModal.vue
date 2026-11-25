@@ -252,6 +252,7 @@
       title: count.value === 1 ? v.title || undefined : undefined,
       status: v.aiDraft ? 'DRAFT' : v.status,
       rights: v.rights || undefined,
+      category: v.category || undefined,
       summary: v.summary,
       useWhen: v.useWhen,
       avoidWhen: v.avoidWhen,
